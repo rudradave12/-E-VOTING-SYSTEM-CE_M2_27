@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: blockballot
+    runtime: node
+    plan: free
+    branch: security/phase-7-hardening
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: development
+      - key: PORT
+        value: 10000
