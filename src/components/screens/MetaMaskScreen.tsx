@@ -1,7 +1,19 @@
 import React, { useState } from 'react';
+import { ethers } from 'ethers';
 import { Candidate, Constituency, VoterRecord, VotingAuthorizationTicket, VoteReceipt } from '../../types';
 import { evmSimulator } from '../../utils/evmSimulator';
-import { Wallet, ShieldCheck, Cpu, ArrowRight, AlertCircle, RotateCcw, CheckCircle2 } from 'lucide-react';
+import deploymentManifest from '../../contracts/deployment.json';
+import {
+  Wallet,
+  ShieldCheck,
+  Cpu,
+  ArrowRight,
+  AlertCircle,
+  RotateCcw,
+  CheckCircle2,
+  ExternalLink,
+  Info,
+} from 'lucide-react';
 
 interface MetaMaskScreenProps {
   voter: VoterRecord;
@@ -14,6 +26,8 @@ interface MetaMaskScreenProps {
   onCancel: () => void;
 }
 
+type TxProgressState = 'idle' | 'simulating' | 'awaiting_signature' | 'mining' | 'confirmed' | 'failed';
+
 export const MetaMaskScreen: React.FC<MetaMaskScreenProps> = ({
   voter,
   constituency,
@@ -24,16 +38,17 @@ export const MetaMaskScreen: React.FC<MetaMaskScreenProps> = ({
   onVoteSuccess,
   onCancel,
 }) => {
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [txState, setTxState] = useState<TxProgressState>('idle');
+  const [pendingTxHash, setPendingTxHash] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleCastVote = async () => {
-    setIsSubmitting(true);
     setErrorMessage(null);
 
-    try {
-      if (isSimulatedEVM) {
-        // Execute against deterministic EVM Simulator
+    // MODE 1: In-Browser Deterministic EVM Simulator
+    if (isSimulatedEVM) {
+      setTxState('mining');
+      try {
         const result = await evmSimulator.castVote(
           voterWalletAddress,
           ticket,
@@ -44,58 +59,144 @@ export const MetaMaskScreen: React.FC<MetaMaskScreenProps> = ({
         );
 
         if (result.success && result.receipt) {
+          setTxState('confirmed');
           onVoteSuccess(result.receipt);
         } else {
-          setErrorMessage(result.error || 'Simulated EVM execution failed.');
+          setTxState('failed');
+          setErrorMessage(result.error || 'Simulated EVM transaction failed.');
         }
-      } else {
-        // Real Web3 / MetaMask execution path
-        if (typeof window !== 'undefined' && (window as any).ethereum) {
-          try {
-            const provider = (window as any).ethereum;
-            const accounts = await provider.request({ method: 'eth_requestAccounts' });
-            const currentAccount = accounts[0];
+      } catch (err: any) {
+        setTxState('failed');
+        setErrorMessage(err.message || 'Unexpected simulator error occurred.');
+      }
+      return;
+    }
 
-            if (currentAccount.toLowerCase() !== voterWalletAddress.toLowerCase()) {
-              setErrorMessage(
-                `Connected MetaMask account (${currentAccount.substring(0, 8)}...) does not match your authorized voting address (${voterWalletAddress.substring(0, 8)}...).`
-              );
-              setIsSubmitting(false);
-              return;
-            }
+    // MODE 2: Real MetaMask / EIP-1193 Web3 Execution
+    if (typeof window === 'undefined' || !(window as any).ethereum) {
+      setErrorMessage(
+        'MetaMask extension was not detected in this browser. Please install the MetaMask extension, or switch to the built-in EVM Simulator in the top-right toggle.'
+      );
+      return;
+    }
 
-            // In local/testnet development, if contract isn't deployed to live testnet,
-            // we simulate transaction mining with the real connected account:
-            const simulatedReceipt: VoteReceipt = {
-              receiptId: `REC-${Date.now().toString(36).toUpperCase()}`,
-              electionId: ticket.electionId,
-              constituencyId: ticket.constituencyId,
-              constituencyName: constituency.name,
-              candidateName: candidate.name,
-              partyName: candidate.partyName,
-              transactionHash: `0x${Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`,
-              blockNumber: 19827415,
-              timestamp: new Date().toISOString(),
-              isSimulated: false,
-              watermark: '[LOCAL / TESTNET EVM PROTOTYPE TRANSACTION]',
-              gasUsed: 54310,
-              nullifier: ticket.nullifier,
-            };
+    try {
+      setTxState('simulating');
+      const browserProvider = new ethers.BrowserProvider((window as any).ethereum);
 
-            onVoteSuccess(simulatedReceipt);
-          } catch (walletErr: any) {
-            setErrorMessage(walletErr.message || 'MetaMask transaction rejected by user.');
-          }
-        } else {
-          setErrorMessage('MetaMask extension not detected in this browser window. Please switch to the built-in EVM Simulator.');
+      // Request explicit account authorization from user
+      const signer = await browserProvider.getSigner();
+      const connectedAccount = await signer.getAddress();
+
+      // Check account matches authorized voting address
+      if (connectedAccount.toLowerCase() !== voterWalletAddress.toLowerCase()) {
+        setErrorMessage(
+          `Connected MetaMask account (${connectedAccount.substring(0, 8)}...) does not match your authorized voting address (${voterWalletAddress.substring(0, 8)}...). Please switch accounts in MetaMask to your registered address.`
+        );
+        setTxState('failed');
+        return;
+      }
+
+      // Check Chain ID
+      const network = await browserProvider.getNetwork();
+      const targetChainId = BigInt(ticket.chainId);
+      if (network.chainId !== targetChainId) {
+        try {
+          await (window as any).ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: `0x${Number(targetChainId).toString(16)}` }],
+          });
+        } catch (switchErr: any) {
+          console.warn('Network switch notice:', switchErr.message);
         }
       }
+
+      const contractTargetAddress = ticket.contractAddress || deploymentManifest.contractAddress;
+
+      // Verify contract code exists at target address on connected network
+      const code = await browserProvider.getCode(contractTargetAddress);
+      if (!code || code === '0x' || code === '0x0') {
+        setErrorMessage(
+          `No smart contract found at address ${contractTargetAddress} on chain ID ${network.chainId}. If running a local Hardhat network on your PC, please execute "npx tsx scripts/deploy.ts" to deploy and seed the election.`
+        );
+        setTxState('failed');
+        return;
+      }
+
+      const contract = new ethers.Contract(contractTargetAddress, deploymentManifest.abi, signer);
+
+      // Pre-flight static call simulation to verify on-chain guards before submitting
+      try {
+        await contract.castVote.staticCall(
+          ticket.electionId,
+          ticket.constituencyId,
+          candidate.numericId,
+          ticket.nullifier,
+          ticket.expiry,
+          ticket.signature
+        );
+      } catch (simErr: any) {
+        const revertReason =
+          simErr.reason ||
+          simErr.info?.error?.message ||
+          simErr.message ||
+          'On-chain validation failed during transaction simulation.';
+        setErrorMessage(`Smart Contract Revert: ${revertReason}`);
+        setTxState('failed');
+        return;
+      }
+
+      // Prompt MetaMask signature & broadcast transaction
+      setTxState('awaiting_signature');
+      const tx = await contract.castVote(
+        ticket.electionId,
+        ticket.constituencyId,
+        candidate.numericId,
+        ticket.nullifier,
+        ticket.expiry,
+        ticket.signature
+      );
+
+      setPendingTxHash(tx.hash);
+      setTxState('mining');
+
+      // Wait for block confirmation
+      const receipt = await tx.wait(1);
+
+      if (receipt && receipt.status === 1) {
+        setTxState('confirmed');
+        const realReceipt: VoteReceipt = {
+          receiptId: `REC-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 1000)}`,
+          electionId: ticket.electionId,
+          constituencyId: ticket.constituencyId,
+          constituencyName: constituency.name,
+          candidateName: candidate.name,
+          partyName: candidate.partyName,
+          transactionHash: tx.hash,
+          blockNumber: Number(receipt.blockNumber),
+          timestamp: new Date().toISOString(),
+          isSimulated: false,
+          watermark: `[LIVE EVM TRANSACTION — BLOCK #${receipt.blockNumber} — CHAIN ID: ${ticket.chainId}]`,
+          gasUsed: Number(receipt.gasUsed),
+          nullifier: ticket.nullifier,
+        };
+
+        onVoteSuccess(realReceipt);
+      } else {
+        setTxState('failed');
+        setErrorMessage('Transaction mined but reverted by EVM on-chain state machine.');
+      }
     } catch (err: any) {
-      setErrorMessage(err.message || 'An unexpected error occurred during transaction execution.');
-    } finally {
-      setIsSubmitting(false);
+      setTxState('failed');
+      if (err.code === 4001 || err.code === 'ACTION_REJECTED') {
+        setErrorMessage('Transaction signature was cancelled by user in MetaMask.');
+      } else {
+        setErrorMessage(err.reason || err.message || 'An unexpected error occurred during MetaMask execution.');
+      }
     }
   };
+
+  const isSubmitting = txState === 'simulating' || txState === 'awaiting_signature' || txState === 'mining';
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
@@ -126,12 +227,12 @@ export const MetaMaskScreen: React.FC<MetaMaskScreenProps> = ({
               ) : (
                 <>
                   <Wallet className="w-4 h-4 text-emerald-600" />
-                  Execution Target: MetaMask Extension
+                  Execution Target: MetaMask Extension (EIP-1193)
                 </>
               )}
             </span>
             <span className="text-[11px] font-mono text-slate-500">
-              Chain ID: {ticket.chainId} · Sepolia/Local
+              Chain ID: {ticket.chainId} · {isSimulatedEVM ? 'Simulated' : 'Local / Testnet'}
             </span>
           </div>
 
@@ -139,7 +240,7 @@ export const MetaMaskScreen: React.FC<MetaMaskScreenProps> = ({
             <div className="flex justify-between">
               <span className="text-slate-500">Contract Address:</span>
               <span className="font-mono text-slate-800 truncate max-w-[220px]">
-                {ticket.contractAddress}
+                {ticket.contractAddress || deploymentManifest.contractAddress}
               </span>
             </div>
             <div className="flex justify-between">
@@ -176,19 +277,46 @@ export const MetaMaskScreen: React.FC<MetaMaskScreenProps> = ({
           <span className="text-slate-500">Constituency #{ticket.constituencyId}</span>
         </div>
 
+        {/* Dynamic Transaction Progress State */}
+        {isSubmitting && (
+          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-900 mb-6">
+            <div className="flex items-center gap-2.5 font-semibold">
+              <RotateCcw className="w-4 h-4 animate-spin text-blue-600" />
+              {txState === 'simulating' && <span>Simulating on-chain invariants via staticCall...</span>}
+              {txState === 'awaiting_signature' && <span>Awaiting transaction confirmation in MetaMask...</span>}
+              {txState === 'mining' && (
+                <span>
+                  Mining ballot transaction on blockchain...
+                  {pendingTxHash && <span className="font-mono block mt-1 text-[11px] text-blue-700 truncate">Hash: {pendingTxHash}</span>}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Error Notification & Failure Recovery */}
         {errorMessage && (
           <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800 mb-6">
             <div className="flex items-start gap-2.5">
               <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
               <div>
-                <p className="font-semibold mb-1">Transaction Execution Failed:</p>
+                <p className="font-semibold mb-1">Transaction Execution Halted:</p>
                 <p className="leading-relaxed mb-2">{errorMessage}</p>
                 <p className="text-[11px] text-red-700 font-medium">
-                  Failure Recovery Active: Your voter eligibility record has not been finalized. You may safely retry submission or edit your selection.
+                  Failure Recovery Active: Your voter eligibility record is not finalized. You can retry submission or switch to the simulated EVM if a local node is unavailable.
                 </p>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Local node setup notice for real MetaMask mode */}
+        {!isSimulatedEVM && (
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-600 mb-6 flex items-start gap-2">
+            <Info className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+            <p>
+              MetaMask connects to your local Hardhat EVM network at <code className="font-mono text-slate-800">http://127.0.0.1:8545</code> (Chain ID <code className="font-mono text-slate-800">31337</code>). In sandbox preview, use the built-in EVM Simulator for instant zero-setup demonstration.
+            </p>
           </div>
         )}
 

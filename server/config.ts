@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { ethers } from 'ethers';
 dotenv.config();
 
 // Dedicated server-side secrets
@@ -9,9 +10,9 @@ export const SERVER_CONFIG = {
     'BLOCKBALLOT_SECURE_HMAC_SECRET_K8f72h901ndk2n9d8213hd98h23d9h12d9h8129',
 
   // Dedicated server-side ECDSA private key for signing EIP-712 VotingAuthorization tickets
+  // Strictly loaded from environment secrets — never hard-code or expose in code
   AUTHORIZATION_SIGNER_PRIVATE_KEY:
-    process.env.SERVER_AUTHORIZATION_SIGNER_KEY ||
-    '0x4f3edf983ac636a65a842ce7c78d9aa706d3b113bce9c46f30d7d21715b23b1d',
+    process.env.SERVER_AUTHORIZATION_SIGNER_KEY || '',
 
   // Server salt for pseudonymous voter nullifier derivation
   COMMITMENT_SALT:
@@ -33,8 +34,26 @@ export const SERVER_CONFIG = {
   SESSION_EXPIRY_MS: 15 * 60 * 1000, // 15 minutes
 };
 
+/**
+ * Safely derives the public Ethereum address of the server's authorization signer.
+ * Never exposes or logs the private key.
+ */
+export function derivePublicSignerAddress(privateKey?: string): string | null {
+  try {
+    const key = privateKey || SERVER_CONFIG.AUTHORIZATION_SIGNER_PRIVATE_KEY;
+    if (!key || typeof key !== 'string' || !key.startsWith('0x') || key.length !== 66) {
+      return null;
+    }
+    return new ethers.Wallet(key).address;
+  } catch {
+    return null;
+  }
+}
+
+export const SERVER_AUTHORIZATION_SIGNER_ADDRESS: string | null = derivePublicSignerAddress();
+
 // Validate critical configuration on server boot
-export function validateServerConfig(): { isValid: boolean; warnings: string[] } {
+export function validateServerConfig(): { isValid: boolean; warnings: string[]; signerAddress: string | null } {
   const warnings: string[] = [];
   if (!process.env.SERVER_HMAC_SECRET) {
     warnings.push('SERVER_HMAC_SECRET not set in environment; using secure fallback key for academic demo.');
@@ -42,5 +61,12 @@ export function validateServerConfig(): { isValid: boolean; warnings: string[] }
   if (!process.env.SERVER_AUTHORIZATION_SIGNER_KEY) {
     warnings.push('SERVER_AUTHORIZATION_SIGNER_KEY not set in environment; using dedicated demo signing key.');
   }
-  return { isValid: true, warnings };
+  if (!SERVER_AUTHORIZATION_SIGNER_ADDRESS) {
+    warnings.push('SERVER_AUTHORIZATION_SIGNER_KEY is invalid or missing; cannot derive public signer address.');
+  }
+  return {
+    isValid: SERVER_AUTHORIZATION_SIGNER_ADDRESS !== null,
+    warnings,
+    signerAddress: SERVER_AUTHORIZATION_SIGNER_ADDRESS,
+  };
 }

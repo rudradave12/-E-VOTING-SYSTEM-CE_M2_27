@@ -2,7 +2,21 @@ import React from 'react';
 import { SymbolVerificationStatus } from '../../types';
 
 interface OfficialPartySymbolProps {
-  symbolKey?: 'LOTUS' | 'HAND' | 'BROOM' | 'ELEPHANT' | 'CORN_SICKLE' | 'NOTA' | 'UNAVAILABLE';
+  symbolKey?:
+    | 'LOTUS'
+    | 'HAND'
+    | 'BROOM'
+    | 'ELEPHANT'
+    | 'CORN_SICKLE'
+    | 'HAMMER_SICKLE_STAR'
+    | 'BOOK'
+    | 'BICYCLE'
+    | 'RISING_SUN'
+    | 'FLOWERS_GRASS'
+    | 'FLAMING_TORCH'
+    | 'BOW_ARROW'
+    | 'NOTA'
+    | 'UNAVAILABLE';
   symbolName: string;
   partyName: string;
   partyAbbreviation?: string;
@@ -268,6 +282,75 @@ export const OfficialPartySymbol: React.FC<OfficialPartySymbolProps> = ({
           </svg>
         );
 
+      case 'HAMMER_SICKLE_STAR': // Communist Party of India (Marxist) [CPI(M)]
+        return (
+          <svg viewBox="0 0 100 100" className="w-full h-full p-1" fill="none" aria-hidden="true">
+            {/* Red Field Background Accent */}
+            <rect x="8" y="8" width="84" height="84" rx="8" fill="#DC2626" />
+            {/* Star in Top Right */}
+            <polygon
+              points="76,18 78,24 84,24 79,28 81,34 76,30 71,34 73,28 68,24 74,24"
+              fill="#FFFFFF"
+            />
+            {/* Hammer Geometry */}
+            <path
+              d="M32 64 L54 42 L58 46 L36 68 Z"
+              fill="#FFFFFF"
+            />
+            <rect
+              x="50"
+              y="32"
+              width="14"
+              height="18"
+              rx="2"
+              transform="rotate(45 57 41)"
+              fill="#FFFFFF"
+            />
+            {/* Sickle Curved Blade */}
+            <path
+              d="M62 48 C62 64 48 76 32 72 C30 71 31 68 33 68 C44 69 54 60 54 48 C54 42 50 38 46 36 C45 35 46 33 48 33 C56 35 62 40 62 48 Z"
+              fill="#FFFFFF"
+            />
+            {/* Sickle Handle */}
+            <path
+              d="M26 74 L32 68 L36 72 L30 78 Z"
+              fill="#FDE047"
+            />
+          </svg>
+        );
+
+      case 'BOOK': // National People's Party (NPP)
+        return (
+          <svg viewBox="0 0 100 100" className="w-full h-full p-1" fill="none" aria-hidden="true">
+            {/* Open Book with Spine and Pages */}
+            {/* Left Cover / Pages */}
+            <path
+              d="M50 78 C40 73 24 73 14 76 L14 30 C24 27 40 27 50 32 Z"
+              fill="#0284C7"
+              stroke="#0369A1"
+              strokeWidth="2.5"
+              strokeLinejoin="round"
+            />
+            {/* Right Cover / Pages */}
+            <path
+              d="M50 78 C60 73 76 73 86 76 L86 30 C76 27 60 27 50 32 Z"
+              fill="#0284C7"
+              stroke="#0369A1"
+              strokeWidth="2.5"
+              strokeLinejoin="round"
+            />
+            {/* Center Spine */}
+            <line x1="50" y1="32" x2="50" y2="78" stroke="#0C4A6E" strokeWidth="3" strokeLinecap="round" />
+            {/* Page Text Line Accents */}
+            <line x1="20" y1="42" x2="44" y2="40" stroke="#E0F2FE" strokeWidth="2" strokeLinecap="round" />
+            <line x1="20" y1="50" x2="44" y2="48" stroke="#E0F2FE" strokeWidth="2" strokeLinecap="round" />
+            <line x1="20" y1="58" x2="40" y2="56" stroke="#E0F2FE" strokeWidth="2" strokeLinecap="round" />
+            <line x1="56" y1="40" x2="80" y2="42" stroke="#E0F2FE" strokeWidth="2" strokeLinecap="round" />
+            <line x1="56" y1="48" x2="80" y2="50" stroke="#E0F2FE" strokeWidth="2" strokeLinecap="round" />
+            <line x1="60" y1="56" x2="80" y2="58" stroke="#E0F2FE" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        );
+
       case 'NOTA': // None of the Above
         return (
           <svg
@@ -318,6 +401,85 @@ export const OfficialPartySymbol: React.FC<OfficialPartySymbolProps> = ({
               strokeWidth="8"
               strokeLinecap="round"
             />
+          </svg>
+        );
+
+      case 'BICYCLE': // Samajwadi Party (SP)
+        return (
+          <svg viewBox="0 0 100 100" className="w-full h-full p-1" fill="none" aria-hidden="true">
+            {/* Rear wheel */}
+            <circle cx="28" cy="62" r="18" stroke="#DC2626" strokeWidth="4" />
+            <circle cx="28" cy="62" r="3" fill="#DC2626" />
+            {/* Front wheel */}
+            <circle cx="72" cy="62" r="18" stroke="#DC2626" strokeWidth="4" />
+            <circle cx="72" cy="62" r="3" fill="#DC2626" />
+            {/* Frame tubes */}
+            <path d="M28 62 L46 62 L58 40 L38 40 Z" stroke="#DC2626" strokeWidth="3.5" strokeLinejoin="round" />
+            <path d="M46 62 L38 32" stroke="#DC2626" strokeWidth="3.5" />
+            <path d="M58 40 L72 62" stroke="#DC2626" strokeWidth="3.5" />
+            {/* Handlebar */}
+            <path d="M68 28 L64 36 L58 40" stroke="#991B1B" strokeWidth="3" strokeLinecap="round" />
+            {/* Seat */}
+            <path d="M32 30 L44 30" stroke="#1E293B" strokeWidth="4.5" strokeLinecap="round" />
+          </svg>
+        );
+
+      case 'RISING_SUN': // Dravida Munnetra Kazhagam (DMK)
+        return (
+          <svg viewBox="0 0 100 100" className="w-full h-full p-1" fill="none" aria-hidden="true">
+            {/* Sun Disc */}
+            <circle cx="50" cy="54" r="16" fill="#EA580C" />
+            {/* Sun Rays */}
+            <line x1="50" y1="26" x2="50" y2="34" stroke="#EA580C" strokeWidth="3.5" strokeLinecap="round" />
+            <line x1="30" y1="34" x2="36" y2="40" stroke="#EA580C" strokeWidth="3.5" strokeLinecap="round" />
+            <line x1="70" y1="34" x2="64" y2="40" stroke="#EA580C" strokeWidth="3.5" strokeLinecap="round" />
+            <line x1="22" y1="54" x2="30" y2="54" stroke="#EA580C" strokeWidth="3.5" strokeLinecap="round" />
+            <line x1="78" y1="54" x2="70" y2="54" stroke="#EA580C" strokeWidth="3.5" strokeLinecap="round" />
+            {/* Mountain Peaks Framing */}
+            <polygon points="12,78 38,48 54,78" fill="#15803D" />
+            <polygon points="46,78 64,50 88,78" fill="#166534" />
+            <rect x="10" y="78" width="80" height="8" fill="#0F766E" />
+          </svg>
+        );
+
+      case 'FLOWERS_GRASS': // All India Trinamool Congress (AITC)
+        return (
+          <svg viewBox="0 0 100 100" className="w-full h-full p-1" fill="none" aria-hidden="true">
+            {/* Blades of Grass */}
+            <path d="M50 84 Q48 52 34 38 Q42 54 48 84" fill="#16A34A" />
+            <path d="M50 84 Q52 50 66 38 Q58 54 52 84" fill="#15803D" />
+            <path d="M50 84 L50 48" stroke="#166534" strokeWidth="3" />
+            {/* Flower 1 */}
+            <circle cx="34" cy="34" r="8" fill="#FACC15" stroke="#CA8A04" strokeWidth="2" />
+            <circle cx="34" cy="34" r="3" fill="#EA580C" />
+            {/* Flower 2 */}
+            <circle cx="66" cy="34" r="8" fill="#FACC15" stroke="#CA8A04" strokeWidth="2" />
+            <circle cx="66" cy="34" r="3" fill="#EA580C" />
+          </svg>
+        );
+
+      case 'FLAMING_TORCH': // SS(UBT)
+        return (
+          <svg viewBox="0 0 100 100" className="w-full h-full p-1" fill="none" aria-hidden="true">
+            {/* Torch Handle */}
+            <path d="M46 54 L44 86 L56 86 L54 54 Z" fill="#78350F" stroke="#451A03" strokeWidth="2" />
+            {/* Torch Bowl */}
+            <path d="M38 54 L62 54 L56 46 L44 46 Z" fill="#9A3412" stroke="#7C2D12" strokeWidth="2" />
+            {/* Flame */}
+            <path d="M50 14 C40 26 40 36 46 44 C48 40 52 38 54 40 C58 34 56 24 50 14 Z" fill="#EA580C" />
+            <path d="M50 22 C46 28 46 34 50 38 C52 34 54 30 50 22 Z" fill="#FACC15" />
+          </svg>
+        );
+
+      case 'BOW_ARROW': // SHS
+        return (
+          <svg viewBox="0 0 100 100" className="w-full h-full p-1" fill="none" aria-hidden="true">
+            {/* Bow */}
+            <path d="M30 18 Q55 50 30 82" stroke="#EA580C" strokeWidth="4.5" strokeLinecap="round" />
+            <line x1="30" y1="18" x2="30" y2="82" stroke="#94A3B8" strokeWidth="2" strokeDasharray="2 2" />
+            {/* Arrow */}
+            <line x1="22" y1="50" x2="74" y2="50" stroke="#C2410C" strokeWidth="3.5" />
+            <polygon points="74,44 86,50 74,56" fill="#C2410C" />
           </svg>
         );
 

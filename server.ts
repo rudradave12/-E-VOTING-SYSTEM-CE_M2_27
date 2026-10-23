@@ -5,6 +5,8 @@ import { createServer as createViteServer } from 'vite';
 import { SERVER_CONFIG, validateServerConfig } from './server/config';
 import { voterRouter } from './server/routes/voter';
 import { adminRouter } from './server/routes/admin';
+import { historicalRouter } from './server/routes/historical';
+import { pollRouter } from './server/routes/poll';
 import { seedInitialFirestoreData } from './server/firestore';
 import { serverStore } from './server/store';
 
@@ -42,6 +44,12 @@ async function startServer() {
 
   // Mount Voter Verification & OTP routes
   app.use('/api/voter', voterRouter);
+
+  // Mount Historical Results & Political Parties routes
+  app.use('/api/historical', historicalRouter);
+
+  // Mount Independent Party-Preference Poll routes
+  app.use('/api/poll', pollRouter);
 
   // Mount Admin, Election Management, Results and Audit routes
   app.use('/api/admin', adminRouter);

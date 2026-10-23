@@ -2,6 +2,7 @@ import { ethers } from 'ethers';
 import { VotingAuthorizationTicket, VoteReceipt, AuditEvent } from '../types';
 import {
   verifyVotingAuthorization,
+  getAuthorizationSignerAddress,
   DEMO_AUTHORIZATION_SIGNER_ADDRESS,
 } from './crypto';
 
@@ -97,7 +98,7 @@ class EvmSimulator {
     }
 
     // 4. EIP-712 Signature check
-    const sigCheck = verifyVotingAuthorization(ticket, DEMO_AUTHORIZATION_SIGNER_ADDRESS);
+    const sigCheck = verifyVotingAuthorization(ticket, getAuthorizationSignerAddress());
     if (!sigCheck.isValid) {
       return { success: false, error: `On-chain signature check failed: ${sigCheck.error}` };
     }

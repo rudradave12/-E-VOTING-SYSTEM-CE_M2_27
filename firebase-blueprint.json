@@ -95,7 +95,7 @@
       "properties": {
         "id": { "type": "string", "maxLength": 64 },
         "timestamp": { "type": "integer" },
-        "type": { "type": "string", "enum": ["ELECTION_STATE", "CANDIDATE_REGISTERED", "OTP_ISSUED", "AUTHORIZATION_SIGNED", "VOTE_CAST", "NULLIFIER_SPENT"] },
+        "type": { "type": "string", "enum": ["ELECTION_STATE", "CANDIDATE_REGISTERED", "OTP_ISSUED", "AUTHORIZATION_SIGNED", "VOTE_CAST", "NULLIFIER_SPENT", "ADMIN_ACTION", "TRANSACTION_RECOVERY"] },
         "description": { "type": "string", "maxLength": 500 },
         "electionId": { "type": "integer" },
         "constituencyId": { "type": "integer" },
@@ -117,6 +117,98 @@
         "createdAt": { "type": "integer" }
       },
       "required": ["uid", "email", "role"]
+    },
+    "HistoricalConstituencyRecord": {
+      "title": "HistoricalConstituencyRecord",
+      "description": "Official 2024 Lok Sabha general election historical statistical record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "code": { "type": "string", "maxLength": 16 },
+        "name": { "type": "string", "maxLength": 100 },
+        "state": { "type": "string", "maxLength": 100 },
+        "electionYear": { "type": "integer" },
+        "totalElectors": { "type": "integer" },
+        "votesCounted": { "type": "integer" },
+        "turnoutPercentage": { "type": "number" },
+        "winnerName": { "type": "string", "maxLength": 120 },
+        "winnerParty": { "type": "string", "maxLength": 120 },
+        "winningMargin": { "type": "integer" },
+        "winningMarginPercentage": { "type": "number" },
+        "isUnopposed": { "type": "boolean" },
+        "notaVotes": { "type": "integer" },
+        "notaPercentage": { "type": "number" },
+        "sourceAuthority": { "type": "string", "maxLength": 200 },
+        "eciPdfReference": { "type": "string", "maxLength": 100 },
+        "isVerified": { "type": "boolean" },
+        "importTimestamp": { "type": "integer" },
+        "schemaVersion": { "type": "string", "maxLength": 16 }
+      },
+      "required": ["id", "code", "name", "state", "electionYear", "winnerName", "winnerParty", "isVerified"]
+    },
+    "PoliticalPartyRecord": {
+      "title": "PoliticalPartyRecord",
+      "description": "ECI verified recognized national or state political party directory record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 32 },
+        "code": { "type": "string", "maxLength": 16 },
+        "name": { "type": "string", "maxLength": 120 },
+        "nameHi": { "type": "string", "maxLength": 120 },
+        "type": { "type": "string", "enum": ["NATIONAL", "STATE"] },
+        "reservedSymbol": { "type": "string", "maxLength": 64 },
+        "symbolKey": { "type": "string", "maxLength": 32 },
+        "symbolNotificationRef": { "type": "string", "maxLength": 200 },
+        "statesApplicable": { "type": "string", "maxLength": 200 },
+        "headquarters": { "type": "string", "maxLength": 200 },
+        "seatsWon2024": { "type": "integer" },
+        "isApproximate": { "type": "boolean" },
+        "isVerified": { "type": "boolean" }
+      },
+      "required": ["id", "code", "name", "type", "reservedSymbol", "symbolKey", "isVerified"]
+    },
+    "PreferencePoll": {
+      "title": "PreferencePoll",
+      "description": "Independent non-binding party preference poll configuration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "title": { "type": "string", "maxLength": 200 },
+        "titleHi": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "descriptionHi": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["open", "closed"] },
+        "createdAt": { "type": "integer" },
+        "updatedAt": { "type": "integer" },
+        "isOfficialECI": { "type": "boolean" }
+      },
+      "required": ["id", "title", "status", "createdAt"]
+    },
+    "PollResponse": {
+      "title": "PollResponse",
+      "description": "Individual persistent party-preference poll vote response keyed by userId",
+      "type": "object",
+      "properties": {
+        "pollId": { "type": "string", "maxLength": 64 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "partyCode": { "type": "string", "maxLength": 16 },
+        "partyName": { "type": "string", "maxLength": 120 },
+        "receiptId": { "type": "string", "maxLength": 64 },
+        "submittedAt": { "type": "integer" }
+      },
+      "required": ["pollId", "userId", "partyCode", "receiptId", "submittedAt"]
+    },
+    "PollAggregate": {
+      "title": "PollAggregate",
+      "description": "Authoritative server-calculated aggregate response snapshot",
+      "type": "object",
+      "properties": {
+        "pollId": { "type": "string", "maxLength": 64 },
+        "totalResponses": { "type": "integer" },
+        "lastUpdated": { "type": "integer" },
+        "reconciledAt": { "type": "integer" }
+      },
+      "required": ["pollId", "totalResponses", "lastUpdated"]
     }
   },
   "firestore": {
@@ -147,6 +239,26 @@
     "/admins/{adminUid}": {
       "schema": { "$ref": "#/entities/AdminUser" },
       "description": "Authorized election commission returning officers"
+    },
+    "/historical_constituencies_2024/{constituencyId}": {
+      "schema": { "$ref": "#/entities/HistoricalConstituencyRecord" },
+      "description": "Official 2024 Lok Sabha statistical reports and constituency results"
+    },
+    "/political_parties/{partyCode}": {
+      "schema": { "$ref": "#/entities/PoliticalPartyRecord" },
+      "description": "ECI recognized national and state political parties directory"
+    },
+    "/preference_polls/{pollId}": {
+      "schema": { "$ref": "#/entities/PreferencePoll" },
+      "description": "Independent party-preference polls configuration"
+    },
+    "/preference_polls/{pollId}/responses/{userId}": {
+      "schema": { "$ref": "#/entities/PollResponse" },
+      "description": "Persisted authenticated user poll responses"
+    },
+    "/preference_polls/{pollId}/aggregates/{aggId}": {
+      "schema": { "$ref": "#/entities/PollAggregate" },
+      "description": "Authoritative aggregated results per preference poll"
     }
   }
 }

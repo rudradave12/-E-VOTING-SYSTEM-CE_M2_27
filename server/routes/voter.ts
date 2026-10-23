@@ -29,6 +29,22 @@ function checkRateLimit(key: string, limitMs: number): { allowed: boolean; remai
 }
 
 /**
+ * GET /api/voter/config
+ * Exposes non-sensitive public cryptographic configuration (derived signer address, domain, chainId).
+ */
+voterRouter.get('/config', (_req: Request, res: Response): void => {
+  res.status(200).json({
+    success: true,
+    authorizationSignerAddress: SERVER_CONFIG.AUTHORIZATION_SIGNER_PRIVATE_KEY
+      ? new ethers.Wallet(SERVER_CONFIG.AUTHORIZATION_SIGNER_PRIVATE_KEY).address
+      : null,
+    chainId: 31337,
+    domainName: 'BlockBallot',
+    domainVersion: '1',
+  });
+});
+
+/**
  * POST /api/voter/verify
  * Initiates synthetic voter verification and issues an HMAC-SHA256 protected OTP challenge.
  */

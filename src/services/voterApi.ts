@@ -77,6 +77,18 @@ export class VoterApiClient {
   }
 
   /**
+   * GET /api/voter/config
+   */
+  public async getPublicConfig(): Promise<{ success: boolean; authorizationSignerAddress?: string; chainId?: number; domainName?: string }> {
+    try {
+      const res = await fetch('/api/voter/config');
+      return await res.json();
+    } catch {
+      return { success: false };
+    }
+  }
+
+  /**
    * POST /api/voter/verify
    */
   public async verifyVoter(epicId: string): Promise<VerifyVoterResponse> {

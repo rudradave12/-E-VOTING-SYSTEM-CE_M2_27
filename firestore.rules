@@ -88,6 +88,14 @@ service cloud.firestore {
              data.electionId is int;
     }
 
+    function isValidPreferencePoll(data) {
+      return data.keys().hasAll(['id', 'title', 'status', 'createdAt']) &&
+             data.id is string && data.id.size() <= 64 &&
+             data.title is string && data.title.size() <= 200 &&
+             data.status in ['open', 'closed'] &&
+             data.createdAt is int;
+    }
+
     // Collections rules
 
     // 1. Elections: Public read, schema-validated write or admin write
@@ -142,6 +150,44 @@ service cloud.firestore {
     match /admins/{adminUid} {
       allow read: if isSignedIn() && (request.auth.uid == adminUid || isAdmin());
       allow write: if false;
+    }
+
+    // 8. Historical 2024 Constituencies & Results: Strictly READ-ONLY for public visitors and client SDK
+    match /historical_constituencies_2024/{constituencyId} {
+      allow read: if isValidId(constituencyId);
+      allow list: if true;
+      allow write: if false; // Protected from client modification; populated via server import pipeline
+    }
+
+    // 9. Political Parties Directory: Strictly READ-ONLY from client SDK
+    match /political_parties/{partyCode} {
+      allow read: if isValidId(partyCode);
+      allow list: if true;
+      allow write: if false;
+    }
+
+    // 10. Preference Polls Configuration: Public read, admin-managed
+    match /preference_polls/{pollId} {
+      allow read: if isValidId(pollId);
+      allow list: if true;
+      allow create, update: if isAdmin() && isValidId(pollId) && isValidPreferencePoll(request.resource.data);
+      allow delete: if isAdmin() && isValidId(pollId);
+
+      // Subcollection: Poll Responses
+      // Read own response only; write is processed via trusted server transaction to enforce 1 vote per user
+      match /responses/{userId} {
+        allow read: if isValidId(userId) && isSignedIn() && (request.auth.uid == userId || isAdmin());
+        allow list: if isAdmin();
+        allow write: if false; // Must be processed server-side atomically
+      }
+
+      // Subcollection: Poll Aggregates
+      // Read-only to public; updated exclusively by authoritative server transaction
+      match /aggregates/{aggId} {
+        allow read: if isValidId(aggId);
+        allow list: if true;
+        allow write: if false;
+      }
     }
   }
 }

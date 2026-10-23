@@ -39,7 +39,21 @@ export interface Candidate {
   symbolDescription: string;
   symbolSource: string;
   symbolVerificationStatus: SymbolVerificationStatus;
-  symbolKey?: 'LOTUS' | 'HAND' | 'BROOM' | 'ELEPHANT' | 'CORN_SICKLE' | 'NOTA' | 'UNAVAILABLE';
+  symbolKey?:
+    | 'LOTUS'
+    | 'HAND'
+    | 'BROOM'
+    | 'ELEPHANT'
+    | 'CORN_SICKLE'
+    | 'HAMMER_SICKLE_STAR'
+    | 'BOOK'
+    | 'BICYCLE'
+    | 'RISING_SUN'
+    | 'FLOWERS_GRASS'
+    | 'FLAMING_TORCH'
+    | 'BOW_ARROW'
+    | 'NOTA'
+    | 'UNAVAILABLE';
   symbolColor: string;
   education: string;
   age: number;
@@ -116,7 +130,14 @@ export interface AuditEvent {
 }
 
 export type NavigationScreen =
+  | 'home'
   | 'welcome'
+  | 'election-results'
+  | 'vote'
+  | 'political-parties'
+  | 'constituency-info'
+  | 'administration'
+  | 'practice-voting'
   | 'identify'
   | 'otp'
   | 'constituency'

@@ -1,14 +1,24 @@
 import { ethers } from 'ethers';
 import { VotingAuthorizationTicket } from '../types';
+import deploymentManifest from '../contracts/deployment.json';
 
-// Demonstration authorization signer private key for academic testing
-// In production, this resides exclusively on an HSM or secure server backend
-export const DEMO_AUTHORIZATION_SIGNER_PRIVATE_KEY =
-  '0x4f3edf983ac636a65a842ce7c78d9aa706d3b113bce9c46f30d7d21715b23b1d';
+// Dynamic authorization signer address loaded from deployment manifest and updated at runtime via /api/voter/config
+let dynamicAuthorizationSignerAddress: string =
+  deploymentManifest?.authorizationSigner && ethers.isAddress(deploymentManifest.authorizationSigner)
+    ? deploymentManifest.authorizationSigner
+    : '0x95538118D9Bdd4EE0c2404075b7E1116baDAc709';
 
-export const DEMO_AUTHORIZATION_SIGNER_ADDRESS = new ethers.Wallet(
-  DEMO_AUTHORIZATION_SIGNER_PRIVATE_KEY
-).address;
+export function setAuthorizationSignerAddress(address: string): void {
+  if (ethers.isAddress(address)) {
+    dynamicAuthorizationSignerAddress = address;
+  }
+}
+
+export function getAuthorizationSignerAddress(): string {
+  return dynamicAuthorizationSignerAddress;
+}
+
+export const DEMO_AUTHORIZATION_SIGNER_ADDRESS = dynamicAuthorizationSignerAddress;
 
 // Server-side secret salt for synthetic voter commitment hashing
 export const SERVER_COMMITMENT_SALT = 'BLOCKBALLOT_SALT_2024_DEMO_SECRET_XYZ999';
@@ -61,8 +71,7 @@ export function hashOtpCode(otp: string, epicId: string): string {
 }
 
 /**
- * Signs an EIP-712 voting authorization ticket.
- * Executed on server-side authority (or in simulated mode for offline demonstration).
+ * Signs an EIP-712 voting authorization ticket with a provided signer key.
  */
 export async function signVotingAuthorization(
   electionId: number,
@@ -72,7 +81,7 @@ export async function signVotingAuthorization(
   expiry: number,
   chainId: number,
   contractAddress: string,
-  signerPrivateKey: string = DEMO_AUTHORIZATION_SIGNER_PRIVATE_KEY
+  signerPrivateKey: string
 ): Promise<VotingAuthorizationTicket> {
   const wallet = new ethers.Wallet(signerPrivateKey);
   const domain = getEip712Domain(chainId, contractAddress);
@@ -103,7 +112,7 @@ export async function signVotingAuthorization(
  */
 export function verifyVotingAuthorization(
   ticket: VotingAuthorizationTicket,
-  expectedSignerAddress: string = DEMO_AUTHORIZATION_SIGNER_ADDRESS
+  expectedSignerAddress: string = getAuthorizationSignerAddress()
 ): { isValid: boolean; recoveredSigner: string; error?: string } {
   try {
     const domain = getEip712Domain(ticket.chainId, ticket.contractAddress);

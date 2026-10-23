@@ -1,0 +1,16 @@
+{
+  "/app/applet/contracts/IndianElection.sol": {
+    "jobHash": "solc-0_8_24-c4d5f795ec78f14587ce94a6721e46720b9f4f9f",
+    "isolated": false,
+    "compilerType": "solc",
+    "artifactPaths": [
+      "/app/applet/artifacts/contracts/IndianElection.sol/IndianElection.json"
+    ],
+    "buildInfoPath": "/app/applet/artifacts/build-info/solc-0_8_24-c4d5f795ec78f14587ce94a6721e46720b9f4f9f.json",
+    "buildInfoOutputPath": "/app/applet/artifacts/build-info/solc-0_8_24-c4d5f795ec78f14587ce94a6721e46720b9f4f9f.output.json",
+    "typeFilePath": "/app/applet/artifacts/contracts/IndianElection.sol/artifacts.d.ts",
+    "wasm": false,
+    "artifactsDirectory": "/app/applet/artifacts",
+    "emitsTypeDeclarations": true
+  }
+}

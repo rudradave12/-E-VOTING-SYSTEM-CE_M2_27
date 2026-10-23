@@ -21,7 +21,10 @@ import {
   INITIAL_CANDIDATES,
   SYNTHETIC_VOTERS,
 } from './data/mockData';
-import { deriveNullifier, signVotingAuthorization, DEMO_AUTHORIZATION_SIGNER_PRIVATE_KEY } from './utils/crypto';
+import {
+  deriveNullifier,
+  setAuthorizationSignerAddress,
+} from './utils/crypto';
 import { evmSimulator } from './utils/evmSimulator';
 import { voterApi } from './services/voterApi';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
@@ -33,6 +36,12 @@ import { PersonaQuickBar } from './components/PersonaQuickBar';
 import { VotingStepper } from './components/VotingStepper';
 
 // Screens
+import { HomeScreen } from './components/screens/HomeScreen';
+import { ElectionsResultsScreen } from './components/screens/ElectionsResultsScreen';
+import { CandidatesPartiesScreen } from './components/screens/CandidatesPartiesScreen';
+import { ConstituencyInfoScreen } from './components/screens/ConstituencyInfoScreen';
+import { HowItWorksScreen } from './components/screens/HowItWorksScreen';
+import { PracticeVotingScreen } from './components/screens/PracticeVotingScreen';
 import { WelcomeScreen } from './components/screens/WelcomeScreen';
 import { IdentifyScreen } from './components/screens/IdentifyScreen';
 import { OtpScreen } from './components/screens/OtpScreen';
@@ -92,12 +101,8 @@ export function AppInner() {
   const handleOtpVerified = async () => {
     if (!currentVoter) return;
 
-    let ticket: VotingAuthorizationTicket | null = null;
-    let nullifier = deriveNullifier(currentVoter.epicId, activeElection.numericId);
-    let expiry = Math.floor(Date.now() / 1000) + 900;
-
     try {
-      // Call server-side API POST /api/voter/authorization
+      // Request EIP-712 authorization ticket from the server-side authority
       const authRes = await voterApi.requestAuthorization(
         voterWalletAddress,
         activeElection.numericId,
@@ -106,70 +111,63 @@ export function AppInner() {
       );
 
       if (authRes.success && authRes.ticket) {
-        ticket = authRes.ticket;
-        nullifier = authRes.nullifier || nullifier;
-        expiry = authRes.expiresAt || expiry;
+        const ticket = authRes.ticket;
+        const nullifier = authRes.nullifier || deriveNullifier(currentVoter.epicId, activeElection.numericId);
+        const expiry = authRes.expiresAt || Math.floor(Date.now() / 1000) + 900;
+
+        setAuthorizationTicket(ticket);
+
+        setVoters((prev) =>
+          prev.map((v) =>
+            v.id === currentVoter.id
+              ? {
+                  ...v,
+                  status: 'AUTHORIZED',
+                  authorizedWallet: voterWalletAddress,
+                  activeNullifier: nullifier,
+                  ticketExpiry: expiry,
+                }
+              : v
+          )
+        );
+
+        evmSimulator.addAuditEvent({
+          type: 'AUTHORIZATION_SIGNED',
+          description: `EIP-712 voting authorization ticket signed by Election Authority for constituency #${activeConstituency.code}`,
+          electionId: activeElection.numericId,
+          constituencyId: Number(activeConstituency.code),
+          nullifier,
+          isSimulated: isSimulatedEVM,
+        });
+        setAuditEvents(evmSimulator.getAuditEvents());
+
+        setCurrentScreen('constituency');
+      } else {
+        console.error('Failed to obtain voting authorization ticket from server:', authRes.message);
       }
-    } catch {
-      // Fallback to local cryptographic signing
+    } catch (err) {
+      console.error('Network error during voter authorization request:', err);
     }
-
-    if (!ticket) {
-      ticket = await signVotingAuthorization(
-        activeElection.numericId,
-        Number(activeConstituency.code),
-        voterWalletAddress,
-        nullifier,
-        expiry,
-        31337,
-        activeElection.contractAddress,
-        DEMO_AUTHORIZATION_SIGNER_PRIVATE_KEY
-      );
-    }
-
-    setAuthorizationTicket(ticket);
-
-    setVoters((prev) =>
-      prev.map((v) =>
-        v.id === currentVoter.id
-          ? {
-              ...v,
-              status: 'AUTHORIZED',
-              authorizedWallet: voterWalletAddress,
-              activeNullifier: nullifier,
-              ticketExpiry: expiry,
-            }
-          : v
-      )
-    );
-
-    evmSimulator.addAuditEvent({
-      type: 'AUTHORIZATION_SIGNED',
-      description: `EIP-712 voting authorization ticket signed for constituency #${activeConstituency.code}`,
-      electionId: activeElection.numericId,
-      constituencyId: Number(activeConstituency.code),
-      nullifier,
-      isSimulated: isSimulatedEVM,
-    });
-    setAuditEvents(evmSimulator.getAuditEvents());
-
-    setCurrentScreen('constituency');
   };
 
   // Load persistent election and candidate data on boot
   React.useEffect(() => {
     async function loadInitialData() {
       try {
-        const [loadedElections, loadedConstituencies, loadedCandidates, loadedAudit] = await Promise.all([
+        const [loadedElections, loadedConstituencies, loadedCandidates, loadedAudit, serverConfig] = await Promise.all([
           voterApi.getElections(),
           voterApi.getConstituencies(),
           voterApi.getCandidates(),
           voterApi.getAuditEvents(),
+          voterApi.getPublicConfig(),
         ]);
         if (loadedElections.length > 0) setElections(loadedElections);
         if (loadedConstituencies.length > 0) setConstituencies(loadedConstituencies);
         if (loadedCandidates.length > 0) setCandidates(loadedCandidates);
         if (loadedAudit.length > 0) setAuditEvents(loadedAudit);
+        if (serverConfig.success && serverConfig.authorizationSignerAddress) {
+          setAuthorizationSignerAddress(serverConfig.authorizationSignerAddress);
+        }
       } catch (err) {
         console.warn('Initial data load notice:', err);
       }
@@ -345,11 +343,41 @@ export function AppInner() {
       {isVoterFlow && <VotingStepper currentScreen={currentScreen} />}
 
       <main className="flex-1 pb-16">
-        {currentScreen === 'welcome' && (
-          <WelcomeScreen
-            election={activeElection}
-            onStartVoting={() => setCurrentScreen('identify')}
-            onViewResults={() => setCurrentScreen('results')}
+        {(currentScreen === 'welcome' || currentScreen === 'home') && (
+          <HomeScreen
+            onNavigate={(screen) => setCurrentScreen(screen)}
+            onStartPractice={() => setCurrentScreen('practice-voting')}
+          />
+        )}
+
+        {currentScreen === 'elections-results' && (
+          <ElectionsResultsScreen />
+        )}
+
+        {currentScreen === 'candidates-parties' && (
+          <CandidatesPartiesScreen />
+        )}
+
+        {currentScreen === 'constituencies-info' && (
+          <ConstituencyInfoScreen />
+        )}
+
+        {currentScreen === 'how-it-works' && (
+          <HowItWorksScreen
+            onStartPractice={() => setCurrentScreen('practice-voting')}
+          />
+        )}
+
+        {currentScreen === 'practice-voting' && (
+          <PracticeVotingScreen
+            currentVoter={currentVoter}
+            onSelectPersonaAndStart={(persona) => {
+              setCurrentVoter(persona);
+              setCurrentScreen('identify');
+            }}
+            onResetPractice={handleResetSession}
+            onResumePractice={() => setCurrentScreen('identify')}
+            isVotingInProgress={Boolean(currentVoter)}
           />
         )}
 
@@ -357,7 +385,7 @@ export function AppInner() {
           <IdentifyScreen
             activeEpicId={currentVoter?.epicId}
             onVoterIdentified={handleVoterIdentified}
-            onCancel={() => setCurrentScreen('welcome')}
+            onCancel={() => setCurrentScreen('practice-voting')}
           />
         )}
 
@@ -422,18 +450,13 @@ export function AppInner() {
         {currentScreen === 'receipt' && activeReceipt && (
           <ReceiptScreen
             receipt={activeReceipt}
-            onViewResults={() => setCurrentScreen('results')}
+            onViewResults={() => setCurrentScreen('elections-results')}
             onDone={handleResetSession}
           />
         )}
 
         {currentScreen === 'results' && (
-          <ResultsScreen
-            election={activeElection}
-            constituencies={constituencies}
-            candidates={candidates}
-            onBack={() => setCurrentScreen('welcome')}
-          />
+          <ElectionsResultsScreen />
         )}
 
         {currentScreen === 'admin-login' && (
