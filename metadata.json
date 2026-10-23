@@ -1,0 +1,6 @@
+{
+  "name": "BlockBallot — Indian Political Blockchain E-Voting System",
+  "description": "An academic demonstration e-voting platform for Indian parliamentary constituencies featuring civic identity verification, EIP-712 typed authorizations, dual-mode EVM integration, and real-time auditable election analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

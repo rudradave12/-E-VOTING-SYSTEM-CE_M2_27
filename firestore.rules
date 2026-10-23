@@ -1,0 +1,147 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny catch all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Common primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        (request.auth.token.email == 'chintudave12345@gmail.com' && request.auth.token.email_verified == true) ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // Entity validation helpers
+    function isValidElection(data) {
+      return data.keys().hasAll(['id', 'numericId', 'title', 'status', 'startTime', 'endTime', 'contractAddress']) &&
+             data.keys().hasOnly(['id', 'numericId', 'title', 'description', 'status', 'startTime', 'endTime', 'contractAddress', 'totalVotersRegistered', 'totalVotesCast', 'constituencyIds']) &&
+             data.id is string && data.id.size() <= 64 &&
+             data.numericId is int &&
+             data.title is string && data.title.size() <= 200 &&
+             data.status in ['draft', 'active', 'paused', 'concluded'] &&
+             data.startTime is int &&
+             data.endTime is int &&
+             data.contractAddress is string && data.contractAddress.size() <= 42;
+    }
+
+    function isValidConstituency(data) {
+      return data.keys().hasAll(['id', 'code', 'name', 'state', 'totalElectors']) &&
+             data.keys().hasOnly(['id', 'code', 'name', 'state', 'totalElectors', 'turnoutCount']) &&
+             data.id is string && data.id.size() <= 64 &&
+             data.code is string && data.code.size() <= 16 &&
+             data.name is string && data.name.size() <= 100 &&
+             data.state is string && data.state.size() <= 100 &&
+             data.totalElectors is int;
+    }
+
+    function isValidCandidate(data) {
+      return data.keys().hasAll(['id', 'numericId', 'constituencyId', 'name', 'partyName', 'voteCount']) &&
+             data.keys().hasOnly(['id', 'numericId', 'constituencyId', 'name', 'partyName', 'partyAbbreviation', 'symbol', 'symbolColor', 'education', 'age', 'criminalCases', 'assets', 'voteCount']) &&
+             data.id is string && data.id.size() <= 64 &&
+             data.numericId is int &&
+             data.constituencyId is string && data.constituencyId.size() <= 64 &&
+             data.name is string && data.name.size() <= 120 &&
+             data.partyName is string && data.partyName.size() <= 120 &&
+             data.voteCount is int;
+    }
+
+    function isValidVoter(data) {
+      return data.keys().hasAll(['id', 'epicId', 'name', 'constituencyId', 'isEligible', 'status']) &&
+             data.keys().hasOnly(['id', 'epicId', 'name', 'gender', 'age', 'constituencyId', 'pollingStation', 'maskedMobile', 'isEligible', 'status', 'authorizedWallet', 'activeNullifier', 'ticketExpiry', 'votedAt']) &&
+             data.id is string && data.id.size() <= 64 &&
+             data.epicId is string && data.epicId.size() <= 32 &&
+             data.name is string && data.name.size() <= 120 &&
+             data.constituencyId is string && data.constituencyId.size() <= 64 &&
+             data.isEligible is bool &&
+             data.status in ['ELIGIBLE', 'AUTHORIZED', 'VOTED'];
+    }
+
+    function isValidOtpChallenge(data) {
+      return data.keys().hasAll(['epicId', 'hmacHash', 'attemptsRemaining', 'expiresAt', 'isUsed']) &&
+             data.keys().hasOnly(['epicId', 'hmacHash', 'attemptsRemaining', 'expiresAt', 'isUsed', 'createdAt', 'lastRequestedAt']) &&
+             data.epicId is string && data.epicId.size() <= 32 &&
+             data.hmacHash is string && data.hmacHash.size() == 64 &&
+             data.attemptsRemaining is int && data.attemptsRemaining >= 0 && data.attemptsRemaining <= 3 &&
+             data.expiresAt is int &&
+             data.isUsed is bool;
+    }
+
+    function isValidAuditEvent(data) {
+      return data.keys().hasAll(['id', 'timestamp', 'type', 'description', 'electionId']) &&
+             data.keys().hasOnly(['id', 'timestamp', 'type', 'description', 'electionId', 'constituencyId', 'txHash', 'blockNumber', 'nullifier', 'isSimulated']) &&
+             data.id is string && data.id.size() <= 64 &&
+             data.timestamp is int &&
+             data.type in ['ELECTION_STATE', 'CANDIDATE_REGISTERED', 'OTP_ISSUED', 'AUTHORIZATION_SIGNED', 'VOTE_CAST', 'NULLIFIER_SPENT', 'ADMIN_ACTION', 'TRANSACTION_RECOVERY'] &&
+             data.description is string && data.description.size() <= 500 &&
+             data.electionId is int;
+    }
+
+    // Collections rules
+
+    // 1. Elections: Public read, schema-validated write or admin write
+    match /elections/{electionId} {
+      allow read: if isValidId(electionId);
+      allow list: if true;
+      allow create, update: if isValidId(electionId) && (isAdmin() || isValidElection(request.resource.data));
+      allow delete: if isAdmin() && isValidId(electionId);
+    }
+
+    // 2. Constituencies: Public read, schema-validated write or admin write
+    match /constituencies/{constituencyId} {
+      allow read: if isValidId(constituencyId);
+      allow list: if true;
+      allow create, update: if isValidId(constituencyId) && (isAdmin() || isValidConstituency(request.resource.data));
+      allow delete: if isAdmin() && isValidId(constituencyId);
+    }
+
+    // 3. Candidates: Public read, schema-validated write or admin write
+    match /candidates/{candidateId} {
+      allow read: if isValidId(candidateId);
+      allow list: if true;
+      allow create, update: if isValidId(candidateId) && (isAdmin() || isValidCandidate(request.resource.data));
+      allow delete: if isAdmin() && isValidId(candidateId);
+    }
+
+    // 4. Voters: Read eligibility by ID or list, write verified by schema
+    match /voters/{voterId} {
+      allow read: if isValidId(voterId);
+      allow list: if true;
+      allow create, update: if isValidId(voterId) && (isAdmin() || isValidVoter(request.resource.data));
+      allow delete: if isAdmin() && isValidId(voterId);
+    }
+
+    // 5. OTP Challenges: get by specific epicId only (no bulk listing), write validated by HMAC schema
+    match /otp_challenges/{epicId} {
+      allow get: if isValidId(epicId);
+      allow list: if false; // Prevents enumeration of all active challenges
+      allow create, update: if isValidId(epicId) && isValidOtpChallenge(request.resource.data);
+      allow delete: if isAdmin() && isValidId(epicId);
+    }
+
+    // 6. Audit Events: Public read, immutable append-only creation
+    match /audit_events/{eventId} {
+      allow read: if isValidId(eventId);
+      allow list: if true;
+      allow create: if isValidId(eventId) && isValidAuditEvent(request.resource.data);
+      allow update, delete: if false; // Strict immutability for election audit logs
+    }
+
+    // 7. Admins: Read by authenticated admin, write locked
+    match /admins/{adminUid} {
+      allow read: if isSignedIn() && (request.auth.uid == adminUid || isAdmin());
+      allow write: if false;
+    }
+  }
+}
