@@ -1,4 +1,5 @@
 import express from 'express';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
@@ -40,8 +41,8 @@ async function startServer() {
     const origin = req.headers.origin;
     if (origin) {
       if (!isProd) {
-        // In local development / test, allow loopback addresses
-        if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+        // In local development / test, allow loopback addresses and render domain
+        if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) || origin.includes('.onrender.com')) {
           res.setHeader('Access-Control-Allow-Origin', origin);
           res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
           res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -119,17 +120,21 @@ async function startServer() {
   });
 
   // Vite development integration or static serving
-  if (!isProd) {
+  const distDir = path.resolve(__dirname, 'dist');
+  const distExists = fs.existsSync(path.join(distDir, 'index.html'));
+
+  if (isProd || distExists) {
+    app.use(express.static(distDir));
+    app.get('*', (_req, res, next) => {
+      if (_req.path.startsWith('/api/')) return next();
+      res.sendFile(path.join(distDir, 'index.html'));
+    });
+  } else {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, allowedHosts: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
-  } else {
-    app.use(express.static(path.resolve(__dirname, 'dist')));
-    app.get('*', (_req, res) => {
-      res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
-    });
   }
 
   // Centralized safe error handler: sanitizes errors in production to prevent stack trace disclosure
