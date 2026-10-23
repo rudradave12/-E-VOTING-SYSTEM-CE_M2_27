@@ -1,6 +1,0 @@
-{
-  "summary":  "Final implementation plan for BlockBallot incorporating EIP-712 typed data signing with OpenZeppelin EIP712/ECDSA, idempotent on-chain reconciliation before ticket reissuance, HMAC-SHA-256 persistent OTP verification, explicit documentation of operator-side identity-to-nullifier correlation limits, contract hardening with non-zero ID validation, duplicate candidate guards, timestamp windows, and comprehensive test suite specifications.",
-  "updatedAt":  "2026-10-23T10:10:54.908576589Z",
-  "requestFeedback":  true,
-  "userFacing":  true
-}

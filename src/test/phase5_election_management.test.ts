@@ -229,7 +229,7 @@ test('BlockBallot — Phase 5: Election Management & Voting Logic Test Suite', a
   });
 
   await t.test('6. Server-side Firestore persistence and database ID verification', async () => {
-    const expectedDbId = process.env.FIRESTORE_EMULATOR_HOST ? '(default)' : 'ai-studio-565633a9-76eb-4419-9891-05e6de180d7c';
+    const expectedDbId = process.env.FIRESTORE_DATABASE_ID || '(default)';
     assert.equal(SERVER_CONFIG.FIRESTORE_DATABASE_ID, expectedDbId);
     const expectedProjectId = process.env.GCLOUD_PROJECT || 'e-voting-system-india';
     assert.equal(SERVER_CONFIG.PROJECT_ID, expectedProjectId);

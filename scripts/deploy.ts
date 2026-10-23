@@ -51,7 +51,7 @@ export async function deployContract(
   const authorizationSignerAddress = SERVER_AUTHORIZATION_SIGNER_ADDRESS;
   if (!authorizationSignerAddress) {
     throw new Error(
-      'Cannot deploy: SERVER_AUTHORIZATION_SIGNER_KEY is missing or invalid in server environment. Please configure it in AI Studio Secrets.'
+      'Cannot deploy: SERVER_AUTHORIZATION_SIGNER_KEY is missing or invalid in server environment. Please configure it in .env or environment variables.'
     );
   }
 

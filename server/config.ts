@@ -64,13 +64,7 @@ export const SERVER_CONFIG = {
 
   // Target Firestore Database ID
   get FIRESTORE_DATABASE_ID(): string {
-    if (process.env.FIRESTORE_EMULATOR_HOST && !process.env.FIRESTORE_DATABASE_ID) {
-      return '(default)';
-    }
-    return (
-      process.env.FIRESTORE_DATABASE_ID ||
-      'ai-studio-565633a9-76eb-4419-9891-05e6de180d7c'
-    );
+    return process.env.FIRESTORE_DATABASE_ID || '(default)';
   },
 
   get PROJECT_ID(): string {

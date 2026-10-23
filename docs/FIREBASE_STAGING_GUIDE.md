@@ -3,7 +3,7 @@
 > [!CAUTION]
 > **Owner-Executed Procedure Only**
 > This guide is an administrative reference for project owners configuring a staging environment.
-> **Antigravity agents must not execute live provisioning, deploy security rules, upload credentials, or incur cloud costs during local development.**
+> **Automated scripts and developers must not execute live provisioning, deploy security rules, upload credentials, or incur cloud costs during local development without authorization.**
 
 ---
 

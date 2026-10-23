@@ -5,12 +5,16 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+import http from 'http';
+import express from 'express';
 import { deployContract } from '../../scripts/deploy';
+import { voterRouter } from '../../server/routes/voter';
+import { adminRouter } from '../../server/routes/admin';
+import { serverStore } from '../../server/store';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const SERVER_URL = 'http://127.0.0.1:3000';
 const RPC_URL = 'http://127.0.0.1:8545';
 
 test('BlockBallot — Phase 7D: Local Blockchain & Smart Contract Integration', async (t) => {
@@ -25,6 +29,31 @@ test('BlockBallot — Phase 7D: Local Blockchain & Smart Contract Integration', 
     t.skip('Local Hardhat node at http://127.0.0.1:8545 is not running; skipping integration test');
     return;
   }
+
+  // Spin up an isolated in-process server with fresh mock voter state
+  serverStore.resetVoters();
+  const app = express();
+  app.use(express.json());
+  app.use('/api/voter', voterRouter);
+  app.use('/api/admin', adminRouter);
+  app.use('/api', adminRouter);
+
+  let testServer: http.Server | undefined;
+  let SERVER_URL = 'http://127.0.0.1:3000';
+
+  await new Promise<void>((resolve) => {
+    testServer = app.listen(0, '127.0.0.1', () => {
+      const addr = testServer!.address() as { port: number };
+      SERVER_URL = `http://127.0.0.1:${addr.port}`;
+      resolve();
+    });
+  });
+
+  t.after(async () => {
+    if (testServer) {
+      await new Promise<void>((res) => testServer!.close(() => res()));
+    }
+  });
 
   // Deploy fresh contract for isolated test run
   const deploymentResult = await deployContract(RPC_URL);

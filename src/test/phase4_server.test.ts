@@ -189,7 +189,7 @@ test('6. Server configuration and secret validation', () => {
   const check = validateServerConfig();
   assert.equal(check.isValid, true);
   assert.ok(SERVER_CONFIG.HMAC_SECRET.length >= 32, 'HMAC secret must meet minimum entropy length');
-  const expectedDbId = process.env.FIRESTORE_EMULATOR_HOST ? '(default)' : 'ai-studio-565633a9-76eb-4419-9891-05e6de180d7c';
+  const expectedDbId = process.env.FIRESTORE_DATABASE_ID || '(default)';
   assert.equal(SERVER_CONFIG.FIRESTORE_DATABASE_ID, expectedDbId);
 });
 
