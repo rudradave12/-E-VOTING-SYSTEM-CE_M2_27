@@ -6,3 +6,9 @@ coverage/
 *.log
 .env*
 !.env.example
+*.pem
+*.key
+*.cert
+*serviceAccount*.json
+*credential*.json
+.firebase/

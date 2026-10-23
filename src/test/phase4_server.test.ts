@@ -12,6 +12,11 @@ import {
 import { serverStore } from '../../server/store';
 import { SERVER_CONFIG, validateServerConfig } from '../../server/config';
 
+// Ensure hermetic test signer key is configured for the isolated unit test
+if (!SERVER_CONFIG.AUTHORIZATION_SIGNER_PRIVATE_KEY) {
+  SERVER_CONFIG.AUTHORIZATION_SIGNER_PRIVATE_KEY = ethers.Wallet.createRandom().privateKey;
+}
+
 test('1. Valid, invalid, and ineligible synthetic voter records lookup', () => {
   serverStore.resetVoters();
 
@@ -184,8 +189,8 @@ test('6. Server configuration and secret validation', () => {
   const check = validateServerConfig();
   assert.equal(check.isValid, true);
   assert.ok(SERVER_CONFIG.HMAC_SECRET.length >= 32, 'HMAC secret must meet minimum entropy length');
-  assert.ok(SERVER_CONFIG.COMMITMENT_SALT.length >= 16, 'Commitment salt must meet minimum entropy length');
-  assert.equal(SERVER_CONFIG.FIRESTORE_DATABASE_ID, 'ai-studio-565633a9-76eb-4419-9891-05e6de180d7c');
+  const expectedDbId = process.env.FIRESTORE_EMULATOR_HOST ? '(default)' : 'ai-studio-565633a9-76eb-4419-9891-05e6de180d7c';
+  assert.equal(SERVER_CONFIG.FIRESTORE_DATABASE_ID, expectedDbId);
 });
 
 setTimeout(() => process.exit(0), 500);

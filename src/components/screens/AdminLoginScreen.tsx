@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { CivicEmblem } from '../CivicEmblem';
-import { Lock, Shield, ArrowRight, ArrowLeft, KeyRound, AlertCircle } from 'lucide-react';
+import { Lock, Shield, ArrowRight, AlertCircle, Loader2 } from 'lucide-react';
 import { voterApi } from '../../services/voterApi';
+import { auth } from '../../lib/firebase';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 
 interface AdminLoginScreenProps {
   onLoginSuccess: () => void;
@@ -12,28 +14,53 @@ export const AdminLoginScreen: React.FC<AdminLoginScreenProps> = ({
   onLoginSuccess,
   onCancel,
 }) => {
-  const [email, setEmail] = useState<string>('officer@eci.gov.in');
-  const [password, setPassword] = useState<string>('eci-officer-2024');
+  const [email, setEmail] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setIsLoading(true);
 
     try {
-      const res = await voterApi.adminLogin(email.trim(), password.trim());
+      let idToken: string | undefined;
+
+      // 1. Authenticate against Firebase Auth to receive a signed ID token
+      try {
+        const credential = await signInWithEmailAndPassword(auth, email.trim(), password.trim());
+        idToken = await credential.user.getIdToken();
+      } catch (fbAuthErr: any) {
+        // If an administrative officer ID token was supplied directly in the key field
+        if (password.trim().startsWith('eyJ')) {
+          idToken = password.trim();
+        } else {
+          setError(
+            fbAuthErr.message
+              ? `Authentication failed: ${fbAuthErr.message}`
+              : 'Invalid administrative credentials. Access denied.'
+          );
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      // 2. Transmit verified Firebase ID token to the hardened server-side authorization gateway
+      const res = await voterApi.adminLogin(idToken);
       if (res.success) {
         onLoginSuccess();
       } else {
-        setError(res.message || 'Invalid administrative credentials.');
+        // Fail closed
+        setError(res.message || 'Access denied: Valid Commission officer authorization required.');
       }
-    } catch {
-      // Fallback check
-      if (email.trim() === 'officer@eci.gov.in' && password.trim() === 'eci-officer-2024') {
-        onLoginSuccess();
-      } else {
-        setError('Invalid administrative credentials. Please use the test officer credentials provided.');
-      }
+    } catch (err: any) {
+      // Fail closed: Never grant access on network, server, or unverified states
+      setError(
+        err.message || 'Authentication gateway unreachable. Administrative access denied.'
+      );
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -53,20 +80,15 @@ export const AdminLoginScreen: React.FC<AdminLoginScreenProps> = ({
           </p>
         </div>
 
-        {/* Demo Credentials Box */}
-        <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-lg text-xs text-amber-950 mb-6 space-y-1">
-          <div className="flex items-center gap-1.5 font-bold text-amber-900">
-            <KeyRound className="w-3.5 h-3.5" />
-            <span>Academic Demonstration Credentials:</span>
+        {/* Security Policy Notice */}
+        <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 mb-6 space-y-1">
+          <div className="flex items-center gap-1.5 font-bold text-slate-900">
+            <Lock className="w-3.5 h-3.5 text-slate-700" />
+            <span>Strict Administrative Authorization:</span>
           </div>
-          <div className="flex justify-between font-mono text-[11px]">
-            <span className="text-slate-600">Officer Email:</span>
-            <span className="font-semibold text-slate-900">officer@eci.gov.in</span>
-          </div>
-          <div className="flex justify-between font-mono text-[11px]">
-            <span className="text-slate-600">Password:</span>
-            <span className="font-semibold text-slate-900">eci-officer-2024</span>
-          </div>
+          <p className="text-[11px] text-slate-600 leading-relaxed">
+            Officers must authenticate using Commission-issued credentials. Authentication is cryptographically verified against the server-side role registry and audited.
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -79,22 +101,26 @@ export const AdminLoginScreen: React.FC<AdminLoginScreenProps> = ({
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              placeholder="officer@domain.gov.in"
               className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white"
               required
+              disabled={isLoading}
             />
           </div>
 
           <div>
             <label htmlFor="admin-password" className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
-              Access Key / Password
+              Officer Password / ID Token
             </label>
             <input
               id="admin-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••••••"
               className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white"
               required
+              disabled={isLoading}
             />
           </div>
 
@@ -107,16 +133,27 @@ export const AdminLoginScreen: React.FC<AdminLoginScreenProps> = ({
 
           <button
             type="submit"
-            className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer mt-2"
+            disabled={isLoading}
+            className="w-full py-3 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-700 text-white font-semibold rounded-lg text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer mt-2"
           >
-            <Shield className="w-4 h-4 text-amber-400" />
-            <span>Authenticate Commission Access</span>
-            <ArrowRight className="w-4 h-4" />
+            {isLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+                <span>Verifying Officer Credentials...</span>
+              </>
+            ) : (
+              <>
+                <Shield className="w-4 h-4 text-amber-400" />
+                <span>Authenticate Commission Access</span>
+                <ArrowRight className="w-4 h-4" />
+              </>
+            )}
           </button>
 
           <button
             type="button"
             onClick={onCancel}
+            disabled={isLoading}
             className="w-full py-2 text-xs font-medium text-slate-500 hover:text-slate-800 text-center transition-colors cursor-pointer block"
           >
             Return to Public Portal

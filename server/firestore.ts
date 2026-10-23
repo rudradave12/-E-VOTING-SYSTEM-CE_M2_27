@@ -1,22 +1,9 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import {
-  getFirestore,
-  doc,
-  getDoc,
-  setDoc,
-  updateDoc,
-  collection,
-  getDocs,
-  query,
-  where,
-  orderBy,
-  limit,
-  runTransaction,
-  Firestore,
-} from 'firebase/firestore';
+import { Firestore } from 'firebase-admin/firestore';
 import crypto from 'crypto';
-import firebaseConfig from '../firebase-applet-config.json';
-import { SERVER_CONFIG } from './config';
+import {
+  getFirebaseAdminFirestore,
+  isFirebaseConfigured,
+} from './firebaseAdmin';
 import { Election, Constituency, Candidate, VoterRecord, AuditEvent } from '../src/types';
 import {
   INITIAL_ELECTIONS,
@@ -32,19 +19,42 @@ import {
 } from '../src/data/historical2024';
 import { OtpChallengeRecord } from './store';
 
-// Initialize Firebase App for server-side persistence
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+/**
+ * Shared Firestore instance via Firebase Admin SDK.
+ * Dynamically proxies to getFirebaseAdminFirestore() so that test mocks or
+ * emulator environments can be swapped transparently without rebuilding adapters.
+ */
+export const serverDb = new Proxy({} as Firestore, {
+  get(_target, prop) {
+    const db = getFirebaseAdminFirestore();
+    const value = (db as any)[prop];
+    if (typeof value === 'function') {
+      return value.bind(db);
+    }
+    return value;
+  },
+});
 
-// Explicitly connect to dedicated Firestore database ID
-export const serverDb: Firestore = getFirestore(app, SERVER_CONFIG.FIRESTORE_DATABASE_ID);
+/**
+ * Asserts that Firebase Admin credentials or an emulator environment are configured.
+ * Fails closed with an actionable error if neither credentials nor emulator is available.
+ */
+function assertConfigured(): void {
+  if (!isFirebaseConfigured()) {
+    throw new Error(
+      'Firebase Admin credentials not configured: Server-side Firestore operations require FIREBASE_SERVICE_ACCOUNT_KEY, GOOGLE_APPLICATION_CREDENTIALS, or FIRESTORE_EMULATOR_HOST. Persistent storage cannot proceed without valid credentials.'
+    );
+  }
+}
 
 /**
  * 1. OTP Challenge Persistence in Firestore (/otp_challenges/{epicId})
  */
 export async function saveOtpChallengeToFirestore(challenge: OtpChallengeRecord): Promise<void> {
+  assertConfigured();
   const epicKey = challenge.epicId.trim().toUpperCase();
-  const docRef = doc(serverDb, 'otp_challenges', epicKey);
-  await setDoc(docRef, {
+  const docRef = serverDb.collection('otp_challenges').doc(epicKey);
+  await docRef.set({
     epicId: epicKey,
     hmacHash: challenge.hmacHash,
     attemptsRemaining: challenge.attemptsRemaining,
@@ -56,11 +66,12 @@ export async function saveOtpChallengeToFirestore(challenge: OtpChallengeRecord)
 }
 
 export async function getOtpChallengeFromFirestore(epicId: string): Promise<OtpChallengeRecord | null> {
+  assertConfigured();
   const epicKey = epicId.trim().toUpperCase();
-  const docRef = doc(serverDb, 'otp_challenges', epicKey);
-  const snap = await getDoc(docRef);
-  if (!snap.exists()) return null;
-  const data = snap.data();
+  const docRef = serverDb.collection('otp_challenges').doc(epicKey);
+  const snap = await docRef.get();
+  if (!snap.exists) return null;
+  const data = snap.data()!;
   return {
     epicId: data.epicId,
     hmacHash: data.hmacHash,
@@ -76,7 +87,8 @@ export async function getOtpChallengeFromFirestore(epicId: string): Promise<OtpC
  * 2. Voter Lifecycle State Persistence in Firestore (/voters/{voterId})
  */
 export async function saveVoterRecordToFirestore(voter: VoterRecord): Promise<void> {
-  const docRef = doc(serverDb, 'voters', voter.id);
+  assertConfigured();
+  const docRef = serverDb.collection('voters').doc(voter.id);
   const payload: any = {
     id: voter.id,
     epicId: voter.epicId.trim().toUpperCase(),
@@ -94,21 +106,20 @@ export async function saveVoterRecordToFirestore(voter: VoterRecord): Promise<vo
   if (voter.ticketExpiry) payload.ticketExpiry = voter.ticketExpiry;
   if (voter.votedAt) payload.votedAt = voter.votedAt;
 
-  await setDoc(docRef, payload, { merge: true });
+  await docRef.set(payload, { merge: true });
 }
 
 export async function getVoterRecordByEpicFromFirestore(epicId: string): Promise<VoterRecord | null> {
+  assertConfigured();
   const epicKey = epicId.trim().toUpperCase();
-  const colRef = collection(serverDb, 'voters');
-  const q = query(colRef, where('epicId', '==', epicKey), limit(1));
-  const snap = await getDocs(q);
+  const snap = await serverDb.collection('voters').where('epicId', '==', epicKey).limit(1).get();
   if (snap.empty) return null;
   return snap.docs[0].data() as VoterRecord;
 }
 
 export async function getAllVotersFromFirestore(): Promise<VoterRecord[]> {
-  const colRef = collection(serverDb, 'voters');
-  const snap = await getDocs(colRef);
+  assertConfigured();
+  const snap = await serverDb.collection('voters').get();
   return snap.docs.map((d) => d.data() as VoterRecord);
 }
 
@@ -116,8 +127,9 @@ export async function getAllVotersFromFirestore(): Promise<VoterRecord[]> {
  * 3. Elections Persistence in Firestore (/elections/{electionId})
  */
 export async function saveElectionToFirestore(election: Election): Promise<void> {
-  const docRef = doc(serverDb, 'elections', election.id);
-  await setDoc(docRef, {
+  assertConfigured();
+  const docRef = serverDb.collection('elections').doc(election.id);
+  await docRef.set({
     id: election.id,
     numericId: election.numericId,
     title: election.title,
@@ -133,15 +145,16 @@ export async function saveElectionToFirestore(election: Election): Promise<void>
 }
 
 export async function getAllElectionsFromFirestore(): Promise<Election[]> {
-  const colRef = collection(serverDb, 'elections');
-  const snap = await getDocs(colRef);
+  assertConfigured();
+  const snap = await serverDb.collection('elections').get();
   return snap.docs.map((d) => d.data() as Election);
 }
 
 export async function getElectionByIdFromFirestore(id: string): Promise<Election | null> {
-  const docRef = doc(serverDb, 'elections', id);
-  const snap = await getDoc(docRef);
-  if (!snap.exists()) return null;
+  assertConfigured();
+  const docRef = serverDb.collection('elections').doc(id);
+  const snap = await docRef.get();
+  if (!snap.exists) return null;
   return snap.data() as Election;
 }
 
@@ -149,8 +162,9 @@ export async function getElectionByIdFromFirestore(id: string): Promise<Election
  * 4. Constituencies Persistence in Firestore (/constituencies/{constituencyId})
  */
 export async function saveConstituencyToFirestore(constituency: Constituency): Promise<void> {
-  const docRef = doc(serverDb, 'constituencies', constituency.id);
-  await setDoc(docRef, {
+  assertConfigured();
+  const docRef = serverDb.collection('constituencies').doc(constituency.id);
+  await docRef.set({
     id: constituency.id,
     code: constituency.code,
     name: constituency.name,
@@ -161,8 +175,8 @@ export async function saveConstituencyToFirestore(constituency: Constituency): P
 }
 
 export async function getAllConstituenciesFromFirestore(): Promise<Constituency[]> {
-  const colRef = collection(serverDb, 'constituencies');
-  const snap = await getDocs(colRef);
+  assertConfigured();
+  const snap = await serverDb.collection('constituencies').get();
   return snap.docs.map((d) => d.data() as Constituency);
 }
 
@@ -170,8 +184,9 @@ export async function getAllConstituenciesFromFirestore(): Promise<Constituency[
  * 5. Candidates Persistence in Firestore (/candidates/{candidateId})
  */
 export async function saveCandidateToFirestore(candidate: Candidate): Promise<void> {
-  const docRef = doc(serverDb, 'candidates', candidate.id);
-  await setDoc(docRef, {
+  assertConfigured();
+  const docRef = serverDb.collection('candidates').doc(candidate.id);
+  await docRef.set({
     id: candidate.id,
     numericId: candidate.numericId,
     constituencyId: candidate.constituencyId,
@@ -189,8 +204,8 @@ export async function saveCandidateToFirestore(candidate: Candidate): Promise<vo
 }
 
 export async function getAllCandidatesFromFirestore(): Promise<Candidate[]> {
-  const colRef = collection(serverDb, 'candidates');
-  const snap = await getDocs(colRef);
+  assertConfigured();
+  const snap = await serverDb.collection('candidates').get();
   return snap.docs.map((d) => d.data() as Candidate);
 }
 
@@ -198,7 +213,8 @@ export async function getAllCandidatesFromFirestore(): Promise<Candidate[]> {
  * 6. Audit Events (Append-Only) in Firestore (/audit_events/{eventId})
  */
 export async function appendAuditEventToFirestore(event: AuditEvent): Promise<void> {
-  const docRef = doc(serverDb, 'audit_events', event.id);
+  assertConfigured();
+  const docRef = serverDb.collection('audit_events').doc(event.id);
   const payload: any = {
     id: event.id,
     timestamp: event.timestamp,
@@ -212,12 +228,12 @@ export async function appendAuditEventToFirestore(event: AuditEvent): Promise<vo
   if (event.blockNumber) payload.blockNumber = event.blockNumber;
   if (event.nullifier) payload.nullifier = event.nullifier;
 
-  await setDoc(docRef, payload);
+  await docRef.set(payload);
 }
 
 export async function getAllAuditEventsFromFirestore(): Promise<AuditEvent[]> {
-  const colRef = collection(serverDb, 'audit_events');
-  const snap = await getDocs(colRef);
+  assertConfigured();
+  const snap = await serverDb.collection('audit_events').get();
   const events = snap.docs.map((d) => d.data() as AuditEvent);
   return events.sort((a, b) => b.timestamp - a.timestamp);
 }
@@ -226,8 +242,9 @@ export async function getAllAuditEventsFromFirestore(): Promise<AuditEvent[]> {
  * 7. Official 2024 Lok Sabha Historical Results Persistence (/historical_constituencies_2024/{id})
  */
 export async function saveHistoricalConstituencyToFirestore(record: HistoricalConstituencyRecord): Promise<void> {
-  const docRef = doc(serverDb, 'historical_constituencies_2024', record.id);
-  await setDoc(docRef, {
+  assertConfigured();
+  const docRef = serverDb.collection('historical_constituencies_2024').doc(record.id);
+  await docRef.set({
     ...record,
     electionYear: 2024,
     importTimestamp: Date.now(),
@@ -238,8 +255,8 @@ export async function saveHistoricalConstituencyToFirestore(record: HistoricalCo
 }
 
 export async function getAllHistoricalConstituenciesFromFirestore(): Promise<HistoricalConstituencyRecord[]> {
-  const colRef = collection(serverDb, 'historical_constituencies_2024');
-  const snap = await getDocs(colRef);
+  assertConfigured();
+  const snap = await serverDb.collection('historical_constituencies_2024').get();
   if (snap.empty) {
     // If not yet persisted, return verified module records
     return HISTORICAL_CONSTITUENCIES_2024;
@@ -248,9 +265,10 @@ export async function getAllHistoricalConstituenciesFromFirestore(): Promise<His
 }
 
 export async function getHistoricalConstituencyByIdFromFirestore(id: string): Promise<HistoricalConstituencyRecord | null> {
-  const docRef = doc(serverDb, 'historical_constituencies_2024', id);
-  const snap = await getDoc(docRef);
-  if (!snap.exists()) {
+  assertConfigured();
+  const docRef = serverDb.collection('historical_constituencies_2024').doc(id);
+  const snap = await docRef.get();
+  if (!snap.exists) {
     const memoryRecord = HISTORICAL_CONSTITUENCIES_2024.find((c) => c.id === id);
     return memoryRecord || null;
   }
@@ -261,8 +279,9 @@ export async function getHistoricalConstituencyByIdFromFirestore(id: string): Pr
  * 8. Political Parties Directory Persistence (/political_parties/{partyCode})
  */
 export async function savePoliticalPartyToFirestore(party: RecognizedPartyRecord): Promise<void> {
-  const docRef = doc(serverDb, 'political_parties', party.code);
-  await setDoc(docRef, {
+  assertConfigured();
+  const docRef = serverDb.collection('political_parties').doc(party.code);
+  await docRef.set({
     ...party,
     id: party.code,
     importTimestamp: Date.now(),
@@ -271,8 +290,8 @@ export async function savePoliticalPartyToFirestore(party: RecognizedPartyRecord
 }
 
 export async function getAllPoliticalPartiesFromFirestore(): Promise<RecognizedPartyRecord[]> {
-  const colRef = collection(serverDb, 'political_parties');
-  const snap = await getDocs(colRef);
+  assertConfigured();
+  const snap = await serverDb.collection('political_parties').get();
   if (snap.empty) {
     return RECOGNIZED_PARTIES;
   }
@@ -289,6 +308,7 @@ export async function importOfficialHistorical2024Data(force: boolean = false): 
   message: string;
 }> {
   try {
+    assertConfigured();
     // Validate integrity before storing
     for (const c of HISTORICAL_CONSTITUENCIES_2024) {
       if (!c.id || !c.name || !c.state || !c.winnerName || !c.winnerParty) {
@@ -366,13 +386,14 @@ export interface PollAggregateRecord {
 }
 
 export async function initPreferencePollIfNotExists(): Promise<void> {
-  const pollRef = doc(serverDb, 'preference_polls', DEFAULT_PREFERENCE_POLL_ID);
-  const snap = await getDoc(pollRef);
+  assertConfigured();
+  const pollRef = serverDb.collection('preference_polls').doc(DEFAULT_PREFERENCE_POLL_ID);
+  const snap = await pollRef.get();
 
-  if (!snap.exists()) {
+  if (!snap.exists) {
     console.log('[Firestore] Initializing independent party-preference poll configuration...');
     const now = Date.now();
-    await setDoc(pollRef, {
+    await pollRef.set({
       id: DEFAULT_PREFERENCE_POLL_ID,
       title: 'National Political Party Preference Poll (2024)',
       titleHi: 'राष्ट्रीय राजनीतिक दल प्राथमिकता जनमत (2024)',
@@ -385,13 +406,13 @@ export async function initPreferencePollIfNotExists(): Promise<void> {
     });
 
     // Initialize clean aggregate document with ZERO responses (No fake votes!)
-    const aggRef = doc(serverDb, 'preference_polls', DEFAULT_PREFERENCE_POLL_ID, 'aggregates', 'current');
+    const aggRef = serverDb.collection('preference_polls').doc(DEFAULT_PREFERENCE_POLL_ID).collection('aggregates').doc('current');
     const initialTallies: Record<string, number> = {};
     for (const p of RECOGNIZED_PARTIES) {
       initialTallies[p.code] = 0;
     }
 
-    await setDoc(aggRef, {
+    await aggRef.set({
       pollId: DEFAULT_PREFERENCE_POLL_ID,
       totalResponses: 0,
       partyTallies: initialTallies,
@@ -402,16 +423,18 @@ export async function initPreferencePollIfNotExists(): Promise<void> {
 }
 
 export async function getPreferencePollFromFirestore(pollId: string = DEFAULT_PREFERENCE_POLL_ID): Promise<PreferencePollConfig | null> {
-  const pollRef = doc(serverDb, 'preference_polls', pollId);
-  const snap = await getDoc(pollRef);
-  if (!snap.exists()) return null;
+  assertConfigured();
+  const pollRef = serverDb.collection('preference_polls').doc(pollId);
+  const snap = await pollRef.get();
+  if (!snap.exists) return null;
   return snap.data() as PreferencePollConfig;
 }
 
 export async function getPollAggregateFromFirestore(pollId: string = DEFAULT_PREFERENCE_POLL_ID): Promise<PollAggregateRecord | null> {
-  const aggRef = doc(serverDb, 'preference_polls', pollId, 'aggregates', 'current');
-  const snap = await getDoc(aggRef);
-  if (!snap.exists()) {
+  assertConfigured();
+  const aggRef = serverDb.collection('preference_polls').doc(pollId).collection('aggregates').doc('current');
+  const snap = await aggRef.get();
+  if (!snap.exists) {
     // Return empty zero-state
     const initialTallies: Record<string, number> = {};
     for (const p of RECOGNIZED_PARTIES) {
@@ -429,9 +452,10 @@ export async function getPollAggregateFromFirestore(pollId: string = DEFAULT_PRE
 }
 
 export async function getUserPollResponseFromFirestore(pollId: string, userId: string): Promise<PollResponseRecord | null> {
-  const respRef = doc(serverDb, 'preference_polls', pollId, 'responses', userId);
-  const snap = await getDoc(respRef);
-  if (!snap.exists()) return null;
+  assertConfigured();
+  const respRef = serverDb.collection('preference_polls').doc(pollId).collection('responses').doc(userId);
+  const snap = await respRef.get();
+  if (!snap.exists) return null;
   return snap.data() as PollResponseRecord;
 }
 
@@ -452,21 +476,27 @@ export async function submitPollResponseToFirestore(
   message: string;
   receipt?: PollResponseRecord;
 }> {
+  try {
+    assertConfigured();
+  } catch (err: any) {
+    return { success: false, message: err.message };
+  }
+
   const normalizedPartyCode = partyCode.trim();
   const partyRecord = RECOGNIZED_PARTIES.find((p) => p.code === normalizedPartyCode);
   if (!partyRecord) {
     return { success: false, message: `Invalid party code: ${partyCode}. Must be one of the 10 recognized parties.` };
   }
 
-  const pollDocRef = doc(serverDb, 'preference_polls', pollId);
-  const userRespDocRef = doc(serverDb, 'preference_polls', pollId, 'responses', userId);
-  const aggDocRef = doc(serverDb, 'preference_polls', pollId, 'aggregates', 'current');
+  const pollDocRef = serverDb.collection('preference_polls').doc(pollId);
+  const userRespDocRef = serverDb.collection('preference_polls').doc(pollId).collection('responses').doc(userId);
+  const aggDocRef = serverDb.collection('preference_polls').doc(pollId).collection('aggregates').doc('current');
 
   try {
-    const receipt = await runTransaction(serverDb, async (transaction) => {
+    const receipt = await serverDb.runTransaction(async (transaction) => {
       // 1. Check poll status
       const pollSnap = await transaction.get(pollDocRef);
-      if (!pollSnap.exists()) {
+      if (!pollSnap.exists) {
         throw new Error('POLL_NOT_FOUND');
       }
       const pollData = pollSnap.data() as PreferencePollConfig;
@@ -476,7 +506,7 @@ export async function submitPollResponseToFirestore(
 
       // 2. Check duplicate submission
       const userRespSnap = await transaction.get(userRespDocRef);
-      if (userRespSnap.exists()) {
+      if (userRespSnap.exists) {
         throw new Error('ALREADY_SUBMITTED');
       }
 
@@ -485,7 +515,7 @@ export async function submitPollResponseToFirestore(
       let currentTotal = 0;
       let currentTallies: Record<string, number> = {};
 
-      if (aggSnap.exists()) {
+      if (aggSnap.exists) {
         const aggData = aggSnap.data() as PollAggregateRecord;
         currentTotal = aggData.totalResponses || 0;
         currentTallies = { ...(aggData.partyTallies || {}) };
@@ -552,8 +582,9 @@ export async function reconcilePollAggregatesInFirestore(pollId: string = DEFAUL
   totalResponses: number;
   partyTallies: Record<string, number>;
 }> {
-  const respColRef = collection(serverDb, 'preference_polls', pollId, 'responses');
-  const snap = await getDocs(respColRef);
+  assertConfigured();
+  const respColRef = serverDb.collection('preference_polls').doc(pollId).collection('responses');
+  const snap = await respColRef.get();
 
   const total = snap.size;
   const tallies: Record<string, number> = {};
@@ -569,8 +600,8 @@ export async function reconcilePollAggregatesInFirestore(pollId: string = DEFAUL
   });
 
   const now = Date.now();
-  const aggRef = doc(serverDb, 'preference_polls', pollId, 'aggregates', 'current');
-  await setDoc(aggRef, {
+  const aggRef = serverDb.collection('preference_polls').doc(pollId).collection('aggregates').doc('current');
+  await aggRef.set({
     pollId,
     totalResponses: total,
     partyTallies: tallies,
@@ -589,8 +620,9 @@ export async function updatePreferencePollStatus(
   pollId: string,
   newStatus: 'open' | 'closed'
 ): Promise<boolean> {
-  const pollRef = doc(serverDb, 'preference_polls', pollId);
-  await updateDoc(pollRef, {
+  assertConfigured();
+  const pollRef = serverDb.collection('preference_polls').doc(pollId);
+  await pollRef.update({
     status: newStatus,
     updatedAt: Date.now(),
   });
@@ -601,6 +633,11 @@ export async function updatePreferencePollStatus(
  * Seed Initial Synthetic Data and Historical Archives into Firestore
  */
 export async function seedInitialFirestoreData(): Promise<void> {
+  if (!isFirebaseConfigured()) {
+    console.warn('[Firestore] Notice: Firebase Admin credentials not configured. Skipping initial cloud seeding.');
+    return;
+  }
+
   try {
     // 1. Synthetic Elections
     const elections = await getAllElectionsFromFirestore();

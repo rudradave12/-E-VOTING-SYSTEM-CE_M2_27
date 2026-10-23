@@ -1,4 +1,4 @@
-export type ElectionStatus = 'draft' | 'active' | 'paused' | 'concluded';
+export type ElectionStatus = 'draft' | 'scheduled' | 'active' | 'paused' | 'concluded';
 
 export interface Election {
   id: string; // e.g. "GE-2024"
@@ -12,6 +12,8 @@ export interface Election {
   totalVotersRegistered: number;
   totalVotesCast: number;
   constituencyIds: string[];
+  electionType?: string; // e.g., 'Lok Sabha General Election (Academic Demo)' | 'State Assembly'
+  isDemoElection?: boolean;
 }
 
 export interface Constituency {
@@ -132,10 +134,15 @@ export interface AuditEvent {
 export type NavigationScreen =
   | 'home'
   | 'welcome'
+  | 'available-elections'
   | 'election-results'
+  | 'elections-results'
   | 'vote'
   | 'political-parties'
+  | 'candidates-parties'
   | 'constituency-info'
+  | 'constituencies-info'
+  | 'how-it-works'
   | 'administration'
   | 'practice-voting'
   | 'identify'
@@ -146,9 +153,40 @@ export type NavigationScreen =
   | 'metamask'
   | 'receipt'
   | 'results'
+  | 'preference-poll'
   | 'admin-login'
   | 'admin-dashboard'
   | 'admin-elections'
   | 'admin-candidates'
   | 'admin-voters'
   | 'admin-audit';
+
+export interface PreferencePollConfig {
+  id: string;
+  title: string;
+  titleHi: string;
+  description: string;
+  descriptionHi: string;
+  status: 'open' | 'closed';
+  createdAt: number;
+  updatedAt: number;
+  isOfficialECI: false;
+}
+
+export interface PollResponseRecord {
+  pollId: string;
+  userId: string;
+  partyCode: string;
+  partyName: string;
+  receiptId: string;
+  submittedAt: number;
+}
+
+export interface PollAggregateRecord {
+  pollId: string;
+  totalResponses: number;
+  partyTallies: Record<string, number>;
+  lastUpdated: number;
+  reconciledAt: number;
+}
+

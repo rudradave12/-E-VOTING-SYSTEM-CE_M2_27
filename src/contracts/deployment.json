@@ -2,9 +2,12 @@
   "contractName": "IndianElection",
   "chainId": 31337,
   "networkName": "hardhat-local",
-  "contractAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-  "authorizationSigner": "0x95538118D9Bdd4EE0c2404075b7E1116baDAc709",
-  "deployedAt": "2026-10-23T14:12:59.743Z",
+  "contractAddress": "0xA56F946D6398Dd7d9D4D9B337Cf9E0F68982ca5B",
+  "authorizationSigner": "0x07b303c0596A412CCfb5e0a6876c01c121da516a",
+  "deployedAt": "2026-10-23T19:26:51.821Z",
+  "isTestDeployment": true,
+  "environment": "test-only",
+  "disclaimer": "Academic prototype only. Ballot choices are submitted as plaintext candidate IDs on-chain and are publicly visible in transaction input data and emitted events. Does not provide ballot secrecy or real-election suitability.",
   "abi": [
     {
       "inputs": [

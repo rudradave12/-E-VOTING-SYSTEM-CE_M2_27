@@ -18,7 +18,9 @@ service cloud.firestore {
 
     function isAdmin() {
       return isSignedIn() && (
-        (request.auth.token.email == 'chintudave12345@gmail.com' && request.auth.token.email_verified == true) ||
+        request.auth.token.admin == true ||
+        request.auth.token.role == 'commissioner' ||
+        request.auth.token.role == 'officer' ||
         exists(/databases/$(database)/documents/admins/$(request.auth.uid))
       );
     }
@@ -98,51 +100,48 @@ service cloud.firestore {
 
     // Collections rules
 
-    // 1. Elections: Public read, schema-validated write or admin write
+    // 1. Elections: Public read, authorized officer write
     match /elections/{electionId} {
       allow read: if isValidId(electionId);
       allow list: if true;
-      allow create, update: if isValidId(electionId) && (isAdmin() || isValidElection(request.resource.data));
+      allow create, update: if isValidId(electionId) && isAdmin() && isValidElection(request.resource.data);
       allow delete: if isAdmin() && isValidId(electionId);
     }
 
-    // 2. Constituencies: Public read, schema-validated write or admin write
+    // 2. Constituencies: Public read, authorized officer write
     match /constituencies/{constituencyId} {
       allow read: if isValidId(constituencyId);
       allow list: if true;
-      allow create, update: if isValidId(constituencyId) && (isAdmin() || isValidConstituency(request.resource.data));
+      allow create, update: if isValidId(constituencyId) && isAdmin() && isValidConstituency(request.resource.data);
       allow delete: if isAdmin() && isValidId(constituencyId);
     }
 
-    // 3. Candidates: Public read, schema-validated write or admin write
+    // 3. Candidates: Public read, authorized officer write
     match /candidates/{candidateId} {
       allow read: if isValidId(candidateId);
       allow list: if true;
-      allow create, update: if isValidId(candidateId) && (isAdmin() || isValidCandidate(request.resource.data));
+      allow create, update: if isValidId(candidateId) && isAdmin() && isValidCandidate(request.resource.data);
       allow delete: if isAdmin() && isValidId(candidateId);
     }
 
-    // 4. Voters: Read eligibility by ID or list, write verified by schema
+    // 4. Voters: Protected elector roll. Bulk listing restricted to admin officers; direct client tampering blocked.
     match /voters/{voterId} {
-      allow read: if isValidId(voterId);
-      allow list: if true;
-      allow create, update: if isValidId(voterId) && (isAdmin() || isValidVoter(request.resource.data));
+      allow read: if isValidId(voterId) && (isAdmin() || (isSignedIn() && request.auth.uid == voterId));
+      allow list: if isAdmin();
+      allow create, update: if isAdmin() && isValidId(voterId) && isValidVoter(request.resource.data);
       allow delete: if isAdmin() && isValidId(voterId);
     }
 
-    // 5. OTP Challenges: get by specific epicId only (no bulk listing), write validated by HMAC schema
+    // 5. OTP Challenges: Strictly server-side HMAC challenges; client direct read/write prohibited.
     match /otp_challenges/{epicId} {
-      allow get: if isValidId(epicId);
-      allow list: if false; // Prevents enumeration of all active challenges
-      allow create, update: if isValidId(epicId) && isValidOtpChallenge(request.resource.data);
-      allow delete: if isAdmin() && isValidId(epicId);
+      allow read, write: if false;
     }
 
-    // 6. Audit Events: Public read, immutable append-only creation
+    // 6. Audit Events: Public read for transparency; creation strictly requires verified admin officer
     match /audit_events/{eventId} {
       allow read: if isValidId(eventId);
       allow list: if true;
-      allow create: if isValidId(eventId) && isValidAuditEvent(request.resource.data);
+      allow create: if isValidId(eventId) && isAdmin() && isValidAuditEvent(request.resource.data);
       allow update, delete: if false; // Strict immutability for election audit logs
     }
 

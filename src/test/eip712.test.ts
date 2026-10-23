@@ -4,7 +4,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { ethers } from 'ethers';
-import { signVotingAuthorization, deriveNullifier } from '../utils/crypto';
+import { signVotingAuthorization } from '../utils/crypto';
+import { deriveServerNullifier } from '../../server/crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,6 +23,18 @@ const TEST_ACCOUNTS = [
 ];
 
 test('BlockBallot — On-Chain EIP-712 Typed Signing & Ballot Execution Test Suite', async (t) => {
+  const isNodeRunning = await fetch('http://127.0.0.1:8545', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_blockNumber', params: [] }),
+    signal: AbortSignal.timeout(600),
+  }).then((r) => r.ok).catch(() => false);
+
+  if (!isNodeRunning) {
+    t.skip('Local Hardhat node at http://127.0.0.1:8545 is not running; skipping on-chain live tests');
+    return;
+  }
+
   const provider = new ethers.JsonRpcProvider('http://127.0.0.1:8545');
   const artifact = loadArtifact();
 
@@ -56,7 +69,7 @@ test('BlockBallot — On-Chain EIP-712 Typed Signing & Ballot Execution Test Sui
 
   // 1. Valid EIP-712 voting authorization and on-chain vote cast
   await t.test('1. Valid EIP-712 authorization ticket executes successfully and updates tallies', async () => {
-    const nullifier1 = deriveNullifier('IND-DL-982341', electionId);
+    const nullifier1 = deriveServerNullifier('IND-DL-982341', electionId);
     const expiry = now + 1800; // +30 minutes
 
     const ticket1 = await signVotingAuthorization(
@@ -102,7 +115,7 @@ test('BlockBallot — On-Chain EIP-712 Typed Signing & Ballot Execution Test Sui
 
   // 2. Single-use nullifier duplicate vote prevention
   await t.test('2. Duplicate vote attempt with identical nullifier strictly reverts', async () => {
-    const nullifier1 = deriveNullifier('IND-DL-982341', electionId);
+    const nullifier1 = deriveServerNullifier('IND-DL-982341', electionId);
     const expiry = now + 1800;
 
     const ticket1 = await signVotingAuthorization(
@@ -135,7 +148,7 @@ test('BlockBallot — On-Chain EIP-712 Typed Signing & Ballot Execution Test Sui
   // 3. Forged signature rejection
   await t.test('3. Forged EIP-712 signature from unauthorized key is rejected', async () => {
     const rogueSigner = ethers.Wallet.createRandom();
-    const nullifier2 = deriveNullifier('IND-DL-112233', electionId);
+    const nullifier2 = deriveServerNullifier('IND-DL-112233', electionId);
     const expiry = now + 1800;
 
     const forgedTicket = await signVotingAuthorization(
@@ -167,7 +180,7 @@ test('BlockBallot — On-Chain EIP-712 Typed Signing & Ballot Execution Test Sui
 
   // 4. Sender binding check (wrong wallet)
   await t.test('4. Ballot submitted from unbonded wallet is rejected', async () => {
-    const nullifier3 = deriveNullifier('IND-DL-445566', electionId);
+    const nullifier3 = deriveServerNullifier('IND-DL-445566', electionId);
     const expiry = now + 1800;
 
     // Ticket authorized specifically for voter2
@@ -201,7 +214,7 @@ test('BlockBallot — On-Chain EIP-712 Typed Signing & Ballot Execution Test Sui
 
   // 5. Expired authorization ticket rejection
   await t.test('5. Expired authorization ticket is rejected on-chain', async () => {
-    const nullifierExpired = deriveNullifier('IND-DL-778899', electionId);
+    const nullifierExpired = deriveServerNullifier('IND-DL-778899', electionId);
     const expiredTimestamp = now - 60; // Expired 1 minute ago
 
     const expiredTicket = await signVotingAuthorization(
@@ -233,7 +246,7 @@ test('BlockBallot — On-Chain EIP-712 Typed Signing & Ballot Execution Test Sui
 
   // 6. Invalid candidate / constituency combinations
   await t.test('6. Unregistered candidate ID in constituency reverts', async () => {
-    const nullifierUnreg = deriveNullifier('IND-DL-990011', electionId);
+    const nullifierUnreg = deriveServerNullifier('IND-DL-990011', electionId);
     const expiry = now + 1800;
 
     const ticket = await signVotingAuthorization(
@@ -266,7 +279,7 @@ test('BlockBallot — On-Chain EIP-712 Typed Signing & Ballot Execution Test Sui
 
   // 7. ChainId and VerifyingContract domain binding
   await t.test('7. Signature created for wrong chainId or contract address is rejected', async () => {
-    const nullifierCross = deriveNullifier('IND-DL-334455', electionId);
+    const nullifierCross = deriveServerNullifier('IND-DL-334455', electionId);
     const expiry = now + 1800;
 
     // Wrong chainId (e.g. 1 instead of 31337)

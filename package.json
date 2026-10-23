@@ -8,9 +8,12 @@
     "build": "vite build",
     "start": "tsx server.ts",
     "preview": "vite preview",
-    "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx --test src/test/*.test.ts"
+    "test": "tsx --test --test-concurrency=1 src/test/*.test.ts",
+    "node:start": "hardhat --config hardhat.config.cjs node --hostname 127.0.0.1 --port 8545",
+    "contract:deploy": "tsx scripts/deploy.ts",
+    "emulator:start": "firebase emulators:start --only firestore",
+    "emulator:test": "firebase emulators:exec --only firestore \"tsx --test src/test/phase7a2_emulator_integration.test.ts\""
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -21,6 +24,7 @@
     "ethers": "^6.13.5",
     "express": "^4.21.2",
     "firebase": "^11.4.0",
+    "firebase-admin": "^14.5.0",
     "hardhat": "^3.21.0",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",

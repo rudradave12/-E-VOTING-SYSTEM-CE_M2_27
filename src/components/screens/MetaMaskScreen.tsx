@@ -38,6 +38,9 @@ export const MetaMaskScreen: React.FC<MetaMaskScreenProps> = ({
   onVoteSuccess,
   onCancel,
 }) => {
+  const [walletMode, setWalletMode] = useState<'simulator' | 'metamask'>(
+    isSimulatedEVM ? 'simulator' : 'metamask'
+  );
   const [txState, setTxState] = useState<TxProgressState>('idle');
   const [pendingTxHash, setPendingTxHash] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -45,8 +48,8 @@ export const MetaMaskScreen: React.FC<MetaMaskScreenProps> = ({
   const handleCastVote = async () => {
     setErrorMessage(null);
 
-    // MODE 1: In-Browser Deterministic EVM Simulator
-    if (isSimulatedEVM) {
+    // MODE 1: In-Browser Deterministic EVM Simulator / Academic Testnet Signer
+    if (walletMode === 'simulator') {
       setTxState('mining');
       try {
         const result = await evmSimulator.castVote(
@@ -75,7 +78,7 @@ export const MetaMaskScreen: React.FC<MetaMaskScreenProps> = ({
     // MODE 2: Real MetaMask / EIP-1193 Web3 Execution
     if (typeof window === 'undefined' || !(window as any).ethereum) {
       setErrorMessage(
-        'MetaMask extension was not detected in this browser. Please install the MetaMask extension, or switch to the built-in EVM Simulator in the top-right toggle.'
+        'MetaMask extension was not detected in this browser. You can select "Academic Testnet Signer" above for instant zero-setup demonstration.'
       );
       return;
     }
@@ -211,18 +214,75 @@ export const MetaMaskScreen: React.FC<MetaMaskScreenProps> = ({
             Authorize On-Chain Ballot Transaction
           </h2>
           <p className="mt-1 text-sm text-slate-600">
-            Submit your cryptographically authorized vote to the EVM state machine.
+            Select your authorization wallet method to broadcast your cryptographically verified vote.
           </p>
+        </div>
+
+        {/* Academic Prototype Transparency & Ballot Privacy Disclosure */}
+        <div className="p-3.5 bg-amber-50/90 border border-amber-300 rounded-lg text-xs text-amber-900 mb-6 space-y-1">
+          <div className="flex items-center gap-2 font-bold text-amber-950">
+            <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
+            <span>Academic Prototype Notice & Ballot Privacy Disclosure</span>
+          </div>
+          <p className="leading-relaxed text-[11px] text-amber-800">
+            On public EVM blockchains, smart contract function arguments (including candidate and constituency identifiers) are stored in transaction calldata and receipt logs. While elector personal data (EPIC ID, phone number) is decoupled using pseudonymous nullifiers, this prototype does not provide cryptographic ballot secrecy (e.g., zero-knowledge proofs) and is not legally approved for official Indian elections.
+          </p>
+        </div>
+
+        {/* Wallet Connection Selection Step */}
+        <div className="mb-6">
+          <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
+            Select Wallet Authorization Method
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={() => setWalletMode('simulator')}
+              className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                walletMode === 'simulator'
+                  ? 'border-orange-500 bg-orange-50/60 ring-2 ring-orange-400'
+                  : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
+              }`}
+            >
+              <div className="flex items-center gap-2 font-bold text-xs text-slate-900 mb-1">
+                <Cpu className="w-4 h-4 text-cyan-600" />
+                <span>Academic Testnet Signer</span>
+              </div>
+              <p className="text-[11px] text-slate-500 leading-normal">
+                Instant cryptographic signing using local EVM / test node without browser extensions.
+              </p>
+            </button>
+
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={() => setWalletMode('metamask')}
+              className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                walletMode === 'metamask'
+                  ? 'border-orange-500 bg-orange-50/60 ring-2 ring-orange-400'
+                  : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
+              }`}
+            >
+              <div className="flex items-center gap-2 font-bold text-xs text-slate-900 mb-1">
+                <Wallet className="w-4 h-4 text-emerald-600" />
+                <span>MetaMask Web3 Extension</span>
+              </div>
+              <p className="text-[11px] text-slate-500 leading-normal">
+                Connect external browser Web3 extension to submit transaction to configured EVM node.
+              </p>
+            </button>
+          </div>
         </div>
 
         {/* Execution Mode Card */}
         <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 mb-6">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-              {isSimulatedEVM ? (
+              {walletMode === 'simulator' ? (
                 <>
                   <Cpu className="w-4 h-4 text-cyan-600" />
-                  Execution Target: In-Browser EVM Simulator
+                  Execution Target: Academic Testnet / Local Ledger
                 </>
               ) : (
                 <>
@@ -232,7 +292,7 @@ export const MetaMaskScreen: React.FC<MetaMaskScreenProps> = ({
               )}
             </span>
             <span className="text-[11px] font-mono text-slate-500">
-              Chain ID: {ticket.chainId} · {isSimulatedEVM ? 'Simulated' : 'Local / Testnet'}
+              Chain ID: {ticket.chainId} · {walletMode === 'simulator' ? 'Simulated' : 'Local / Testnet'}
             </span>
           </div>
 
@@ -311,11 +371,11 @@ export const MetaMaskScreen: React.FC<MetaMaskScreenProps> = ({
         )}
 
         {/* Local node setup notice for real MetaMask mode */}
-        {!isSimulatedEVM && (
+        {walletMode === 'metamask' && (
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-600 mb-6 flex items-start gap-2">
             <Info className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
             <p>
-              MetaMask connects to your local Hardhat EVM network at <code className="font-mono text-slate-800">http://127.0.0.1:8545</code> (Chain ID <code className="font-mono text-slate-800">31337</code>). In sandbox preview, use the built-in EVM Simulator for instant zero-setup demonstration.
+              MetaMask connects to your local Hardhat EVM network at <code className="font-mono text-slate-800">http://127.0.0.1:8545</code> (Chain ID <code className="font-mono text-slate-800">31337</code>). For zero-setup test voting, select &quot;Academic Testnet Signer&quot; above.
             </p>
           </div>
         )}

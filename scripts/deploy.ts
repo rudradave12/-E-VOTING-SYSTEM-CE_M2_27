@@ -32,6 +32,21 @@ export async function deployContract(
 
   const wallet = new ethers.Wallet(deployerKey, provider);
 
+  // Verify network and prevent accidental public chain deployment
+  const network = await provider.getNetwork();
+  const chainId = Number(network.chainId);
+  const isLocalChain = chainId === 31337 || chainId === 1337;
+
+  if (!isLocalChain && process.env.ALLOW_PUBLIC_DEPLOYMENT !== 'true') {
+    throw new Error(
+      `Accidental public deployment blocked: Connected to non-local chainId ${chainId}. To deploy to a remote/public network, explicit ALLOW_PUBLIC_DEPLOYMENT=true is required.`
+    );
+  }
+
+  if (!isLocalChain && deployerKey.toLowerCase() === '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80') {
+    throw new Error('SECURITY VIOLATION: Cannot deploy to a non-local network with default Hardhat test account #0.');
+  }
+
   // Import verified runtime authorization signer address from server config
   const authorizationSignerAddress = SERVER_AUTHORIZATION_SIGNER_ADDRESS;
   if (!authorizationSignerAddress) {
@@ -42,6 +57,7 @@ export async function deployContract(
 
   console.log(`[Deploy] Deployer Address: ${wallet.address}`);
   console.log(`[Deploy] Target Authorization Signer Address: ${authorizationSignerAddress}`);
+  console.log(`[Deploy] Target Network: Chain ID ${chainId} (${isLocalChain ? 'local test' : 'remote/public'})`);
 
   let nonce = await wallet.getNonce('latest');
 
@@ -75,15 +91,18 @@ export async function deployContract(
   console.log('[Deploy] Activating election status...');
   await (await (contract as any).setElectionStatus(18, 1, { nonce: nonce++ })).wait(); // Status 1 = Active
 
-  // Write deployment manifest
-  const network = await provider.getNetwork();
+  // Write deployment manifest with explicit test-only and security metadata
   const manifest = {
     contractName: 'IndianElection',
-    chainId: Number(network.chainId),
-    networkName: 'hardhat-local',
+    chainId,
+    networkName: isLocalChain ? 'hardhat-local' : (network.name || `chain-${chainId}`),
     contractAddress: deployedAddress,
     authorizationSigner: authorizationSignerAddress,
     deployedAt: new Date().toISOString(),
+    isTestDeployment: isLocalChain,
+    environment: isLocalChain ? 'test-only' : 'staging',
+    disclaimer:
+      'Academic prototype only. Ballot choices are submitted as plaintext candidate IDs on-chain and are publicly visible in transaction input data and emitted events. Does not provide ballot secrecy or real-election suitability.',
     abi: artifact.abi,
   };
 

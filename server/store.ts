@@ -270,6 +270,15 @@ class ServerStore {
     return this.elections.get(id);
   }
 
+  public findElectionByNumericId(numericId: number): Election | undefined {
+    for (const election of this.elections.values()) {
+      if (Number(election.numericId) === Number(numericId)) {
+        return election;
+      }
+    }
+    return undefined;
+  }
+
   public createElection(data: Omit<Election, 'totalVotesCast' | 'totalVotersRegistered'>): Election {
     const newElection: Election = {
       ...data,
@@ -293,12 +302,19 @@ class ServerStore {
     const nowSec = Math.floor(Date.now() / 1000);
 
     // Enforce valid lifecycle transitions
-    // draft -> active
+    // draft -> scheduled, active
+    // scheduled -> active, draft
     // active -> paused, concluded
     // paused -> active, concluded
     // concluded -> terminal (immutable)
     if (current === 'concluded') {
       return { success: false, message: 'Concluded election is terminal and cannot transition.' };
+    }
+
+    if (newStatus === 'scheduled') {
+      if (election.endTime <= election.startTime) {
+        return { success: false, message: 'Election closing deadline must be strictly after the start time.' };
+      }
     }
 
     if (newStatus === 'active') {

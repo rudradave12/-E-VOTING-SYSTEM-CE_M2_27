@@ -292,6 +292,56 @@ voterRouter.post('/authorization', async (req: Request, res: Response): Promise<
     return;
   }
 
+  const targetElection =
+    serverStore.findElectionByNumericId(Number(electionId)) ||
+    serverStore.getElectionById(String(electionId));
+
+  if (!targetElection) {
+    res.status(404).json({ success: false, message: 'Election record not found.' });
+    return;
+  }
+
+  // Backend election lifecycle enforcement
+  if (targetElection.status !== 'active') {
+    res.status(403).json({
+      success: false,
+      message: `Election is not currently active for voting (Current state: ${targetElection.status.toUpperCase()}).`,
+      status: targetElection.status.toUpperCase(),
+    });
+    return;
+  }
+
+  // Backend deadline enforcement
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (nowSec < targetElection.startTime) {
+    res.status(403).json({
+      success: false,
+      message: 'Voting has not opened yet for this election schedule.',
+      status: 'SCHEDULED',
+    });
+    return;
+  }
+
+  if (nowSec > targetElection.endTime) {
+    res.status(403).json({
+      success: false,
+      message: 'Voting deadline has concluded for this election.',
+      status: 'CONCLUDED',
+    });
+    return;
+  }
+
+  // Constituency eligibility check
+  if (targetElection.constituencyIds && targetElection.constituencyIds.length > 0) {
+    if (!targetElection.constituencyIds.includes(session.constituencyId)) {
+      res.status(403).json({
+        success: false,
+        message: 'Your registered constituency is not enrolled in this election.',
+      });
+      return;
+    }
+  }
+
   // Derive pseudonymous nullifier
   const nullifier = deriveServerNullifier(voter.epicId, Number(electionId));
 
@@ -405,19 +455,33 @@ voterRouter.get('/session', (req: Request, res: Response): void => {
  */
 voterRouter.post('/record-vote', (req: Request, res: Response): void => {
   const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : undefined;
+  const token = authHeader?.startsWith('Bearer ')
+    ? authHeader.substring(7)
+    : (req.body.sessionToken as string | undefined);
   const { epicId, nullifier, electionId, constituencyId, txHash, isSimulated } = req.body;
 
-  let verifiedEpic = epicId;
+  let verifiedEpic: string | undefined = undefined;
   if (token) {
     const session = serverStore.getSession(token);
     if (session) verifiedEpic = session.epicId;
   }
 
+  // Voter identity cannot be selected by supplying an arbitrary user ID
+  if (!verifiedEpic) {
+    if (SERVER_CONFIG.NODE_ENV === 'production') {
+      res.status(401).json({
+        success: false,
+        message: 'Unauthorized: Voter participation can only be recorded using a verified voter session token.',
+      });
+      return;
+    }
+    verifiedEpic = epicId;
+  }
+
   if (!verifiedEpic || !nullifier) {
     res.status(400).json({
       success: false,
-      message: 'Missing required parameters (epicId or sessionToken, and nullifier).',
+      message: 'Missing required parameters (valid sessionToken and nullifier).',
     });
     return;
   }
@@ -478,13 +542,35 @@ voterRouter.post('/record-vote', (req: Request, res: Response): void => {
  * Idempotent transaction recovery for aborted, reverted, or network-interrupted ballot submissions.
  */
 voterRouter.post('/recover-transaction', (req: Request, res: Response): void => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.startsWith('Bearer ')
+    ? authHeader.substring(7)
+    : (req.body.sessionToken as string | undefined);
   const { epicId, nullifier } = req.body;
-  if (!epicId) {
-    res.status(400).json({ success: false, message: 'Elector EPIC ID required for transaction recovery.' });
+
+  let verifiedEpic: string | undefined = undefined;
+  if (token) {
+    const session = serverStore.getSession(token);
+    if (session) verifiedEpic = session.epicId;
+  }
+
+  if (!verifiedEpic) {
+    if (SERVER_CONFIG.NODE_ENV === 'production') {
+      res.status(401).json({
+        success: false,
+        message: 'Unauthorized: Transaction recovery requires a verified voter session token.',
+      });
+      return;
+    }
+    verifiedEpic = epicId;
+  }
+
+  if (!verifiedEpic) {
+    res.status(400).json({ success: false, message: 'Elector EPIC ID or active session token required for transaction recovery.' });
     return;
   }
 
-  const voter = serverStore.findVoterByEpic(epicId);
+  const voter = serverStore.findVoterByEpic(verifiedEpic);
   if (!voter) {
     res.status(404).json({ success: false, message: 'Elector record not found.' });
     return;
@@ -492,7 +578,7 @@ voterRouter.post('/recover-transaction', (req: Request, res: Response): void => 
 
   // Reconcile against on-chain nullifier status
   if (nullifier && serverStore.isNullifierSpentOnChain(nullifier)) {
-    serverStore.updateVoterStatus(epicId, 'VOTED');
+    serverStore.updateVoterStatus(verifiedEpic, 'VOTED');
     res.status(200).json({
       success: true,
       recovered: false,
@@ -519,11 +605,11 @@ voterRouter.post('/recover-transaction', (req: Request, res: Response): void => 
     id: `audit-recovery-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     timestamp: Date.now(),
     type: 'TRANSACTION_RECOVERY',
-    description: `Transaction recovery invoked for elector ${epicId}. Reverted unmined authorization to ELIGIBLE.`,
+    description: `Transaction recovery invoked for elector ${verifiedEpic}. Reverted unmined authorization to ELIGIBLE.`,
     electionId: 1,
   });
 
-  serverStore.logSecure('Recovered elector transaction state to ELIGIBLE', { epicId });
+  serverStore.logSecure('Recovered elector transaction state to ELIGIBLE', { epicId: verifiedEpic });
 
   res.status(200).json({
     success: true,

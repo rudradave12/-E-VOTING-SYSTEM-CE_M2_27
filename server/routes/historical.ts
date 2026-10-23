@@ -6,6 +6,7 @@ import {
   importOfficialHistorical2024Data,
 } from '../firestore';
 import { HISTORICAL_PROVENANCE, BATCH_IMPORT_SPECIFICATION } from '../../src/data/historical2024';
+import { verifyAdminAuth } from './admin';
 
 export const historicalRouter = Router();
 
@@ -86,8 +87,14 @@ historicalRouter.get('/parties', async (_req: Request, res: Response): Promise<v
 /**
  * POST /api/historical/import
  * Idempotent batch import pipeline for official records
+ * Strictly requires verified administrator authentication
  */
 historicalRouter.post('/import', async (req: Request, res: Response): Promise<void> => {
+  if (!verifyAdminAuth(req)) {
+    res.status(403).json({ success: false, message: 'Unauthorized. Officer administrative authentication required.' });
+    return;
+  }
+
   try {
     const result = await importOfficialHistorical2024Data(true);
     res.status(200).json({

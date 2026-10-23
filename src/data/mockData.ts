@@ -4,15 +4,17 @@ export const INITIAL_ELECTIONS: Election[] = [
   {
     id: 'GE-2024',
     numericId: 18,
-    title: '18th Lok Sabha General Election 2024',
-    description: 'General Parliamentary Election to elect Members of Parliament representing Parliamentary Constituencies across India.',
+    title: '18th Lok Sabha 2024 (Academic Demo Election)',
+    description: 'Academic demonstration election seeded with researched 2024 Lok Sabha candidates from New Delhi, Varanasi, Wayanad, and Bangalore South. Ballots start at zero.',
     status: 'active',
     startTime: Math.floor(Date.now() / 1000) - 86400 * 2, // Started 2 days ago
     endTime: Math.floor(Date.now() / 1000) + 86400 * 5, // Ends in 5 days
     contractAddress: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
     totalVotersRegistered: 48950,
-    totalVotesCast: 31420,
+    totalVotesCast: 0,
     constituencyIds: ['CONST-04-ND', 'CONST-77-VAR', 'CONST-04-WAY', 'CONST-26-BLR'],
+    electionType: 'Lok Sabha General Election (Academic Demo)',
+    isDemoElection: true,
   },
   {
     id: 'BYE-2024',
@@ -26,6 +28,8 @@ export const INITIAL_ELECTIONS: Election[] = [
     totalVotersRegistered: 12400,
     totalVotesCast: 0,
     constituencyIds: ['CONST-04-ND'],
+    electionType: 'State Legislative Assembly (By-Election)',
+    isDemoElection: false,
   },
 ];
 
@@ -36,7 +40,7 @@ export const INITIAL_CONSTITUENCIES: Constituency[] = [
     name: 'New Delhi',
     state: 'NCT of Delhi',
     totalElectors: 14200,
-    turnoutCount: 9230,
+    turnoutCount: 0,
     candidateIds: ['CAND-ND-01', 'CAND-ND-02', 'CAND-ND-03', 'CAND-ND-04'],
   },
   {
@@ -45,7 +49,7 @@ export const INITIAL_CONSTITUENCIES: Constituency[] = [
     name: 'Varanasi',
     state: 'Uttar Pradesh',
     totalElectors: 16500,
-    turnoutCount: 11450,
+    turnoutCount: 0,
     candidateIds: ['CAND-VAR-01', 'CAND-VAR-02', 'CAND-VAR-03'],
   },
   {
@@ -54,7 +58,7 @@ export const INITIAL_CONSTITUENCIES: Constituency[] = [
     name: 'Wayanad',
     state: 'Kerala',
     totalElectors: 11150,
-    turnoutCount: 7890,
+    turnoutCount: 0,
     candidateIds: ['CAND-WAY-01', 'CAND-WAY-02', 'CAND-WAY-03'],
   },
   {
@@ -63,7 +67,7 @@ export const INITIAL_CONSTITUENCIES: Constituency[] = [
     name: 'Bangalore South',
     state: 'Karnataka',
     totalElectors: 7100,
-    turnoutCount: 2850,
+    turnoutCount: 0,
     candidateIds: ['CAND-BLR-01', 'CAND-BLR-02', 'CAND-BLR-03'],
   },
 ];
@@ -89,7 +93,7 @@ export const INITIAL_CANDIDATES: Candidate[] = [
     age: 42,
     criminalCases: 0,
     assets: '₹19.2 Cr',
-    voteCount: 3840,
+    voteCount: 0,
   },
   {
     id: 'CAND-ND-02',
@@ -110,7 +114,7 @@ export const INITIAL_CANDIDATES: Candidate[] = [
     age: 50,
     criminalCases: 2,
     assets: '₹4.8 Cr',
-    voteCount: 3620,
+    voteCount: 0,
   },
   {
     id: 'CAND-ND-03',
@@ -131,7 +135,7 @@ export const INITIAL_CANDIDATES: Candidate[] = [
     age: 48,
     criminalCases: 0,
     assets: '₹8.5 Cr',
-    voteCount: 1410,
+    voteCount: 0,
   },
   {
     id: 'CAND-ND-04',
@@ -152,7 +156,7 @@ export const INITIAL_CANDIDATES: Candidate[] = [
     age: 0,
     criminalCases: 0,
     assets: 'N/A',
-    voteCount: 360,
+    voteCount: 0,
   },
 
   // Varanasi Candidates
@@ -175,7 +179,7 @@ export const INITIAL_CANDIDATES: Candidate[] = [
     age: 73,
     criminalCases: 0,
     assets: '₹3.02 Cr',
-    voteCount: 7120,
+    voteCount: 0,
   },
   {
     id: 'CAND-VAR-02',
@@ -196,7 +200,7 @@ export const INITIAL_CANDIDATES: Candidate[] = [
     age: 54,
     criminalCases: 1,
     assets: '₹5.2 Cr',
-    voteCount: 3890,
+    voteCount: 0,
   },
   {
     id: 'CAND-VAR-03',
@@ -217,7 +221,7 @@ export const INITIAL_CANDIDATES: Candidate[] = [
     age: 62,
     criminalCases: 0,
     assets: '₹1.8 Cr',
-    voteCount: 440,
+    voteCount: 0,
   },
 
   // Wayanad Candidates
@@ -240,7 +244,7 @@ export const INITIAL_CANDIDATES: Candidate[] = [
     age: 53,
     criminalCases: 0,
     assets: '₹20.4 Cr',
-    voteCount: 5120,
+    voteCount: 0,
   },
   {
     id: 'CAND-WAY-02',
@@ -261,7 +265,7 @@ export const INITIAL_CANDIDATES: Candidate[] = [
     age: 58,
     criminalCases: 0,
     assets: '₹84 Lakhs',
-    voteCount: 1980,
+    voteCount: 0,
   },
   {
     id: 'CAND-WAY-03',
@@ -282,7 +286,7 @@ export const INITIAL_CANDIDATES: Candidate[] = [
     age: 54,
     criminalCases: 3,
     assets: '₹2.1 Cr',
-    voteCount: 790,
+    voteCount: 0,
   },
 
   // Bangalore South Candidates
@@ -305,7 +309,7 @@ export const INITIAL_CANDIDATES: Candidate[] = [
     age: 33,
     criminalCases: 0,
     assets: '₹4.1 Cr',
-    voteCount: 1650,
+    voteCount: 0,
   },
   {
     id: 'CAND-BLR-02',
@@ -326,7 +330,7 @@ export const INITIAL_CANDIDATES: Candidate[] = [
     age: 41,
     criminalCases: 0,
     assets: '₹14.6 Cr',
-    voteCount: 1120,
+    voteCount: 0,
   },
   {
     id: 'CAND-BLR-03',
@@ -347,7 +351,7 @@ export const INITIAL_CANDIDATES: Candidate[] = [
     age: 0,
     criminalCases: 0,
     assets: 'N/A',
-    voteCount: 80,
+    voteCount: 0,
   },
 ];
 

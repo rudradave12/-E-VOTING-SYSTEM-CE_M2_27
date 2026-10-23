@@ -12,5 +12,19 @@
     "wasm": false,
     "artifactsDirectory": "/app/applet/artifacts",
     "emitsTypeDeclarations": true
+  },
+  "E:\\Projects\\BlockBallot-EVoting-System\\contracts\\IndianElection.sol": {
+    "jobHash": "solc-0_8_24-932a7976bb385fc527e5ea893c690562b0470198",
+    "isolated": false,
+    "compilerType": "solc",
+    "artifactPaths": [
+      "E:\\Projects\\BlockBallot-EVoting-System\\artifacts\\contracts\\IndianElection.sol\\IndianElection.json"
+    ],
+    "buildInfoPath": "E:\\Projects\\BlockBallot-EVoting-System\\artifacts\\build-info\\solc-0_8_24-932a7976bb385fc527e5ea893c690562b0470198.json",
+    "buildInfoOutputPath": "E:\\Projects\\BlockBallot-EVoting-System\\artifacts\\build-info\\solc-0_8_24-932a7976bb385fc527e5ea893c690562b0470198.output.json",
+    "typeFilePath": "E:\\Projects\\BlockBallot-EVoting-System\\artifacts\\contracts\\IndianElection.sol\\artifacts.d.ts",
+    "wasm": false,
+    "artifactsDirectory": "E:\\Projects\\BlockBallot-EVoting-System\\artifacts",
+    "emitsTypeDeclarations": true
   }
 }

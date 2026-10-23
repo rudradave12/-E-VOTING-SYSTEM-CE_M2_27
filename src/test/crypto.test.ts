@@ -2,21 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ethers } from 'ethers';
 import {
-  deriveNullifier,
-  hashOtpCode,
   signVotingAuthorization,
   verifyVotingAuthorization,
   setAuthorizationSignerAddress,
   getAuthorizationSignerAddress,
 } from '../utils/crypto';
+import { deriveServerNullifier, computeOtpHmac } from '../../server/crypto';
 import { evmSimulator } from '../utils/evmSimulator';
 import deploymentManifest from '../contracts/deployment.json';
 
 test('Cryptographic nullifier derivation is deterministic and bound to electionId', () => {
   const epic = 'IND-DL-982341';
-  const nullifier1 = deriveNullifier(epic, 18);
-  const nullifier2 = deriveNullifier(epic, 18);
-  const nullifierOtherElection = deriveNullifier(epic, 19);
+  const nullifier1 = deriveServerNullifier(epic, 18);
+  const nullifier2 = deriveServerNullifier(epic, 18);
+  const nullifierOtherElection = deriveServerNullifier(epic, 19);
 
   assert.equal(nullifier1, nullifier2, 'Identical EPIC and electionId must yield identical nullifier');
   assert.notEqual(nullifier1, nullifierOtherElection, 'Different electionId must produce distinct nullifiers');
@@ -25,19 +24,19 @@ test('Cryptographic nullifier derivation is deterministic and bound to electionI
 
 test('HMAC OTP code hashing preserves confidentiality', () => {
   const epic = 'IND-DL-982341';
-  const hash1 = hashOtpCode('481920', epic);
-  const hash2 = hashOtpCode('481920', epic);
-  const hashDifferent = hashOtpCode('481921', epic);
+  const hash1 = computeOtpHmac('481920', epic);
+  const hash2 = computeOtpHmac('481920', epic);
+  const hashDifferent = computeOtpHmac('481921', epic);
 
   assert.equal(hash1, hash2);
   assert.notEqual(hash1, hashDifferent);
-  assert.equal(hash1.length, 66, 'Hash must be 32 bytes hex encoded with 0x prefix');
+  assert.equal(hash1.length, 64, 'Hash must be 32 bytes hex encoded');
 });
 
 test('EIP-712 typed voting authorization generates valid verifiable signatures', async () => {
   const testSigner = ethers.Wallet.createRandom();
   const wallet = ethers.Wallet.createRandom();
-  const nullifier = deriveNullifier('IND-DL-982341', 18);
+  const nullifier = deriveServerNullifier('IND-DL-982341', 18);
   const expiry = Math.floor(Date.now() / 1000) + 900; // +15 mins
 
   const ticket = await signVotingAuthorization(
@@ -85,7 +84,7 @@ test('EVM Simulator enforces duplicate-nullifier prevention and valid receipt wa
 
   try {
     const voterWallet = ethers.Wallet.createRandom();
-    const nullifier = deriveNullifier('IND-DL-339210', 18);
+    const nullifier = deriveServerNullifier('IND-DL-339210', 18);
     const expiry = Math.floor(Date.now() / 1000) + 600;
 
     const ticket = await signVotingAuthorization(
@@ -129,7 +128,7 @@ test('EVM Simulator enforces duplicate-nullifier prevention and valid receipt wa
 
     // Test wrong sender wallet
     const differentWallet = ethers.Wallet.createRandom();
-    const nullifierFresh = deriveNullifier('IND-UP-441209', 18);
+    const nullifierFresh = deriveServerNullifier('IND-UP-441209', 18);
     const ticketFresh = await signVotingAuthorization(
       18,
       77,

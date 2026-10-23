@@ -20,9 +20,6 @@ export function getAuthorizationSignerAddress(): string {
 
 export const DEMO_AUTHORIZATION_SIGNER_ADDRESS = dynamicAuthorizationSignerAddress;
 
-// Server-side secret salt for synthetic voter commitment hashing
-export const SERVER_COMMITMENT_SALT = 'BLOCKBALLOT_SALT_2024_DEMO_SECRET_XYZ999';
-
 // EIP-712 Domain and Types specification matching IndianElection.sol
 export const EIP712_DOMAIN_NAME = 'BlockBallot';
 export const EIP712_DOMAIN_VERSION = '1';
@@ -43,32 +40,6 @@ export const EIP712_TYPES = {
     { name: 'expiry', type: 'uint256' },
   ],
 };
-
-/**
- * Derives a pseudonymous on-chain nullifier from a synthetic EPIC ID, server salt, and election ID.
- * This guarantees duplicate-vote prevention while preventing direct reverse lookup of EPIC ID.
- */
-export function deriveNullifier(epicId: string, electionId: number): string {
-  const saltedEpicHash = ethers.solidityPackedKeccak256(
-    ['string', 'string'],
-    [epicId.trim().toUpperCase(), SERVER_COMMITMENT_SALT]
-  );
-  return ethers.solidityPackedKeccak256(
-    ['bytes32', 'uint256'],
-    [saltedEpicHash, electionId]
-  );
-}
-
-/**
- * Computes an HMAC-SHA256 representation of a 6-digit OTP code.
- * Ensures the plaintext OTP is never stored directly in database records.
- */
-export function hashOtpCode(otp: string, epicId: string): string {
-  return ethers.solidityPackedKeccak256(
-    ['string', 'string', 'string'],
-    [otp.trim(), epicId.trim().toUpperCase(), SERVER_COMMITMENT_SALT]
-  );
-}
 
 /**
  * Signs an EIP-712 voting authorization ticket with a provided signer key.

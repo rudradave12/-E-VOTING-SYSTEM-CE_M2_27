@@ -30,20 +30,27 @@ describe('BlockBallot — Phase 7: Real Historical 2024 Lok Sabha Data & Civic N
 
     for (const c of HISTORICAL_CONSTITUENCIES_2024) {
       assert.ok(c.totalElectors > 0, `Total electors must be positive for ${c.name}`);
-      assert.ok(c.votesCounted > 0, `Votes counted must be positive for ${c.name}`);
-      assert.ok(c.turnoutPercentage > 45 && c.turnoutPercentage < 95, `Turnout percentage realistic for ${c.name}`);
+      if (c.isUnopposed) {
+        assert.equal(c.votesCounted, 0, `Unopposed constituency must have 0 votes counted for ${c.name}`);
+        assert.equal(c.turnoutPercentage, 0, `Unopposed constituency must have 0% turnout for ${c.name}`);
+      } else {
+        assert.ok(c.votesCounted > 0, `Votes counted must be positive for ${c.name}`);
+        assert.ok(c.turnoutPercentage > 45 && c.turnoutPercentage < 95, `Turnout percentage realistic for ${c.name}`);
+        assert.ok(c.winningMargin > 0, `Winning margin must be positive for ${c.name}`);
+        assert.ok(c.notaVotes > 0, `NOTA count must be recorded for ${c.name}`);
+      }
       assert.ok(c.winnerName.length > 0, `Winner name required for ${c.name}`);
       assert.ok(c.winnerParty.length > 0, `Winner party required for ${c.name}`);
-      assert.ok(c.winningMargin > 0, `Winning margin must be positive for ${c.name}`);
-      assert.ok(c.notaVotes > 0, `NOTA count must be recorded for ${c.name}`);
       assert.equal(c.isVerified, true, `Constituency must be marked official verified for ${c.name}`);
 
-      // Verify that candidates include winner and NOTA
+      // Verify that candidates include winner and NOTA (for contested elections)
       const hasWinner = c.candidates.some((cand) => cand.isWinner && cand.name === c.winnerName);
       assert.ok(hasWinner, `Winner candidate must match winnerName in ${c.name}`);
 
-      const hasNota = c.candidates.some((cand) => cand.partyAbbreviation === 'NOTA');
-      assert.ok(hasNota, `NOTA option must be present in ${c.name}`);
+      if (!c.isUnopposed) {
+        const hasNota = c.candidates.some((cand) => cand.partyAbbreviation === 'NOTA');
+        assert.ok(hasNota, `NOTA option must be present in ${c.name}`);
+      }
 
       // Verify candidate vote share math
       for (const cand of c.candidates) {
@@ -64,7 +71,7 @@ describe('BlockBallot — Phase 7: Real Historical 2024 Lok Sabha Data & Civic N
     assert.ok(partyCodes.includes('AAP'));
     assert.ok(partyCodes.includes('BSP'));
     assert.ok(partyCodes.includes('SP'));
-    assert.ok(partyCodes.includes('CPI'));
+    assert.ok(partyCodes.includes('CPIM'));
     assert.ok(partyCodes.includes('DMK'));
     assert.ok(partyCodes.includes('AITC'));
 

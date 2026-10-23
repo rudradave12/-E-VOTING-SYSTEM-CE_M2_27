@@ -22,7 +22,6 @@ import {
   SYNTHETIC_VOTERS,
 } from './data/mockData';
 import {
-  deriveNullifier,
   setAuthorizationSignerAddress,
 } from './utils/crypto';
 import { evmSimulator } from './utils/evmSimulator';
@@ -30,17 +29,18 @@ import { voterApi } from './services/voterApi';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
 
 // Components
-import { AcademicNoticeBanner } from './components/AcademicNoticeBanner';
 import { Navbar } from './components/Navbar';
 import { PersonaQuickBar } from './components/PersonaQuickBar';
 import { VotingStepper } from './components/VotingStepper';
 
 // Screens
+import { AvailableElectionsScreen } from './components/screens/AvailableElectionsScreen';
 import { HomeScreen } from './components/screens/HomeScreen';
 import { ElectionsResultsScreen } from './components/screens/ElectionsResultsScreen';
 import { CandidatesPartiesScreen } from './components/screens/CandidatesPartiesScreen';
 import { ConstituencyInfoScreen } from './components/screens/ConstituencyInfoScreen';
 import { HowItWorksScreen } from './components/screens/HowItWorksScreen';
+import { PreferencePollScreen } from './components/screens/PreferencePollScreen';
 import { PracticeVotingScreen } from './components/screens/PracticeVotingScreen';
 import { WelcomeScreen } from './components/screens/WelcomeScreen';
 import { IdentifyScreen } from './components/screens/IdentifyScreen';
@@ -112,8 +112,8 @@ export function AppInner() {
 
       if (authRes.success && authRes.ticket) {
         const ticket = authRes.ticket;
-        const nullifier = authRes.nullifier || deriveNullifier(currentVoter.epicId, activeElection.numericId);
-        const expiry = authRes.expiresAt || Math.floor(Date.now() / 1000) + 900;
+        const nullifier = ticket.nullifier || authRes.nullifier || '';
+        const expiry = ticket.expiry || authRes.expiresAt || Math.floor(Date.now() / 1000) + 900;
 
         setAuthorizationTicket(ticket);
 
@@ -316,11 +316,6 @@ export function AppInner() {
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 selection:bg-orange-100 selection:text-orange-900">
-      <AcademicNoticeBanner
-        isSimulatedEVM={isSimulatedEVM}
-        onToggleSimulatedEVM={() => setIsSimulatedEVM((prev) => !prev)}
-      />
-
       <Navbar
         currentScreen={currentScreen}
         onNavigate={(screen) => setCurrentScreen(screen)}
@@ -346,7 +341,27 @@ export function AppInner() {
         {(currentScreen === 'welcome' || currentScreen === 'home') && (
           <HomeScreen
             onNavigate={(screen) => setCurrentScreen(screen)}
-            onStartPractice={() => setCurrentScreen('practice-voting')}
+            elections={elections}
+            onStartPractice={() => setCurrentScreen('available-elections')}
+          />
+        )}
+
+        {(currentScreen === 'available-elections' || currentScreen === 'vote') && (
+          <AvailableElectionsScreen
+            elections={elections}
+            constituencies={constituencies}
+            onSelectElectionAndVote={(electionId) => {
+              setActiveElectionId(electionId);
+              if (currentVoter) {
+                setCurrentScreen('constituency');
+              } else {
+                setCurrentScreen('identify');
+              }
+            }}
+            onViewResults={(electionId) => {
+              setActiveElectionId(electionId);
+              setCurrentScreen('results');
+            }}
           />
         )}
 
@@ -360,6 +375,14 @@ export function AppInner() {
 
         {currentScreen === 'constituencies-info' && (
           <ConstituencyInfoScreen />
+        )}
+
+        {currentScreen === 'preference-poll' && (
+          <PreferencePollScreen
+            currentVoter={currentVoter}
+            onNavigateToAuth={() => setCurrentScreen('practice-voting')}
+            onNavigateToArchive={() => setCurrentScreen('elections-results')}
+          />
         )}
 
         {currentScreen === 'how-it-works' && (
@@ -525,14 +548,61 @@ export function AppInner() {
         )}
       </main>
 
-      <footer className="border-t border-slate-200 bg-white py-6 px-4 text-xs text-slate-500 text-center">
-        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p>
-            BlockBallot · Academic Prototype for Blockchain Electronic Voting Research.
-          </p>
-          <p className="font-mono text-[11px] text-slate-400">
-            Solidity 0.8.20 · EIP-712 · React 19 · Vite
-          </p>
+      <footer className="border-t border-slate-200 bg-white py-8 px-4 text-xs text-slate-500">
+        <div className="max-w-6xl mx-auto space-y-4">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-slate-100 pb-4">
+            <div className="text-left">
+              <span className="font-bold text-slate-800 block text-xs">BlockBallot E-Voting Academic Prototype</span>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Synthetic test records only · EIP-712 typed authorizations · Solidity 0.8.20 EVM ledger · Not affiliated with live UIDAI/ECI systems.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 text-[11px] font-mono text-slate-400">
+              <span>Local EVM: 31337</span>
+              <span>·</span>
+              <span>Node.js / Express</span>
+              <span>·</span>
+              <span>React 19 / Vite</span>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 text-[11px]">
+            <div className="flex flex-wrap items-center gap-4 text-slate-600">
+              <button
+                onClick={() => setCurrentScreen('how-it-works')}
+                className="hover:text-slate-900 hover:underline cursor-pointer"
+              >
+                How Voting Works
+              </button>
+              <button
+                onClick={() => setCurrentScreen('elections-results')}
+                className="hover:text-slate-900 hover:underline cursor-pointer"
+              >
+                2024 Sourced Results Archive
+              </button>
+              <button
+                onClick={() => setCurrentScreen('candidates-parties')}
+                className="hover:text-slate-900 hover:underline cursor-pointer"
+              >
+                Party & Candidate Reference
+              </button>
+              <button
+                onClick={() => setCurrentScreen('preference-poll')}
+                className="hover:text-slate-900 hover:underline cursor-pointer"
+              >
+                Party Preference Poll (Opinion Survey)
+              </button>
+            </div>
+
+            <div>
+              <button
+                onClick={() => setCurrentScreen('admin-login')}
+                className="font-semibold text-slate-700 hover:text-orange-700 cursor-pointer"
+              >
+                Administrative Officer Login →
+              </button>
+            </div>
+          </div>
         </div>
       </footer>
     </div>

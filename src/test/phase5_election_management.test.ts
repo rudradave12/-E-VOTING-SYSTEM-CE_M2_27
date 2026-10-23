@@ -8,10 +8,18 @@ import {
   saveElectionToFirestore,
   getElectionByIdFromFirestore,
 } from '../../server/firestore';
+import {
+  setAdminFirestoreForTesting,
+  createInMemoryFirestoreMock,
+} from '../../server/firebaseAdmin';
 
 test('BlockBallot — Phase 5: Election Management & Voting Logic Test Suite', async (t) => {
+  // Use in-memory Firestore mock to avoid writing to production cloud project
+  setAdminFirestoreForTesting(createInMemoryFirestoreMock());
+
   // Clean exit handler
   t.after(() => {
+    setAdminFirestoreForTesting(null);
     setTimeout(() => process.exit(0), 500);
   });
 
@@ -221,8 +229,10 @@ test('BlockBallot — Phase 5: Election Management & Voting Logic Test Suite', a
   });
 
   await t.test('6. Server-side Firestore persistence and database ID verification', async () => {
-    assert.equal(SERVER_CONFIG.FIRESTORE_DATABASE_ID, 'ai-studio-565633a9-76eb-4419-9891-05e6de180d7c');
-    assert.equal(SERVER_CONFIG.PROJECT_ID, 'e-voting-system-india');
+    const expectedDbId = process.env.FIRESTORE_EMULATOR_HOST ? '(default)' : 'ai-studio-565633a9-76eb-4419-9891-05e6de180d7c';
+    assert.equal(SERVER_CONFIG.FIRESTORE_DATABASE_ID, expectedDbId);
+    const expectedProjectId = process.env.GCLOUD_PROJECT || 'e-voting-system-india';
+    assert.equal(SERVER_CONFIG.PROJECT_ID, expectedProjectId);
 
     const testChallenge = {
       epicId: 'IND-TEST-PERSIST',

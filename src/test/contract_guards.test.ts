@@ -23,6 +23,18 @@ const TEST_ACCOUNTS = [
 ];
 
 test('BlockBallot — On-Chain Contract Guards & Lifecycle Test Suite', async (t) => {
+  const isNodeRunning = await fetch('http://127.0.0.1:8545', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_blockNumber', params: [] }),
+    signal: AbortSignal.timeout(600),
+  }).then((r) => r.ok).catch(() => false);
+
+  if (!isNodeRunning) {
+    t.skip('Local Hardhat node at http://127.0.0.1:8545 is not running; skipping on-chain live tests');
+    return;
+  }
+
   const provider = new ethers.JsonRpcProvider('http://127.0.0.1:8545');
   const artifact = loadArtifact();
 

@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { ethers } from 'ethers';
-import { SERVER_CONFIG } from './config';
+import { SERVER_CONFIG, derivePublicSignerAddress } from './config';
 import { VotingAuthorizationTicket } from '../src/types';
 
 export const EIP712_DOMAIN_NAME = 'BlockBallot';
@@ -82,9 +82,14 @@ export async function signEip712VotingAuthorization(
   expiry: number,
   chainId: number,
   contractAddress: string,
-  privateKey: string = SERVER_CONFIG.AUTHORIZATION_SIGNER_PRIVATE_KEY
+  privateKey?: string
 ): Promise<VotingAuthorizationTicket> {
-  const wallet = new ethers.Wallet(privateKey);
+  const key = privateKey !== undefined ? privateKey : SERVER_CONFIG.AUTHORIZATION_SIGNER_PRIVATE_KEY;
+  if (!key || typeof key !== 'string' || !key.startsWith('0x') || key.length !== 66) {
+    throw new Error('EIP-712 signing failed: SERVER_AUTHORIZATION_SIGNER_KEY is not configured or invalid.');
+  }
+
+  const wallet = new ethers.Wallet(key);
   const domain = getEip712Domain(chainId, contractAddress);
   const value = {
     electionId,
@@ -126,7 +131,16 @@ export function verifyEip712Ticket(
     };
 
     const recovered = ethers.verifyTypedData(domain, EIP712_TYPES, value, ticket.signature);
-    const expected = expectedSignerAddress || new ethers.Wallet(SERVER_CONFIG.AUTHORIZATION_SIGNER_PRIVATE_KEY).address;
+    const expected = expectedSignerAddress || derivePublicSignerAddress();
+
+    if (!expected) {
+      return {
+        isValid: false,
+        recoveredAddress: recovered,
+        error: 'Cannot verify ticket: authorization signer address is unconfigured.',
+      };
+    }
+
     const isMatch = recovered.toLowerCase() === expected.toLowerCase();
 
     return {

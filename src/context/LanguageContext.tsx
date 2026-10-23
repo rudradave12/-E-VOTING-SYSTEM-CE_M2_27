@@ -24,11 +24,16 @@ export interface Translations {
   // 6 Primary Navigation Sections
   navHome: string;
   navElectionResults: string;
+  navElectionsResults: string;
   navVote: string;
   navPoliticalParties: string;
+  navCandidatesParties: string;
   navConstituencyInfo: string;
+  navHowItWorks: string;
+  navPracticeVoting: string;
   navAdministration: string;
   navStaffLogin: string;
+  navPartyPreferencePoll: string;
 
   // Independent Party-Preference Poll
   pollTitle: string;
@@ -46,6 +51,25 @@ export interface Translations {
   pollReceiptNotice: string;
   pollOneVoteNotice: string;
   pollAlreadyParticipated: string;
+  pollClosed: string;
+  pollAuthRequired: string;
+  pollAuthRequiredDesc: string;
+  pollSignInButton: string;
+  pollReceiptId: string;
+  pollTimestamp: string;
+  pollPartyCode: string;
+  pollLiveAggregates: string;
+  pollPercentage: string;
+  pollVotes: string;
+  pollEmptyTitle: string;
+  pollEmptyDesc: string;
+  pollRetry: string;
+  pollSubmitting: string;
+  pollBackToSelection: string;
+  pollReviewNotice: string;
+  pollChangeSelection: string;
+  pollUnofficialBadge: string;
+  pollVerifiedTally: string;
 
   // Civic Section Headers & Labels
   historicalArchiveTitle: string;
@@ -138,11 +162,16 @@ const TRANSLATIONS: Record<SupportedLanguage, Translations> = {
 
     navHome: 'Home',
     navElectionResults: 'Election Results',
+    navElectionsResults: 'Election Results',
     navVote: 'Vote',
     navPoliticalParties: 'Political Parties',
+    navCandidatesParties: 'Parties & Candidates',
     navConstituencyInfo: 'Constituency Information',
+    navHowItWorks: 'How It Works',
+    navPracticeVoting: 'Practice Voting',
     navAdministration: 'Administration',
     navStaffLogin: 'Staff Login',
+    navPartyPreferencePoll: 'Preference Poll',
 
     pollTitle: 'National Party Preference Poll',
     pollSubtitle: 'Independent, Non-Binding Civic Opinion Survey (10 Verified Political Parties)',
@@ -159,6 +188,25 @@ const TRANSLATIONS: Record<SupportedLanguage, Translations> = {
     pollReceiptNotice: 'Your response receipt has been cryptographically recorded in the independent poll archive.',
     pollOneVoteNotice: 'One verified response per authenticated participant. Responses cannot be modified once confirmed.',
     pollAlreadyParticipated: 'You have already recorded your verified response for this poll.',
+    pollClosed: 'This preference poll is closed and is no longer accepting responses.',
+    pollAuthRequired: 'Voter Authentication Required',
+    pollAuthRequiredDesc: 'To ensure democratic integrity (1 person = 1 response) and prevent bot manipulation, you must be signed in with a practice voter session to participate.',
+    pollSignInButton: 'Select Practice Voter Profile',
+    pollReceiptId: 'Receipt ID',
+    pollTimestamp: 'Recorded At',
+    pollPartyCode: 'Party Code',
+    pollLiveAggregates: 'Live Aggregated Results',
+    pollPercentage: 'Share',
+    pollVotes: 'Responses',
+    pollEmptyTitle: 'No Active Poll Found',
+    pollEmptyDesc: 'There is currently no active party-preference poll configured on the server.',
+    pollRetry: 'Retry Connection',
+    pollSubmitting: 'Securing Your Preference...',
+    pollBackToSelection: 'Change Selection',
+    pollReviewNotice: 'Please review your chosen political party. Once submitted, your response is immutably committed and cannot be altered or re-voted.',
+    pollChangeSelection: 'Change Party Choice',
+    pollUnofficialBadge: 'Unofficial Civic Survey · Non-Binding',
+    pollVerifiedTally: 'Verified Response Tallies',
 
     historicalArchiveTitle: '18th Lok Sabha General Election 2024 Archive',
     historicalArchiveSubtitle: 'Official results and statistics from the Election Commission of India and data.gov.in',
@@ -251,11 +299,16 @@ const TRANSLATIONS: Record<SupportedLanguage, Translations> = {
 
     navHome: 'मुख्य पृष्ठ',
     navElectionResults: 'चुनाव परिणाम',
+    navElectionsResults: 'चुनाव परिणाम',
     navVote: 'मतदान',
     navPoliticalParties: 'राजनीतिक दल',
+    navCandidatesParties: 'दल और उम्मीदवार',
     navConstituencyInfo: 'निर्वाचन क्षेत्र विवरण',
+    navHowItWorks: 'यह कैसे काम करता है',
+    navPracticeVoting: 'अभ्यास मतदान',
     navAdministration: 'प्रशासन',
     navStaffLogin: 'अधिकारी लॉगिन',
+    navPartyPreferencePoll: 'दल प्राथमिकता जनमत',
 
     pollTitle: 'राष्ट्रीय राजनीतिक दल प्राथमिकता जनमत',
     pollSubtitle: 'स्वतंत्र, गैर-बाध्यकारी नागरिक जनमत सर्वेक्षण (10 सत्यापित दल)',
@@ -272,6 +325,25 @@ const TRANSLATIONS: Record<SupportedLanguage, Translations> = {
     pollReceiptNotice: 'आपकी प्रतिक्रिया रसीद स्वतंत्र सर्वेक्षण संग्रह में सुरक्षित रूप से दर्ज कर ली गई है।',
     pollOneVoteNotice: 'प्रति सत्यापित प्रतिभागी केवल एक प्रतिक्रिया अनुमत है। पुष्टि के बाद इसे बदला नहीं जा सकता।',
     pollAlreadyParticipated: 'आप इस सर्वेक्षण में अपनी सत्यापित प्रतिक्रिया पहले ही दर्ज करा चुके हैं।',
+    pollClosed: 'यह प्राथमिकता जनमत सर्वेक्षण अब बंद हो चुका है और नए उत्तर स्वीकार नहीं कर रहा है।',
+    pollAuthRequired: 'मतदाता पहचान सत्यापन आवश्यक',
+    pollAuthRequiredDesc: 'लोकतांत्रिक शुचिता (1 व्यक्ति = 1 उत्तर) सुनिश्चित करने और स्वचालित बॉट्स को रोकने के लिए, भाग लेने से पहले अभ्यास मतदाता सत्र से पहचान सत्यापित करना आवश्यक है।',
+    pollSignInButton: 'अभ्यास मतदाता प्रोफ़ाइल चुनें',
+    pollReceiptId: 'रसीद संख्या',
+    pollTimestamp: 'दर्ज समय',
+    pollPartyCode: 'दल कोड',
+    pollLiveAggregates: 'सत्यापित जनमत परिणाम',
+    pollPercentage: 'प्रतिशत हिस्सा',
+    pollVotes: 'प्रतिक्रियाएं',
+    pollEmptyTitle: 'कोई सक्रिय जनमत उपलब्ध नहीं',
+    pollEmptyDesc: 'वर्तमान में सर्वर पर कोई सक्रिय दल प्राथमिकता जनमत उपलब्ध नहीं है।',
+    pollRetry: 'पुनः प्रयास करें',
+    pollSubmitting: 'प्राथमिकता सुरक्षित की जा रही है...',
+    pollBackToSelection: 'चयन बदलें',
+    pollReviewNotice: 'कृपया अपने चुने हुए दल की समीक्षा करें। एक बार जमा करने के बाद आपकी प्रतिक्रिया स्थायी रूप से दर्ज हो जाती है और इसे बदला या दोबारा नहीं दिया जा सकता।',
+    pollChangeSelection: 'दल का चयन बदलें',
+    pollUnofficialBadge: 'स्वतंत्र नागरिक जनमत · गैर-बाध्यकारी',
+    pollVerifiedTally: 'सत्यापित प्रतिक्रिया गणना',
 
     historicalArchiveTitle: '18वीं लोकसभा आम चुनाव 2024 ऐतिहासिक अभिलेखागार',
     historicalArchiveSubtitle: 'भारत निर्वाचन आयोग एवं data.gov.in से आधिकारिक परिणाम एवं सांख्यिकी',

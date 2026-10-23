@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { VoterRecord } from '../../types';
-import { hashOtpCode } from '../../utils/crypto';
 import { voterApi } from '../../services/voterApi';
 import { KeyRound, Clock, ShieldAlert, ArrowRight, RotateCw, CheckCircle2 } from 'lucide-react';
 
@@ -84,23 +83,11 @@ export const OtpScreen: React.FC<OtpScreenProps> = ({
         setAttemptsRemaining(res.attemptsRemaining);
       }
       setError(res.message || 'Verification failed. Please check the code and try again.');
-    } catch {
-      // Offline fallback
-      const submittedHash = hashOtpCode(otp.trim(), voter.epicId);
-      const expectedHash = hashOtpCode(currentCode, voter.epicId);
-
-      if (submittedHash === expectedHash) {
-        onOtpVerified();
-        return;
-      } else {
-        const nextAttempts = attemptsRemaining - 1;
-        setAttemptsRemaining(nextAttempts);
-        if (nextAttempts <= 0) {
-          setError('Incorrect OTP. Maximum attempts exceeded. Authorization challenge locked.');
-        } else {
-          setError(`Incorrect OTP. ${nextAttempts} attempt${nextAttempts === 1 ? '' : 's'} remaining.`);
-        }
-      }
+    } catch (err: any) {
+      // Fail closed: Never grant authorization or verify hashes locally
+      setError(
+        err.message || 'Verification service unreachable. Please ensure network connectivity and retry.'
+      );
     } finally {
       setIsVerifying(false);
     }

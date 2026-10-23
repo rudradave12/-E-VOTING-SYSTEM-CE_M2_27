@@ -9,27 +9,41 @@ import {
   updatePreferencePollStatus,
   getAllPoliticalPartiesFromFirestore,
 } from '../firestore';
+import { verifyAdminAuth } from './admin';
+import { serverStore } from '../store';
+import { getFirebaseAdminAuth } from '../firebaseAdmin';
 
 export const pollRouter = Router();
 
 /**
- * Helper to extract or validate authenticated userId.
- * Supports Bearer token, session header, or client authenticated ID.
+ * Derives voter identity strictly from a verified authentication token or valid server session.
+ * Rejects untrusted client-supplied identity parameters (request body or headers).
  */
-function extractUserId(req: Request): string | null {
+async function resolveAuthenticatedVoterId(req: Request): Promise<string | null> {
   const authHeader = req.headers.authorization;
-  if (authHeader?.startsWith('Bearer ')) {
-    const token = authHeader.substring(7).trim();
-    if (token) return token;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
   }
-  const customUserHeader = req.headers['x-poll-user-id'] as string;
-  if (customUserHeader && customUserHeader.trim().length > 0) {
-    return customUserHeader.trim();
+  const token = authHeader.substring(7).trim();
+  if (!token) return null;
+
+  // 1. Check server voter session
+  const voterSession = serverStore.getSession(token);
+  if (voterSession) {
+    return voterSession.voterId || voterSession.epicId;
   }
-  const bodyUserId = req.body?.userId;
-  if (bodyUserId && typeof bodyUserId === 'string' && bodyUserId.trim().length > 0) {
-    return bodyUserId.trim();
+
+  // 2. Check Firebase ID token
+  try {
+    const auth = getFirebaseAdminAuth();
+    const decoded = await auth.verifyIdToken(token);
+    if (decoded?.uid) {
+      return decoded.uid;
+    }
+  } catch {
+    // Unverified or invalid Firebase ID token
   }
+
   return null;
 }
 
@@ -98,10 +112,13 @@ pollRouter.get('/:pollId', async (req: Request, res: Response): Promise<void> =>
 pollRouter.get('/:pollId/my-response', async (req: Request, res: Response): Promise<void> => {
   try {
     const { pollId } = req.params;
-    const userId = extractUserId(req) || (req.query.userId as string);
+    const userId = await resolveAuthenticatedVoterId(req);
 
     if (!userId) {
-      res.status(400).json({ success: false, message: 'User identifier required to query response receipt.' });
+      res.status(401).json({
+        success: false,
+        message: 'Authentication required. A verified voter session is required to query poll receipts.',
+      });
       return;
     }
 
@@ -118,18 +135,19 @@ pollRouter.get('/:pollId/my-response', async (req: Request, res: Response): Prom
 
 /**
  * POST /api/poll/:pollId/vote
- * Atomic transaction: records 1 response per user and updates aggregate totals
+ * Atomic transaction: records 1 response per user and updates aggregate totals.
+ * Identity is derived strictly from verified authentication token or server session.
  */
 pollRouter.post('/:pollId/vote', async (req: Request, res: Response): Promise<void> => {
   try {
     const { pollId } = req.params;
     const { partyCode } = req.body;
-    const userId = extractUserId(req);
+    const userId = await resolveAuthenticatedVoterId(req);
 
     if (!userId) {
       res.status(401).json({
         success: false,
-        message: 'Authentication required. An active authenticated session is required to participate in this poll.',
+        message: 'Authentication required. A verified voter session or authentication token is required to participate in this poll.',
       });
       return;
     }
@@ -169,9 +187,15 @@ pollRouter.post('/:pollId/vote', async (req: Request, res: Response): Promise<vo
 
 /**
  * POST /api/poll/:pollId/reconcile
- * Admin endpoint: recalculates aggregates from actual persisted individual response documents
+ * Admin endpoint: recalculates aggregates from actual persisted individual response documents.
+ * Strictly requires verified administrator authentication.
  */
 pollRouter.post('/:pollId/reconcile', async (req: Request, res: Response): Promise<void> => {
+  if (!verifyAdminAuth(req)) {
+    res.status(403).json({ success: false, message: 'Unauthorized. Officer administrative authentication required.' });
+    return;
+  }
+
   try {
     const { pollId } = req.params;
     const result = await reconcilePollAggregatesInFirestore(pollId);
@@ -188,9 +212,15 @@ pollRouter.post('/:pollId/reconcile', async (req: Request, res: Response): Promi
 
 /**
  * PATCH /api/poll/:pollId/status
- * Admin endpoint to open or close poll
+ * Admin endpoint to open or close poll.
+ * Strictly requires verified administrator authentication.
  */
 pollRouter.patch('/:pollId/status', async (req: Request, res: Response): Promise<void> => {
+  if (!verifyAdminAuth(req)) {
+    res.status(403).json({ success: false, message: 'Unauthorized. Officer administrative authentication required.' });
+    return;
+  }
+
   try {
     const { pollId } = req.params;
     const { status } = req.body;

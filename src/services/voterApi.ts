@@ -6,7 +6,11 @@ import {
   VoterRecord,
   AuditEvent,
   ElectionStatus,
+  PreferencePollConfig,
+  PollAggregateRecord,
+  PollResponseRecord,
 } from '../types';
+import { RecognizedPartyRecord } from '../data/historical2024';
 
 export interface VerifyVoterResponse {
   success: boolean;
@@ -206,8 +210,16 @@ export class VoterApiClient {
     try {
       const res = await fetch('/api/voter/recover-transaction', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.currentSessionToken && {
+            Authorization: `Bearer ${this.currentSessionToken}`,
+          }),
+        },
+        body: JSON.stringify({
+          ...payload,
+          sessionToken: this.currentSessionToken,
+        }),
       });
       return await res.json();
     } catch (err: any) {
@@ -291,12 +303,22 @@ export class VoterApiClient {
   /**
    * Admin operations
    */
-  public async adminLogin(email: string, password?: string): Promise<{ success: boolean; token?: string; message?: string }> {
+  public async adminLogin(
+    tokenOrPayload: string | { idToken?: string; googleToken?: string; email?: string; password?: string },
+    legacyPassword?: string
+  ): Promise<{ success: boolean; token?: string; message?: string }> {
     try {
+      const body =
+        typeof tokenOrPayload === 'string'
+          ? { idToken: tokenOrPayload }
+          : legacyPassword && typeof tokenOrPayload === 'object' && tokenOrPayload.email
+          ? { email: tokenOrPayload.email, password: legacyPassword }
+          : tokenOrPayload;
+
       const res = await fetch('/api/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (data.success && data.token) {
@@ -404,6 +426,122 @@ export class VoterApiClient {
       return !!data.success;
     } catch {
       return false;
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Independent Party-Preference Poll API
+  // --------------------------------------------------------------------------
+
+  /**
+   * GET /api/poll or /api/poll/:pollId
+   */
+  public async getPreferencePoll(pollId?: string): Promise<{
+    success: boolean;
+    poll?: PreferencePollConfig;
+    aggregate?: PollAggregateRecord;
+    parties?: RecognizedPartyRecord[];
+    disclaimer?: string;
+    message?: string;
+  }> {
+    try {
+      const url = pollId ? `/api/poll/${encodeURIComponent(pollId)}` : '/api/poll';
+      const res = await fetch(url);
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error fetching poll.' };
+    }
+  }
+
+  /**
+   * GET /api/poll/:pollId/my-response
+   */
+  public async getMyPollResponse(pollId: string): Promise<{
+    success: boolean;
+    hasVoted?: boolean;
+    response?: PollResponseRecord | null;
+    message?: string;
+  }> {
+    try {
+      const token = this.currentSessionToken || this.currentAdminToken;
+      const res = await fetch(`/api/poll/${encodeURIComponent(pollId)}/my-response`, {
+        headers: {
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error fetching user response.' };
+    }
+  }
+
+  /**
+   * POST /api/poll/:pollId/vote
+   */
+  public async submitPollVote(pollId: string, partyCode: string): Promise<{
+    success: boolean;
+    message: string;
+    receipt?: PollResponseRecord;
+    aggregate?: PollAggregateRecord;
+  }> {
+    try {
+      const token = this.currentSessionToken || this.currentAdminToken;
+      const res = await fetch(`/api/poll/${encodeURIComponent(pollId)}/vote`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+        body: JSON.stringify({ partyCode }),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error submitting poll vote.' };
+    }
+  }
+
+  /**
+   * POST /api/poll/:pollId/reconcile (Admin)
+   */
+  public async adminReconcilePoll(pollId: string): Promise<{
+    success: boolean;
+    message: string;
+    totalResponses?: number;
+    partyTallies?: Record<string, number>;
+  }> {
+    try {
+      const res = await fetch(`/api/poll/${encodeURIComponent(pollId)}/reconcile`, {
+        method: 'POST',
+        headers: {
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error reconciling poll.' };
+    }
+  }
+
+  /**
+   * PATCH /api/poll/:pollId/status (Admin)
+   */
+  public async adminUpdatePollStatus(pollId: string, status: 'open' | 'closed'): Promise<{
+    success: boolean;
+    message: string;
+    status?: 'open' | 'closed';
+  }> {
+    try {
+      const res = await fetch(`/api/poll/${encodeURIComponent(pollId)}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+        body: JSON.stringify({ status }),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error updating poll status.' };
     }
   }
 }

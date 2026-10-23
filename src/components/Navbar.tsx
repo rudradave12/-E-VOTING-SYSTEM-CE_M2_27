@@ -9,6 +9,7 @@ import { NavigationScreen } from '../types';
 import {
   Vote,
   BarChart3,
+  PieChart,
   Lock,
   Languages,
   Users,
@@ -63,12 +64,23 @@ export const Navbar: React.FC<NavbarProps> = ({
   ].includes(currentScreen);
 
   const navItems = [
-    { id: 'welcome', label: t.navHome, icon: Home },
-    { id: 'elections-results', label: t.navElectionsResults, icon: BarChart3 },
-    { id: 'candidates-parties', label: t.navCandidatesParties, icon: Users },
-    { id: 'constituencies-info', label: t.navConstituencyInfo, icon: MapPin },
-    { id: 'how-it-works', label: t.navHowItWorks, icon: HelpCircle },
-    { id: 'practice-voting', label: t.navPracticeVoting, icon: Vote, isHighlight: true },
+    { id: 'welcome', label: language === 'hi' ? 'मुख्य पृष्ठ' : 'Home', icon: Home },
+    {
+      id: 'available-elections',
+      label: language === 'hi' ? 'मतदान / उपलब्ध चुनाव' : 'Vote / Available Elections',
+      icon: Vote,
+      isHighlight: true,
+    },
+    {
+      id: 'how-it-works',
+      label: language === 'hi' ? 'मतदान कैसे काम करता है' : 'How Voting Works',
+      icon: HelpCircle,
+    },
+    {
+      id: 'identify',
+      label: language === 'hi' ? 'मतदाता लॉगिन' : 'Voter Login',
+      icon: Users,
+    },
   ];
 
   const handleNavClick = (screenId: string) => {
@@ -95,20 +107,21 @@ export const Navbar: React.FC<NavbarProps> = ({
                   BlockBallot
                 </span>
                 <span className="text-[10px] sm:text-[11px] font-semibold text-slate-500 uppercase tracking-widest block mt-0.5">
-                  E-Voting Civic Portal
+                  Academic E-Voting Prototype
                 </span>
               </div>
             </button>
           </div>
 
-          {/* 7 Primary Civic Navigation Sections (Desktop) */}
-          <nav className="hidden xl:flex items-center gap-1 text-xs font-semibold text-slate-600">
+          {/* 4 Focused Primary Navigation Sections (Desktop & Tablet) */}
+          <nav className="hidden md:flex items-center gap-1.5 text-xs font-semibold text-slate-600">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive =
                 currentScreen === item.id ||
                 (item.id === 'welcome' && currentScreen === 'home') ||
-                (item.id === 'practice-voting' && isVoterFlow && currentScreen !== 'welcome');
+                (item.id === 'available-elections' && (currentScreen === 'available-elections' || (isVoterFlow && currentScreen !== 'welcome'))) ||
+                (item.id === 'identify' && currentScreen === 'identify');
 
               return (
                 <button
@@ -117,7 +130,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   className={`px-3 py-2 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
                     isActive
                       ? item.isHighlight
-                        ? 'bg-orange-50 text-orange-700 ring-1 ring-orange-200'
+                        ? 'bg-orange-50 text-orange-700 ring-1 ring-orange-200 font-bold'
                         : 'bg-slate-100 text-slate-900 font-bold'
                       : item.isHighlight
                       ? 'text-orange-700 hover:bg-orange-50/60'
@@ -140,7 +153,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }`}
               >
                 <Shield className="w-3.5 h-3.5 text-amber-500" />
-                <span>Admin</span>
+                <span>Admin Console</span>
               </button>
             )}
           </nav>
@@ -208,7 +221,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={() => setMobileMenuOpen((prev) => !prev)}
               aria-label="Toggle navigation menu"
-              className="xl:hidden p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 cursor-pointer"
+              className="md:hidden p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 cursor-pointer"
             >
               {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
@@ -217,13 +230,14 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Mobile Navigation Dropdown */}
         {mobileMenuOpen && (
-          <div className="xl:hidden py-3 border-t border-slate-200 space-y-1">
+          <div className="md:hidden py-3 border-t border-slate-200 space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive =
                 currentScreen === item.id ||
                 (item.id === 'welcome' && currentScreen === 'home') ||
-                (item.id === 'practice-voting' && isVoterFlow && currentScreen !== 'welcome');
+                (item.id === 'available-elections' && (currentScreen === 'available-elections' || (isVoterFlow && currentScreen !== 'welcome'))) ||
+                (item.id === 'identify' && currentScreen === 'identify');
 
               return (
                 <button

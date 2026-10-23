@@ -1,5 +1,5 @@
 import { ethers } from 'ethers';
-import { VotingAuthorizationTicket, VoteReceipt, AuditEvent } from '../types';
+import { VotingAuthorizationTicket, VoteReceipt, AuditEvent, ElectionStatus } from '../types';
 import {
   verifyVotingAuthorization,
   getAuthorizationSignerAddress,
@@ -8,7 +8,7 @@ import {
 
 export interface SimulatedElectionState {
   electionId: number;
-  status: 'draft' | 'active' | 'paused' | 'concluded';
+  status: ElectionStatus;
   spentNullifiers: Set<string>;
   candidateVotes: Map<number, number>; // candidateId -> vote count
   totalVotes: number;
@@ -19,7 +19,7 @@ class EvmSimulator {
   private spentNullifiers: Map<number, Set<string>> = new Map(); // electionId -> Set<nullifier>
   private candidateTallies: Map<number, number> = new Map(); // candidateId -> count
   private auditEvents: AuditEvent[] = [];
-  private electionStatus: 'draft' | 'active' | 'paused' | 'concluded' = 'active';
+  private electionStatus: ElectionStatus = 'active';
 
   constructor() {
     this.spentNullifiers.set(18, new Set<string>());
@@ -47,7 +47,7 @@ class EvmSimulator {
     this.auditEvents.unshift(newEvent);
   }
 
-  public setElectionStatus(status: 'draft' | 'active' | 'paused' | 'concluded'): void {
+  public setElectionStatus(status: ElectionStatus): void {
     this.electionStatus = status;
     this.addAuditEvent({
       type: 'ELECTION_STATE',
@@ -57,7 +57,7 @@ class EvmSimulator {
     });
   }
 
-  public getElectionStatus(): 'draft' | 'active' | 'paused' | 'concluded' {
+  public getElectionStatus(): ElectionStatus {
     return this.electionStatus;
   }
 

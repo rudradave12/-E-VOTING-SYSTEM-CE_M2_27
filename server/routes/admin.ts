@@ -3,14 +3,35 @@ import crypto from 'crypto';
 import { serverStore } from '../store';
 import { ElectionStatus } from '../../src/types';
 
+import { verifyAdminIdToken } from '../firebaseAdmin';
+
 export const adminRouter = Router();
 
-// In-memory admin session store: token -> { email, expiresAt }
-const adminSessions: Map<string, { email: string; expiresAt: number }> = new Map();
+// In-memory admin session store: token -> { email: string; uid?: string; role?: string; expiresAt: number }
+const adminSessions: Map<string, { email: string; uid?: string; role?: string; expiresAt: number }> = new Map();
 
-function verifyAdminAuth(req: Request): boolean {
+export function clearAdminSessionsForTesting(): void {
+  adminSessions.clear();
+}
+
+export function createAdminSessionForTesting(email = 'officer@blockballot.gov.in', role = 'Returning Officer'): { token: string; expiresAt: number } {
+  const token = `adm_${crypto.randomBytes(32).toString('hex')}`;
+  const expiresAt = Date.now() + 4 * 60 * 60 * 1000;
+  adminSessions.set(token, {
+    email,
+    role,
+    expiresAt,
+  });
+  return { token, expiresAt };
+}
+
+
+/**
+ * Validates whether the incoming HTTP request holds a valid, active admin session token.
+ */
+export function verifyAdminAuth(req: Request): boolean {
   const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : undefined;
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7).trim() : undefined;
   if (!token) return false;
 
   const session = adminSessions.get(token);
@@ -24,35 +45,49 @@ function verifyAdminAuth(req: Request): boolean {
 
 /**
  * POST /api/admin/login
- * Validates election officer credentials.
+ * Strictly validates Election Commission officer authentication via verified Firebase ID tokens.
+ * Fails closed if the token is missing, expired, forged, or lacks verified administrator role.
  */
-adminRouter.post('/login', (req: Request, res: Response): void => {
-  const { email, password, googleToken } = req.body;
+adminRouter.post('/login', async (req: Request, res: Response): Promise<void> => {
+  const { idToken, googleToken } = req.body;
+  const tokenToVerify = idToken || googleToken;
 
-  // Verify either demo credentials or verified Google account
-  const isDemoAuthorized =
-    email?.trim().toLowerCase() === 'officer@eci.gov.in' && password === 'eci-officer-2024';
-  const isGoogleAuthorized =
-    email?.trim().toLowerCase() === 'chintudave12345@gmail.com' ||
-    (googleToken && email?.includes('@'));
-
-  if (!isDemoAuthorized && !isGoogleAuthorized) {
+  if (!tokenToVerify || typeof tokenToVerify !== 'string') {
     res.status(401).json({
       success: false,
-      message: 'Invalid administrative credentials. Access restricted to authorized Election Commission officers.',
+      message: 'Access denied: Valid Firebase officer authentication token required.',
     });
     return;
   }
 
-  const token = `adm_${crypto.randomBytes(24).toString('hex')}`;
+  // Cryptographically verify ID token against Firebase Admin Auth and role registry
+  const verification = await verifyAdminIdToken(tokenToVerify);
+
+  if (!verification.isValid) {
+    res.status(401).json({
+      success: false,
+      message: verification.error || 'Administrator authentication failed. Unauthorized credentials.',
+    });
+    return;
+  }
+
+  const officerEmail = verification.email || 'officer@blockballot.gov.in';
+  const officerRole = verification.role || 'Returning Officer';
+  const token = `adm_${crypto.randomBytes(32).toString('hex')}`;
   const expiresAt = Date.now() + 4 * 60 * 60 * 1000; // 4 hours
-  adminSessions.set(token, { email: email || 'officer@eci.gov.in', expiresAt });
+
+  adminSessions.set(token, {
+    email: officerEmail,
+    uid: verification.uid,
+    role: officerRole,
+    expiresAt,
+  });
 
   serverStore.recordAuditEvent({
     id: `audit-admin-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     timestamp: Date.now(),
     type: 'ADMIN_ACTION',
-    description: `Administrative officer authenticated: ${email || 'officer@eci.gov.in'}`,
+    description: `Administrative officer authenticated: ${officerEmail} (Role: ${officerRole})`,
     electionId: 1,
   });
 
@@ -62,8 +97,8 @@ adminRouter.post('/login', (req: Request, res: Response): void => {
     token,
     expiresAt,
     user: {
-      email: email || 'officer@eci.gov.in',
-      role: 'Returning Officer',
+      email: officerEmail,
+      role: officerRole,
       permissions: ['MANAGE_ELECTIONS', 'MANAGE_CANDIDATES', 'MANAGE_VOTERS', 'VIEW_AUDIT'],
     },
   });
@@ -88,7 +123,7 @@ adminRouter.post('/elections', (req: Request, res: Response): void => {
     return;
   }
 
-  const { title, description, numericId, startTime, endTime, contractAddress, constituencyIds } = req.body;
+  const { title, description, electionType, numericId, startTime, endTime, contractAddress, constituencyIds, status } = req.body;
 
   if (!title || typeof title !== 'string' || title.trim().length === 0) {
     res.status(400).json({ success: false, message: 'Election title is required.' });
@@ -99,39 +134,42 @@ adminRouter.post('/elections', (req: Request, res: Response): void => {
   const end = Number(endTime) || start + 86400 * 7;
 
   if (end <= start) {
-    res.status(400).json({ success: false, message: 'Election end time must be strictly after start time.' });
+    res.status(400).json({ success: false, message: 'Election closing deadline must be strictly after start time.' });
     return;
   }
 
   const id = `ELEC-${Date.now().toString(36).toUpperCase()}`;
   const numId = Number(numericId) || Math.floor(Math.random() * 900) + 100;
+  const initialStatus: ElectionStatus = status === 'scheduled' ? 'scheduled' : 'draft';
 
   const created = serverStore.createElection({
     id,
     numericId: numId,
     title: title.trim(),
-    description: description?.trim() || 'Synthetic Parliamentary General Election.',
-    status: 'draft',
+    description: description?.trim() || 'Administrator-configured parliamentary e-voting election.',
+    status: initialStatus,
     startTime: start,
     endTime: end,
     contractAddress: contractAddress || '0x5FbDB2315678afecb367f032d93F642f64180aa3',
     constituencyIds: constituencyIds || ['CONST-04-ND', 'CONST-77-VAR'],
+    electionType: electionType?.trim() || 'General Election',
+    isDemoElection: false,
   });
 
   serverStore.recordAuditEvent({
     id: `audit-create-elec-${Date.now()}`,
     timestamp: Date.now(),
     type: 'ADMIN_ACTION',
-    description: `Created election: ${created.title} (ID #${created.numericId})`,
+    description: `Created election: ${created.title} (Type: ${created.electionType}, ID #${created.numericId}, Status: ${created.status})`,
     electionId: created.numericId,
   });
 
-  res.status(201).json({ success: true, message: 'Election created in draft state.', election: created });
+  res.status(201).json({ success: true, message: `Election created in ${created.status} state.`, election: created });
 });
 
 /**
  * PATCH /api/admin/elections/:id/status
- * Manages election lifecycle transitions (draft -> active -> paused -> concluded).
+ * Manages election lifecycle transitions (draft -> scheduled -> active -> paused -> concluded).
  */
 adminRouter.patch('/elections/:id/status', (req: Request, res: Response): void => {
   if (!verifyAdminAuth(req)) {
@@ -142,10 +180,10 @@ adminRouter.patch('/elections/:id/status', (req: Request, res: Response): void =
   const { id } = req.params;
   const { status } = req.body;
 
-  if (!status || !['draft', 'active', 'paused', 'concluded'].includes(status)) {
+  if (!status || !['draft', 'scheduled', 'active', 'paused', 'concluded'].includes(status)) {
     res.status(400).json({
       success: false,
-      message: 'Invalid status. Must be one of draft, active, paused, or concluded.',
+      message: 'Invalid status. Must be one of draft, scheduled, active, paused, or concluded.',
     });
     return;
   }
