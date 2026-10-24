@@ -11,7 +11,7 @@
 
 ## 1. Project Overview
 
-BlockBallot demonstrates how decentralized ledger technology and typed cryptography can be applied to parliamentary electronic voting. The system addresses double-voting prevention, authenticated voter eligibility, administrative election scheduling, and verifiable audit receipts.
+BlockBallot demonstrates how decentralized ledger technology and typed cryptography can be applied to parliamentary electronic voting. The system addresses double-voting prevention, authenticated voter eligibility, administrative election scheduling, strict live voting window enforcement, and verifiable audit receipts.
 
 ### Core Technology Stack
 * **Frontend**: React 19, TypeScript, Vite, Tailwind CSS, Lucide Icons, Motion.
@@ -42,31 +42,42 @@ BlockBallot strictly isolates its four electoral data categories:
 └────────────────────────────┴───────────────────────────────────────────┘
 ```
 
-1. **Scenario A (Seeded 2024 Lok Sabha Demo Election)**: Seeded with researched 2024 candidates and official symbols for New Delhi, Varanasi, Wayanad, and Bangalore South. The demo ballot counter begins strictly at **zero (0)** for clean testing.
+1. **Scenario A (Seeded 2024 Lok Sabha Demo Election)**: Seeded with researched 2024 candidates and official symbols for New Delhi, Varanasi, Wayanad, and Bangalore South. The demo ballot counter begins strictly at **zero (0)** for clean academic testing.
 2. **Official 2024 Historical Reference Data**: Read-only archival results from the 2024 General Elections. Completely immutable and partitioned in `src/data/historical2024.ts`.
 3. **Scenario B (Administrator-Created Elections)**: Created and scheduled by authorized Returning Officers with customizable start and closing deadlines, constituency rosters, and state machine controls (`draft`, `scheduled`, `active`, `paused`, `concluded`).
 4. **Independent Party-Preference Poll**: An unofficial public-opinion research feature allowing citizens to record party preference. Fully separated from actual ballots and historical totals.
 
 ---
 
-## 3. The Voter Journey
+## 3. The Core Workflows
 
+### Voter Journey: Login → Available Election → Select Candidate → Review → Confirm Vote → Receipt
 1. **Voter Login**: Citizen enters synthetic EPIC Voter ID (e.g., `IND-DL-982341`).
 2. **2FA Challenge**: Backend issues an HMAC-SHA256 protected OTP challenge with 60s cooldown and 3-attempt lockout.
 3. **Authenticated Session**: Successful OTP verification issues a time-bound session token (15-minute TTL).
-4. **Constituency Resolution**: System resolves voter's enrolled constituency and displays contesting candidates with verified party symbols.
-5. **Ballot Review & Wallet Selection**: Voter selects candidate, reviews choice, and chooses between Academic Testnet Signer and MetaMask.
-6. **EIP-712 Authorization**: Backend validates active election status and deadlines, generates an off-chain nullifier, and signs an EIP-712 authorization ticket.
-7. **On-Chain Execution**: Contract verifies signature, validates `msg.sender == voterWallet`, checks for duplicate nullifier, burns nullifier, and increments candidate tally.
-8. **Cryptographic Receipt**: System presents a verifiable receipt containing transaction hash, block number, nullifier, and timestamp.
+4. **Election Availability Check**:
+   - System checks if an election is `active` and strictly within the configured live window (`startTime <= now < endTime`).
+   - If no election is open, a prominent notice directs the voter to read-only Previous Elections.
+5. **Constituency Resolution**: System resolves voter's enrolled constituency and displays contesting candidates with verified party symbols.
+6. **Ballot Review & Wallet Selection**: Voter selects candidate, reviews choice, and chooses between Academic Testnet Signer and MetaMask.
+7. **EIP-712 Authorization**: Backend validates active election status and deadlines, generates an off-chain nullifier, and signs an EIP-712 authorization ticket.
+8. **On-Chain Execution**: Contract verifies signature, validates `msg.sender == voterWallet`, checks for duplicate nullifier, burns nullifier, and increments candidate tally.
+9. **Cryptographic Receipt**: System presents a verifiable receipt containing transaction hash, block number, nullifier, and timestamp. Duplicate voting is permanently blocked.
+
+### Administrator Journey: Login → Manage Elections → Configure Deadlines → Control Voting → Audit Results
+1. **Officer Login**: Sign in using the local demo administrator account or verified Firebase ID token.
+2. **Election Creation**: Configure title, election type, numeric identifier, constituency enrollment, and verified deadlines (`endTime > startTime`).
+3. **Lifecycle Control**: Manage transitions across `draft` → `scheduled` → `active` → `paused` → `concluded`.
+4. **Candidate Nominations**: Register candidates and political party symbols prior to election activation.
+5. **Real-Time Audit**: Review immutable audit trail of all state transitions and anonymous vote counts.
 
 ---
 
-## 4. Quickstart Guide
+## 4. Quickstart & Academic Demo Guide
 
 ### Prerequisites
 * Node.js $\ge 20.x$
-* Windows PowerShell (or compatible bash terminal)
+* Windows PowerShell (or compatible terminal)
 
 ### Step 1: Install Dependencies
 ```powershell
@@ -75,38 +86,104 @@ npm ci
 
 ### Step 2: Start Local Blockchain & Deploy Contract
 ```powershell
-# In Terminal 1: Start local Hardhat node (Chain ID 31337)
+# Terminal 1: Start local Hardhat node (Chain ID 31337)
 npm run node:start
 
-# In Terminal 2: Deploy contract and seed demo election
+# Terminal 2: Deploy smart contract and initialize demo election
 npm run contract:deploy
 ```
 
-### Step 3: Start the Application Server
+### Step 3: Seed Local Demo Administrator Account
+Provision the isolated local academic administrator credentials:
 ```powershell
-# In Terminal 2: Launch Vite & Express integrated server
+# Terminal 2: Generate local demo credentials and configure local store/emulator
+npm run admin:seed
+```
+* **Demo Login Email**: `demo.admin@blockballot.local`
+* **Demo Password**: Automatically generated and written **exclusively** to the ignored `.env.local` file.
+* **Fail-Closed Security**: In production (`NODE_ENV=production`), the demo admin account and password gateway are completely disabled (403 Forbidden).
+
+### Step 4: Start the Application Server
+```powershell
+# Terminal 2: Launch Vite & Express integrated server
 npm run dev
 ```
 Open your browser to: [http://127.0.0.1:3000](http://127.0.0.1:3000)
 
 ---
 
-## 5. Verification Commands
+## 5. Demonstration Walkthrough
+
+### A. Signing in as Local Demo Administrator
+1. Navigate to [http://127.0.0.1:3000](http://127.0.0.1:3000) and click **Admin Portal** (or visit `/admin`).
+2. Enter:
+   * **Email**: `demo.admin@blockballot.local`
+   * **Password**: Copy the generated password from `.env.local` (or output of `npm run admin:seed`).
+3. Click **Sign In**.
+4. You are granted full Returning Officer privileges to create elections, configure deadlines, pause/resume voting, and inspect audit logs.
+
+### B. Authenticating a Synthetic Demo Voter
+Use one of the pre-configured academic test electors:
+| Synthetic EPIC ID | Constituency | Name |
+| :--- | :--- | :--- |
+| `IND-DL-982341` | New Delhi | Rajesh Sharma |
+| `IND-UP-561289` | Varanasi | Amit Kumar |
+| `IND-KL-341908` | Wayanad | Priya Nair |
+| `IND-KA-782345` | Bangalore South | Suresh Rao |
+
+1. On the Voter Portal, enter the synthetic EPIC ID.
+2. In academic demo mode, the 6-digit OTP is displayed on screen / console for demonstration convenience.
+3. Enter the OTP to receive a 15-minute authenticated voter session.
+
+### C. Live Voting Window Enforcement
+Voting is permitted **only** when an election satisfies:
+$$\text{status} = \text{active} \quad \land \quad \text{startTime} \le \text{now} < \text{endTime}$$
+* **Scheduled Elections**: Displayed with countdown to start time; voting is locked.
+* **Paused Elections**: Temporarily halted by administrator; voting action disabled on server and contract.
+* **Concluded / Closed Elections**: Voting closed; submissions rejected at API and contract levels.
+* **When No Election is Open**: Displays message *"No elections are currently open for voting."* with a direct link to Previous Elections.
+
+### D. Previous Elections (Read-Only Archive)
+Navigate to **Previous Elections** from the top navigation or election availability screen:
+* **Prototype & Admin Elections**: View past demo elections (e.g., `DEMO-PREV-2023`), final vote tallies, EVM contract addresses, and immutable audit logs. No vote-casting buttons are exposed.
+* **Official 2024 Reference Archive**: View verified ECI Form 20 Gazette results for 2024 Lok Sabha divisions, completely isolated from demo test ballots.
+
+### E. Resetting Local Demo Data
+To reset test votes back to zero:
+```powershell
+# Re-deploy contract and reset in-memory / emulator tallies
+npm run contract:deploy
+```
+* This operation resets only the academic test state. Official 2024 historical reference data is immutable and unaffected.
+
+---
+
+## 6. Verification Commands
+
+Run the full verification suite to validate system integrity:
 
 ```powershell
-# 1. Static Typecheck
+# 1. Static Typecheck (0 errors)
 npm run lint
 
-# 2. Automated Test Suite (96 tests across all phases)
+# 2. Automated Test Suite (15 test suites, 74+ tests passing)
 npm test
 
-# 3. Production Bundle Build
+# 3. Production Bundle Build (Vite production build)
 npm run build
 ```
 
 ---
 
-## 6. Project Documentation Index
+## 7. Staging Credentials & Secrets Security
+
+* **Local Environment (`.env.local`)**: Contains local secrets (demo admin password, local salts). Gitignored and never committed.
+* **Production Deployment**: Real cloud deployments must configure environment variables directly in cloud secret managers (e.g., AWS Secrets Manager or GCP Secret Manager).
+* **Compromised Credentials Note**: If any legacy credentials were historically committed to Git, they must be considered compromised and revoked at the cloud provider level. Never reuse development keys in production.
+
+---
+
+## 8. Project Documentation Index
 
 * [Configuration Reference Guide](file:///E:/Projects/BlockBallot-EVoting-System/docs/CONFIGURATION_REFERENCE.md)
 * [Firebase Staging Setup Guide](file:///E:/Projects/BlockBallot-EVoting-System/docs/FIREBASE_STAGING_GUIDE.md)
@@ -119,6 +196,6 @@ npm run build
 
 ---
 
-## 7. License & Disclaimer
+## 9. License & Academic Disclaimer
 
 Academic demonstration project. Distributed under the Apache-2.0 License. Not authorized for legally binding public elections.

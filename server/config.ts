@@ -9,6 +9,12 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Load local overrides if present (.env.local is ignored in git)
+const localEnvPath = path.resolve(process.cwd(), '.env.local');
+if (fs.existsSync(localEnvPath)) {
+  dotenv.config({ path: localEnvPath, override: true });
+}
+
 export const DEFAULT_FALLBACK_HMAC_SECRET =
   'BLOCKBALLOT_SECURE_HMAC_SECRET_K8f72h901ndk2n9d8213hd98h23d9h12d9h8129';
 export const DEFAULT_FALLBACK_COMMITMENT_SALT =
@@ -84,6 +90,18 @@ export const SERVER_CONFIG = {
   OTP_COOLDOWN_MS: 60 * 1000, // 60 seconds
   OTP_MAX_ATTEMPTS: 3,
   SESSION_EXPIRY_MS: 15 * 60 * 1000, // 15 minutes
+
+  // Local Demo Administrator (Strictly disabled in production)
+  DEMO_ADMIN_EMAIL: 'demo.admin@blockballot.local',
+  DEMO_ADMIN_DISPLAY_NAME: 'BlockBallot Demo Administrator',
+  get DEMO_ADMIN_PASSWORD(): string {
+    if (process.env.NODE_ENV === 'production') return '';
+    return process.env.DEMO_ADMIN_PASSWORD || '';
+  },
+  get DEMO_ADMIN_ENABLED(): boolean {
+    if (process.env.NODE_ENV === 'production') return false;
+    return process.env.DEMO_ADMIN_ENABLED === 'true' || Boolean(process.env.DEMO_ADMIN_PASSWORD);
+  },
 };
 
 /**

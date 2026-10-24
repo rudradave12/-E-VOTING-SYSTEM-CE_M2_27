@@ -72,6 +72,11 @@ export const Navbar: React.FC<NavbarProps> = ({
       isHighlight: true,
     },
     {
+      id: 'elections-results',
+      label: language === 'hi' ? 'पूर्व चुनाव एवं परिणाम' : 'Previous Elections',
+      icon: BarChart3,
+    },
+    {
       id: 'how-it-works',
       label: language === 'hi' ? 'मतदान कैसे काम करता है' : 'How Voting Works',
       icon: HelpCircle,

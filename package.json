@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "lint": "tsc --noEmit",
     "test": "tsx --test --test-concurrency=1 src/test/*.test.ts",
+    "admin:seed": "tsx scripts/seed-demo-admin.ts",
     "node:start": "hardhat --config hardhat.config.cjs node --hostname 127.0.0.1 --port 8545",
     "contract:deploy": "tsx scripts/deploy.ts",
     "emulator:start": "firebase emulators:start --only firestore",

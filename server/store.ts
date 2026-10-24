@@ -376,15 +376,15 @@ class ServerStore {
   }
 
   public addCandidate(candidate: Candidate): { success: boolean; message: string } {
-    // Validate election state: cannot add candidates to active or concluded elections
+    // Validate election state: cannot add candidates while an associated election is active
     const activeElections = Array.from(this.elections.values()).filter(
-      (e) => e.status === 'active' || e.status === 'concluded'
+      (e) => e.status === 'active'
     );
     for (const e of activeElections) {
       if (e.constituencyIds && e.constituencyIds.includes(candidate.constituencyId)) {
         return {
           success: false,
-          message: 'Nominations are locked: cannot add candidates while an associated election is active or concluded.',
+          message: 'Nominations are locked: cannot add candidates while an associated election is active.',
         };
       }
     }

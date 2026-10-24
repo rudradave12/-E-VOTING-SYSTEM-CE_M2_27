@@ -292,6 +292,17 @@ export async function verifyAdminIdToken(idToken: string): Promise<{
     const auth = getFirebaseAdminAuth();
     const decoded: DecodedIdToken = await auth.verifyIdToken(idToken.trim());
 
+    // Fail closed in production: Demo administrator credentials strictly rejected in production
+    if (process.env.NODE_ENV === 'production') {
+      const emailLower = (decoded.email || '').toLowerCase();
+      if (emailLower === 'demo.admin@blockballot.local' || decoded.uid === 'demo-admin-uid') {
+        return {
+          isValid: false,
+          error: 'Access denied: Demo administrator account cannot be used in production mode.',
+        };
+      }
+    }
+
     // 1. Check custom claims for explicit administrator authorization
     const isExplicitAdminClaim =
       decoded.admin === true ||

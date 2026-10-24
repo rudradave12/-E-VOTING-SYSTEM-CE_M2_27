@@ -10,7 +10,12 @@
 
 * **Access Control**: Administrative routes require verified role-based authorization (`Returning Officer` or `Election Commissioner`).
 * **Firebase Token Verification**: Handled via `POST /api/admin/login` using `firebase-admin` verifying cryptographic ID tokens.
-* **Fail-Closed Policy**: Arbitrary emails, unverified tokens, and hardcoded passwords are strictly rejected.
+* **Isolated Local Demo Administrator**:
+  * Demo Email: `demo.admin@blockballot.local`
+  * Seeding Script: `npm run admin:seed`
+  * The password is automatically generated and stored exclusively in the gitignored `.env.local` file.
+  * Verified server-side via `POST /api/admin/login` issuing a signed `adm_...` session token.
+* **Fail-Closed Security**: In production (`NODE_ENV=production`), the demo admin account and password login are strictly disabled (403 Forbidden). Arbitrary emails, unverified tokens, and hardcoded passwords are rejected.
 * **Session Management**: Successful authentication returns an administrator Bearer token (`adm_...`) with a 4-hour lifespan.
 
 ---

@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import { serverStore } from '../store';
 import { ElectionStatus } from '../../src/types';
+import { SERVER_CONFIG } from '../config';
 
 import { verifyAdminIdToken } from '../firebaseAdmin';
 
@@ -45,62 +46,133 @@ export function verifyAdminAuth(req: Request): boolean {
 
 /**
  * POST /api/admin/login
- * Strictly validates Election Commission officer authentication via verified Firebase ID tokens.
- * Fails closed if the token is missing, expired, forged, or lacks verified administrator role.
+ * Validates Election Commission officer authentication via verified Firebase ID tokens
+ * or local demo administrator credentials in non-production environments.
+ * Fails closed in production.
  */
 adminRouter.post('/login', async (req: Request, res: Response): Promise<void> => {
-  const { idToken, googleToken } = req.body;
+  const { idToken, googleToken, email, password } = req.body;
   const tokenToVerify = idToken || googleToken;
 
-  if (!tokenToVerify || typeof tokenToVerify !== 'string') {
-    res.status(401).json({
-      success: false,
-      message: 'Access denied: Valid Firebase officer authentication token required.',
-    });
-    return;
-  }
+  // Flow A: ID Token verification (standard production & emulator flow)
+  if (tokenToVerify && typeof tokenToVerify === 'string') {
+    const verification = await verifyAdminIdToken(tokenToVerify);
 
-  // Cryptographically verify ID token against Firebase Admin Auth and role registry
-  const verification = await verifyAdminIdToken(tokenToVerify);
+    if (!verification.isValid) {
+      res.status(401).json({
+        success: false,
+        message: verification.error || 'Administrator authentication failed. Unauthorized credentials.',
+      });
+      return;
+    }
 
-  if (!verification.isValid) {
-    res.status(401).json({
-      success: false,
-      message: verification.error || 'Administrator authentication failed. Unauthorized credentials.',
-    });
-    return;
-  }
+    const officerEmail = verification.email || 'officer@blockballot.gov.in';
+    const officerRole = verification.role || 'Returning Officer';
+    const token = `adm_${crypto.randomBytes(32).toString('hex')}`;
+    const expiresAt = Date.now() + 4 * 60 * 60 * 1000; // 4 hours
 
-  const officerEmail = verification.email || 'officer@blockballot.gov.in';
-  const officerRole = verification.role || 'Returning Officer';
-  const token = `adm_${crypto.randomBytes(32).toString('hex')}`;
-  const expiresAt = Date.now() + 4 * 60 * 60 * 1000; // 4 hours
-
-  adminSessions.set(token, {
-    email: officerEmail,
-    uid: verification.uid,
-    role: officerRole,
-    expiresAt,
-  });
-
-  serverStore.recordAuditEvent({
-    id: `audit-admin-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-    timestamp: Date.now(),
-    type: 'ADMIN_ACTION',
-    description: `Administrative officer authenticated: ${officerEmail} (Role: ${officerRole})`,
-    electionId: 1,
-  });
-
-  res.status(200).json({
-    success: true,
-    message: 'Election Commission administrative officer authenticated successfully.',
-    token,
-    expiresAt,
-    user: {
+    adminSessions.set(token, {
       email: officerEmail,
+      uid: verification.uid,
       role: officerRole,
-      permissions: ['MANAGE_ELECTIONS', 'MANAGE_CANDIDATES', 'MANAGE_VOTERS', 'VIEW_AUDIT'],
-    },
+      expiresAt,
+    });
+
+    serverStore.recordAuditEvent({
+      id: `audit-admin-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: Date.now(),
+      type: 'ADMIN_ACTION',
+      description: `Administrative officer authenticated: ${officerEmail} (Role: ${officerRole})`,
+      electionId: 1,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Election Commission administrative officer authenticated successfully.',
+      token,
+      expiresAt,
+      user: {
+        email: officerEmail,
+        role: officerRole,
+        permissions: ['MANAGE_ELECTIONS', 'MANAGE_CANDIDATES', 'MANAGE_VOTERS', 'VIEW_AUDIT'],
+      },
+    });
+    return;
+  }
+
+  // Flow B: Local Demo Administrator login (strictly disabled in production)
+  if (email && typeof email === 'string' && password && typeof password === 'string') {
+    if (SERVER_CONFIG.NODE_ENV === 'production' || process.env.NODE_ENV === 'production') {
+      res.status(403).json({
+        success: false,
+        message: 'Access denied: Password authentication is disabled in production. Verified Commission hardware/ID tokens required.',
+      });
+      return;
+    }
+
+    if (!SERVER_CONFIG.DEMO_ADMIN_ENABLED) {
+      res.status(403).json({
+        success: false,
+        message: 'Access denied: Local demo administrator is disabled in this environment.',
+      });
+      return;
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    if (cleanEmail !== SERVER_CONFIG.DEMO_ADMIN_EMAIL.toLowerCase()) {
+      res.status(401).json({
+        success: false,
+        message: 'Invalid administrative credentials.',
+      });
+      return;
+    }
+
+    const expectedPassword = SERVER_CONFIG.DEMO_ADMIN_PASSWORD;
+    if (!expectedPassword || expectedPassword.length < 8 || password.trim() !== expectedPassword) {
+      res.status(401).json({
+        success: false,
+        message: 'Invalid administrative credentials.',
+      });
+      return;
+    }
+
+    const token = `adm_${crypto.randomBytes(32).toString('hex')}`;
+    const expiresAt = Date.now() + 4 * 60 * 60 * 1000; // 4 hours
+
+    adminSessions.set(token, {
+      email: SERVER_CONFIG.DEMO_ADMIN_EMAIL,
+      uid: 'demo-admin-uid',
+      role: 'Returning Officer',
+      expiresAt,
+    });
+
+    serverStore.recordAuditEvent({
+      id: `audit-admin-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: Date.now(),
+      type: 'ADMIN_ACTION',
+      description: `Local demo administrator authenticated: ${SERVER_CONFIG.DEMO_ADMIN_EMAIL} (${SERVER_CONFIG.DEMO_ADMIN_DISPLAY_NAME})`,
+      electionId: 1,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'BlockBallot local demo administrator authenticated successfully.',
+      token,
+      expiresAt,
+      user: {
+        email: SERVER_CONFIG.DEMO_ADMIN_EMAIL,
+        displayName: SERVER_CONFIG.DEMO_ADMIN_DISPLAY_NAME,
+        role: 'Returning Officer',
+        permissions: ['MANAGE_ELECTIONS', 'MANAGE_CANDIDATES', 'MANAGE_VOTERS', 'VIEW_AUDIT'],
+        isDemoAccount: true,
+      },
+    });
+    return;
+  }
+
+  res.status(401).json({
+    success: false,
+    message: 'Access denied: Valid Firebase officer authentication token or demo credentials required.',
   });
 });
 

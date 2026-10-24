@@ -36,10 +36,22 @@ export const AdminLoginScreen: React.FC<AdminLoginScreenProps> = ({
         if (password.trim().startsWith('eyJ')) {
           idToken = password.trim();
         } else {
+          // Fall back to server-side demo admin authentication (academic/local demonstration mode)
+          const fallbackRes = await voterApi.adminLogin({
+            email: email.trim(),
+            password: password.trim(),
+          });
+
+          if (fallbackRes.success) {
+            onLoginSuccess();
+            return;
+          }
+
           setError(
-            fbAuthErr.message
-              ? `Authentication failed: ${fbAuthErr.message}`
-              : 'Invalid administrative credentials. Access denied.'
+            fallbackRes.message ||
+              (fbAuthErr.message
+                ? `Authentication failed: ${fbAuthErr.message}`
+                : 'Invalid administrative credentials. Access denied.')
           );
           setIsLoading(false);
           return;
@@ -81,13 +93,26 @@ export const AdminLoginScreen: React.FC<AdminLoginScreenProps> = ({
         </div>
 
         {/* Security Policy Notice */}
-        <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 mb-6 space-y-1">
+        <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 mb-4 space-y-1">
           <div className="flex items-center gap-1.5 font-bold text-slate-900">
             <Lock className="w-3.5 h-3.5 text-slate-700" />
             <span>Strict Administrative Authorization:</span>
           </div>
           <p className="text-[11px] text-slate-600 leading-relaxed">
             Officers must authenticate using Commission-issued credentials. Authentication is cryptographically verified against the server-side role registry and audited.
+          </p>
+        </div>
+
+        {/* Local Demo Account Notice */}
+        <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-lg text-xs text-amber-900 mb-6 space-y-1">
+          <div className="flex items-center gap-1.5 font-bold text-amber-950">
+            <Shield className="w-3.5 h-3.5 text-amber-700" />
+            <span>Local Academic Demonstration:</span>
+          </div>
+          <p className="text-[11px] text-amber-800 leading-relaxed">
+            Demo ID: <code className="bg-amber-100/80 px-1 py-0.5 rounded text-[10px] font-mono">demo.admin@blockballot.local</code>
+            <br />
+            Password: Set in ignored <code className="bg-amber-100/80 px-1 py-0.5 rounded text-[10px] font-mono">.env.local</code> (run <code className="bg-amber-100/80 px-1 py-0.5 rounded text-[10px] font-mono">npm run admin:seed</code>). Disabled in production.
           </p>
         </div>
 

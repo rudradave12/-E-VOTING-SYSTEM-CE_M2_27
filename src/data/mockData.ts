@@ -31,6 +31,21 @@ export const INITIAL_ELECTIONS: Election[] = [
     electionType: 'State Legislative Assembly (By-Election)',
     isDemoElection: false,
   },
+  {
+    id: 'DEMO-PREV-2023',
+    numericId: 17,
+    title: 'Academic Trial Election 2023 (Concluded)',
+    description: 'Prior academic trial election. Voting is permanently closed and archived records are strictly read-only.',
+    status: 'concluded',
+    startTime: Math.floor(Date.now() / 1000) - 86400 * 365,
+    endTime: Math.floor(Date.now() / 1000) - 86400 * 360,
+    contractAddress: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
+    totalVotersRegistered: 5000,
+    totalVotesCast: 0,
+    constituencyIds: ['CONST-04-ND'],
+    electionType: 'Parliamentary Trial (Concluded Archive)',
+    isDemoElection: true,
+  },
 ];
 
 export const INITIAL_CONSTITUENCIES: Constituency[] = [

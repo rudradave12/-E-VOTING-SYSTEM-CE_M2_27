@@ -322,7 +322,7 @@ voterRouter.post('/authorization', async (req: Request, res: Response): Promise<
     return;
   }
 
-  if (nowSec > targetElection.endTime) {
+  if (nowSec >= targetElection.endTime) {
     res.status(403).json({
       success: false,
       message: 'Voting deadline has concluded for this election.',
@@ -490,6 +490,37 @@ voterRouter.post('/record-vote', (req: Request, res: Response): void => {
   if (!voter) {
     res.status(404).json({ success: false, message: 'Elector record not found.' });
     return;
+  }
+
+  // Validate election status and deadline if electionId is supplied
+  if (electionId) {
+    const targetElection =
+      serverStore.findElectionByNumericId(Number(electionId)) ||
+      serverStore.getElectionById(String(electionId));
+    if (targetElection) {
+      if (targetElection.status !== 'active') {
+        res.status(403).json({
+          success: false,
+          message: `Election is not currently active for voting (Current state: ${targetElection.status.toUpperCase()}).`,
+        });
+        return;
+      }
+      const nowSec = Math.floor(Date.now() / 1000);
+      if (nowSec < targetElection.startTime) {
+        res.status(403).json({
+          success: false,
+          message: 'Voting has not opened yet for this election schedule.',
+        });
+        return;
+      }
+      if (nowSec >= targetElection.endTime) {
+        res.status(403).json({
+          success: false,
+          message: 'Voting deadline has concluded for this election.',
+        });
+        return;
+      }
+    }
   }
 
   // Idempotency: If already VOTED, acknowledge safely

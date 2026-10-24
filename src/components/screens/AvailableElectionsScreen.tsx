@@ -37,6 +37,10 @@ export const AvailableElectionsScreen: React.FC<AvailableElectionsScreenProps> =
 
   const nowSec = Math.floor(Date.now() / 1000);
 
+  const openElectionsCount = elections.filter(
+    (e) => e.status === 'active' && nowSec >= e.startTime && nowSec < e.endTime
+  ).length;
+
   const filteredElections = elections.filter((elec) => {
     if (filter === 'all') return true;
     if (filter === 'active') return elec.status === 'active';
@@ -101,160 +105,223 @@ export const AvailableElectionsScreen: React.FC<AvailableElectionsScreenProps> =
         </div>
       </div>
 
+      {/* Banner when no elections are currently open for voting */}
+      {openElectionsCount === 0 && (
+        <div className="p-4 rounded-xl border border-amber-300 bg-amber-50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-900 shadow-2xs">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-5 h-5 text-amber-700 shrink-0" />
+            <div>
+              <p className="font-bold text-sm">No elections are currently open for voting.</p>
+              <p className="text-xs text-amber-800">
+                Live voting is permitted only during open hours. You can inspect previous elections and official gazetted results in read-only mode.
+              </p>
+            </div>
+          </div>
+          {onViewResults && (
+            <button
+              onClick={() => onViewResults(elections[0]?.id || '')}
+              className="px-3.5 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-900 text-xs font-semibold hover:bg-amber-100/50 transition-colors whitespace-nowrap cursor-pointer shadow-2xs"
+            >
+              Previous Elections & Results →
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Elections Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {filteredElections.map((election) => {
-          const isDemo = Boolean(election.isDemoElection || election.id === 'GE-2024');
-          const isEligibleForVoting =
-            election.status === 'active' && nowSec >= election.startTime && nowSec <= election.endTime;
-
-          const matchedConstNames = election.constituencyIds
-            ?.map((id) => constituencies.find((c) => c.id === id)?.name)
-            .filter(Boolean)
-            .join(', ');
-
-          return (
-            <div
-              key={election.id}
-              className={`rounded-2xl border bg-white p-6 shadow-xs flex flex-col justify-between transition-all hover:shadow-md ${
-                isEligibleForVoting ? 'border-orange-300 ring-1 ring-orange-200' : 'border-slate-200'
-              }`}
-            >
-              <div className="space-y-4">
-                {/* Header Strip with Badges */}
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
-                    {isDemo ? (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
-                        <Sparkles className="w-3 h-3 text-purple-600" />
-                        Historical Demo Election
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-cyan-50 text-cyan-800 border border-cyan-200">
-                        <Layers className="w-3 h-3 text-cyan-700" />
-                        Administrator-Created Election
-                      </span>
-                    )}
-                  </div>
-
-                  <span
-                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider ${
-                      election.status === 'active'
-                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                        : election.status === 'scheduled'
-                        ? 'bg-amber-50 text-amber-800 border border-amber-200'
-                        : election.status === 'paused'
-                        ? 'bg-orange-50 text-orange-800 border border-orange-200'
-                        : election.status === 'concluded'
-                        ? 'bg-slate-100 text-slate-700 border border-slate-200'
-                        : 'bg-blue-50 text-blue-800 border border-blue-200'
-                    }`}
-                  >
-                    {election.status === 'active' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
-                    {election.status}
-                  </span>
-                </div>
-
-                {/* Title & Description */}
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900 tracking-tight leading-snug">
-                    {election.title}
-                  </h2>
-                  <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
-                    <span className="font-mono">ID: {election.id}</span>
-                    <span>·</span>
-                    <span>Type: {election.electionType || 'General Parliamentary'}</span>
-                  </div>
-                  <p className="text-xs text-slate-600 mt-2.5 leading-relaxed">
-                    {election.description}
-                  </p>
-                </div>
-
-                {/* Constituency Scope */}
-                <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-1 text-xs">
-                  <span className="text-slate-500 font-medium block">
-                    {language === 'hi' ? 'संबद्ध निर्वाचन क्षेत्र:' : 'Participating Constituencies:'}
-                  </span>
-                  <span className="font-semibold text-slate-800">
-                    {matchedConstNames || `${election.constituencyIds.length} Constituencies Configured`}
-                  </span>
-                </div>
-
-                {/* Schedule & Voting Window Details */}
-                <div className="grid grid-cols-2 gap-3 text-xs pt-1">
-                  <div className="space-y-0.5">
-                    <span className="text-slate-400 text-[10px] uppercase font-bold flex items-center gap-1">
-                      <Clock className="w-3 h-3 text-slate-400" />
-                      Voting Opens
-                    </span>
-                    <span className="font-mono text-slate-700 text-[11px] block">
-                      {new Date(election.startTime * 1000).toLocaleString([], {
-                        dateStyle: 'medium',
-                        timeStyle: 'short',
-                      })}
-                    </span>
-                  </div>
-
-                  <div className="space-y-0.5">
-                    <span className="text-slate-400 text-[10px] uppercase font-bold flex items-center gap-1">
-                      <Calendar className="w-3 h-3 text-slate-400" />
-                      Voting Closes
-                    </span>
-                    <span className="font-mono text-slate-700 text-[11px] block">
-                      {new Date(election.endTime * 1000).toLocaleString([], {
-                        dateStyle: 'medium',
-                        timeStyle: 'short',
-                      })}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Live Test Vote Tally (Starts at 0 for fresh demo) */}
-                <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-100 text-slate-500">
-                  <span>Current Test Ballots Cast:</span>
-                  <span className="font-mono font-bold text-slate-900 tabular-nums">
-                    {election.totalVotesCast.toLocaleString('en-IN')} votes
-                  </span>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="pt-6 mt-4 border-t border-slate-100 flex items-center justify-between gap-3">
-                {isEligibleForVoting ? (
-                  <button
-                    onClick={() => onSelectElectionAndVote(election.id)}
-                    className="w-full py-3 px-4 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-semibold text-xs sm:text-sm shadow-xs hover:shadow transition-all flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <Vote className="w-4 h-4" />
-                    <span>{language === 'hi' ? 'मतदान केंद्र में प्रवेश करें' : 'Enter Voting Booth & Cast Ballot'}</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                ) : (
-                  <div className="w-full flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-500">
-                    <span className="flex items-center gap-1.5 font-medium">
-                      <Lock className="w-3.5 h-3.5 text-slate-400" />
-                      {election.status === 'scheduled'
-                        ? 'Voting opens at scheduled start time'
-                        : election.status === 'paused'
-                        ? 'Voting temporarily suspended by administration'
-                        : election.status === 'concluded'
-                        ? 'Election concluded'
-                        : 'Draft state (Pending publication)'}
-                    </span>
-                    {onViewResults && (
-                      <button
-                        onClick={() => onViewResults(election.id)}
-                        className="text-xs font-semibold text-orange-600 hover:underline cursor-pointer"
-                      >
-                        Tallies
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
+        {filteredElections.length === 0 ? (
+          <div className="col-span-full rounded-2xl border border-slate-200 bg-white p-12 text-center space-y-4">
+            <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
+              <Vote className="w-6 h-6" />
             </div>
-          );
-        })}
+            <div>
+              <h3 className="text-lg font-bold text-slate-800">No elections found in this category</h3>
+              <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                No elections currently match the active filter. Choose "All Elections" or browse the completed elections archive in read-only mode.
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-3">
+              <button
+                onClick={() => setFilter('all')}
+                className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold cursor-pointer"
+              >
+                Show All Elections
+              </button>
+              {onViewResults && (
+                <button
+                  onClick={() => onViewResults(elections[0]?.id || '')}
+                  className="px-4 py-2 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold cursor-pointer"
+                >
+                  View Previous Elections Archive
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          filteredElections.map((election) => {
+            const isDemo = Boolean(election.isDemoElection || election.id === 'GE-2024');
+            const isEligibleForVoting =
+              election.status === 'active' && nowSec >= election.startTime && nowSec < election.endTime;
+            const isScheduledFuture =
+              election.status === 'scheduled' || (election.status === 'active' && nowSec < election.startTime);
+            const isConcludedPast =
+              election.status === 'concluded' || nowSec >= election.endTime;
+
+            const matchedConstNames = election.constituencyIds
+              ?.map((id) => constituencies.find((c) => c.id === id)?.name)
+              .filter(Boolean)
+              .join(', ');
+
+            return (
+              <div
+                key={election.id}
+                className={`rounded-2xl border bg-white p-6 shadow-xs flex flex-col justify-between transition-all hover:shadow-md ${
+                  isEligibleForVoting ? 'border-orange-300 ring-1 ring-orange-200' : 'border-slate-200'
+                }`}
+              >
+                <div className="space-y-4">
+                  {/* Header Strip with Badges */}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      {isDemo ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                          <Sparkles className="w-3 h-3 text-purple-600" />
+                          Historical Demo Election
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-cyan-50 text-cyan-800 border border-cyan-200">
+                          <Layers className="w-3 h-3 text-cyan-700" />
+                          Administrator-Created Election
+                        </span>
+                      )}
+                    </div>
+
+                    <span
+                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider ${
+                        isEligibleForVoting
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : isScheduledFuture
+                          ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                          : election.status === 'paused'
+                          ? 'bg-orange-50 text-orange-800 border border-orange-200'
+                          : isConcludedPast
+                          ? 'bg-slate-100 text-slate-700 border border-slate-200'
+                          : 'bg-blue-50 text-blue-800 border border-blue-200'
+                      }`}
+                    >
+                      {isEligibleForVoting && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+                      {isEligibleForVoting
+                        ? 'OPEN FOR VOTING'
+                        : isScheduledFuture
+                        ? 'SCHEDULED'
+                        : isConcludedPast
+                        ? 'CONCLUDED'
+                        : election.status.toUpperCase()}
+                    </span>
+                  </div>
+
+                  {/* Title & Description */}
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900 tracking-tight leading-snug">
+                      {election.title}
+                    </h2>
+                    <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
+                      <span className="font-mono">ID: {election.id}</span>
+                      <span>·</span>
+                      <span>Type: {election.electionType || 'General Parliamentary'}</span>
+                    </div>
+                    <p className="text-xs text-slate-600 mt-2.5 leading-relaxed">
+                      {election.description}
+                    </p>
+                  </div>
+
+                  {/* Constituency Scope */}
+                  <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-1 text-xs">
+                    <span className="text-slate-500 font-medium block">
+                      {language === 'hi' ? 'संबद्ध निर्वाचन क्षेत्र:' : 'Participating Constituencies:'}
+                    </span>
+                    <span className="font-semibold text-slate-800">
+                      {matchedConstNames || `${election.constituencyIds.length} Constituencies Configured`}
+                    </span>
+                  </div>
+
+                  {/* Schedule & Voting Window Details */}
+                  <div className="grid grid-cols-2 gap-3 text-xs pt-1">
+                    <div className="space-y-0.5">
+                      <span className="text-slate-400 text-[10px] uppercase font-bold flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-slate-400" />
+                        Voting Opens
+                      </span>
+                      <span className="font-mono text-slate-700 text-[11px] block">
+                        {new Date(election.startTime * 1000).toLocaleString([], {
+                          dateStyle: 'medium',
+                          timeStyle: 'short',
+                        })}
+                      </span>
+                    </div>
+
+                    <div className="space-y-0.5">
+                      <span className="text-slate-400 text-[10px] uppercase font-bold flex items-center gap-1">
+                        <Calendar className="w-3 h-3 text-slate-400" />
+                        Voting Closes
+                      </span>
+                      <span className="font-mono text-slate-700 text-[11px] block">
+                        {new Date(election.endTime * 1000).toLocaleString([], {
+                          dateStyle: 'medium',
+                          timeStyle: 'short',
+                        })}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Live Test Vote Tally (Starts at 0 for fresh demo) */}
+                  <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-100 text-slate-500">
+                    <span>Current Test Ballots Cast:</span>
+                    <span className="font-mono font-bold text-slate-900 tabular-nums">
+                      {election.totalVotesCast.toLocaleString('en-IN')} votes
+                    </span>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="pt-6 mt-4 border-t border-slate-100 flex items-center justify-between gap-3">
+                  {isEligibleForVoting ? (
+                    <button
+                      onClick={() => onSelectElectionAndVote(election.id)}
+                      className="w-full py-3 px-4 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-semibold text-xs sm:text-sm shadow-xs hover:shadow transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <Vote className="w-4 h-4" />
+                      <span>{language === 'hi' ? 'मतदान केंद्र में प्रवेश करें' : 'Enter Voting Booth & Cast Ballot'}</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  ) : (
+                    <div className="w-full flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-500">
+                      <span className="flex items-center gap-1.5 font-medium">
+                        <Lock className="w-3.5 h-3.5 text-slate-400" />
+                        {isScheduledFuture
+                          ? `Voting scheduled to open on ${new Date(election.startTime * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`
+                          : election.status === 'paused'
+                          ? 'Voting temporarily suspended by administration'
+                          : isConcludedPast
+                          ? 'Election concluded — Voting closed (Read-Only)'
+                          : 'Draft state (Pending publication)'}
+                      </span>
+                      {onViewResults && (
+                        <button
+                          onClick={() => onViewResults(election.id)}
+                          className="text-xs font-semibold text-orange-600 hover:underline cursor-pointer"
+                        >
+                          Tallies
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
 
       {/* Honest Prototype Footer Note */}

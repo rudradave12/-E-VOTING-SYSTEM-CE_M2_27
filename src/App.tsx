@@ -365,8 +365,14 @@ export function AppInner() {
           />
         )}
 
-        {currentScreen === 'elections-results' && (
-          <ElectionsResultsScreen />
+        {(currentScreen === 'elections-results' ||
+          currentScreen === 'election-results' ||
+          currentScreen === 'results') && (
+          <ElectionsResultsScreen
+            elections={elections}
+            candidates={candidates}
+            constituencies={constituencies}
+          />
         )}
 
         {currentScreen === 'candidates-parties' && (

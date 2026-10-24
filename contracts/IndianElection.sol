@@ -226,7 +226,7 @@ contract IndianElection is EIP712 {
         require(election.id != 0, "BlockBallot: Election does not exist");
         require(election.status == ElectionStatus.Active, "BlockBallot: Election not active");
         require(
-            block.timestamp >= election.startTime && block.timestamp <= election.endTime,
+            block.timestamp >= election.startTime && block.timestamp < election.endTime,
             "BlockBallot: Outside voting hours"
         );
         require(block.timestamp <= _expiry, "BlockBallot: Authorization ticket expired");
