@@ -344,31 +344,50 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
             Verify spent nullifiers, administrative audits, gas metrics, and smart contract event logs.
           </p>
         </button>
+
+        {/* Module 5: Manual Physical-ID Exceptions (Phase 06) */}
+        <button
+          onClick={() => onNavigate('admin-exceptions')}
+          className="p-5 bg-white border border-slate-200 hover:border-purple-500 hover:bg-purple-50/20 rounded-xl text-left transition-all cursor-pointer group shadow-xs relative"
+        >
+          <div className="w-10 h-10 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
+            <FileCheck2 className="w-5 h-5" />
+          </div>
+          <div className="flex items-center justify-between mb-1">
+            <h3 className="font-bold text-slate-900 text-sm">Manual ID Exceptions</h3>
+            <span className="text-[10px] font-bold px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded border border-purple-200">
+              {isElectionOfficer ? 'Review Queue' : 'Requests & Status'}
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 leading-relaxed">
+            {isElectionOfficer
+              ? 'Review, approve or decline supervised physical-ID exception requests with mandatory reason auditing.'
+              : 'Submit and monitor manual physical-ID verification exception requests for voters within authorized scope.'}
+          </p>
+        </button>
       </div>
 
-      {/* Voter Registration Officer: Future Workflows Preview (Explicitly Unavailable in Phase 03) */}
-      {isVoterOfficer && (
-        <div className="bg-amber-50/60 border border-amber-200/80 rounded-xl p-5 mb-8">
-          <div className="flex items-start gap-3">
-            <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 mt-0.5">
-              <Fingerprint className="w-4 h-4" />
+      {/* Manual Physical-ID Verification Banner (Phase 06 Active) */}
+      <div className="bg-purple-50/70 border border-purple-200 rounded-xl p-5 mb-8">
+        <div className="flex items-start gap-3">
+          <div className="w-8 h-8 rounded-lg bg-purple-100 text-purple-800 flex items-center justify-center shrink-0 mt-0.5">
+            <FileCheck2 className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h4 className="text-sm font-bold text-purple-950">
+                Manual Physical-ID Verification & Exception Protocol
+              </h4>
+              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 bg-purple-200 text-purple-900 rounded">
+                Active in Phase 06
+              </span>
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h4 className="text-sm font-bold text-amber-950">
-                  Biometric Enrollment & Identity Hardware Integration
-                </h4>
-                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 bg-amber-200/80 text-amber-900 rounded">
-                  Scheduled for Phase 05
-                </span>
-              </div>
-              <p className="text-xs text-amber-800 mt-1 leading-relaxed">
-                Hardware biometric capture (fingerprint and face template processing) and physical ID exception workflows are not available in Phase 03. Backend permission identifiers (<code className="bg-amber-100 px-1 py-0.5 rounded font-mono text-[10px]">BIOMETRIC_ENROLLMENT_START</code> and <code className="bg-amber-100 px-1 py-0.5 rounded font-mono text-[10px]">VOTER_EXCEPTION_REQUEST</code>) are catalogued for future activation.
-              </p>
-            </div>
+            <p className="text-xs text-purple-900 mt-1 leading-relaxed">
+              Supervised manual physical-ID verification is enabled for circumstances where biometric equipment is unavailable or verification fails. VROs submit requests; Election Officers review and decide upon direct physical document inspection. Approved outcomes are recorded as <code className="bg-purple-100 px-1 py-0.5 rounded font-mono text-[10px]">MANUAL_PHYSICAL_ID_APPROVED</code> (never as biometric matches).
+            </p>
           </div>
         </div>
-      )}
+      </div>
 
       {/* Contract & Cryptographic Details */}
       <div className="bg-slate-900 text-slate-200 rounded-xl p-6">

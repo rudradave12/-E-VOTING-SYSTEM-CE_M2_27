@@ -294,6 +294,7 @@ export interface BiometricEnrollmentMetadata {
   consentRecordReference?: string;
   enrollingOfficerId?: string;
   exceptionDecisionReference?: string;
+  manualExceptionId?: string;
   isManualException: boolean; // Explicit flag: true ONLY if approved via manual administrative review
   createdAt: number;
   updatedAt: number;
@@ -360,7 +361,7 @@ export function validateBiometricMetadata(record: any): { isValid: boolean; erro
     errors.push('MANUALLY_APPROVED status must have isManualException set to true');
   }
   if (record.status === 'ENROLLED' && record.isManualException) {
-    errors.push('ENROLLED status must have isManualException set to false (represents hardware/algorithm enrollment)');
+    errors.push('Manual exception records cannot be marked as ENROLLED status (isManualException must be false for ENROLLED)');
   }
 
   // Strict check: No raw biometric data allowed in metadata
@@ -540,6 +541,7 @@ export type AuditTargetCategory =
   | 'BIOMETRIC_METADATA'
   | 'BALLOT'
   | 'AUTHORITY'
+  | 'EXCEPTION_REQUEST'
   | 'SYSTEM';
 
 export type AuditOutcome = 'SUCCESS' | 'DENIED' | 'FAILED' | 'CHALLENGED';
@@ -639,6 +641,7 @@ export function validateStructuredAuditEvent(record: any): { isValid: boolean; e
       'BIOMETRIC_METADATA',
       'BALLOT',
       'AUTHORITY',
+      'EXCEPTION_REQUEST',
       'SYSTEM',
     ];
     if (!validCategories.includes(record.target.category)) {
@@ -670,3 +673,221 @@ export function validateStructuredAuditEvent(record: any): { isValid: boolean; e
 
   return { isValid: errors.length === 0, errors };
 }
+
+// ============================================================================
+// 7. MANUAL PHYSICAL-ID EXCEPTION RECORDS (PHASE 06)
+// ============================================================================
+
+export type ExceptionPurpose = 'ENROLLMENT' | 'VOTING_SESSION';
+
+export type ExceptionStatus =
+  | 'PENDING'
+  | 'APPROVED'
+  | 'DECLINED'
+  | 'EXPIRED'
+  | 'CANCELLED'
+  | 'CONSUMED';
+
+export type ExceptionReasonCode =
+  | 'CAMERA_UNAVAILABLE'
+  | 'CAMERA_PERMISSION_DENIED'
+  | 'FINGERPRINT_SCANNER_NOT_DETECTED'
+  | 'SUPPORTED_DEVICE_ERROR'
+  | 'PHYSICAL_DISABILITY_OR_AMPUTATION'
+  | 'WORN_FRICTION_RIDGES'
+  | 'IDENTITY_VERIFICATION_FAILURE'
+  | 'OTHER_OFFICIAL_REASON';
+
+export const VALID_EXCEPTION_REASON_CODES: readonly ExceptionReasonCode[] = [
+  'CAMERA_UNAVAILABLE',
+  'CAMERA_PERMISSION_DENIED',
+  'FINGERPRINT_SCANNER_NOT_DETECTED',
+  'SUPPORTED_DEVICE_ERROR',
+  'PHYSICAL_DISABILITY_OR_AMPUTATION',
+  'WORN_FRICTION_RIDGES',
+  'IDENTITY_VERIFICATION_FAILURE',
+  'OTHER_OFFICIAL_REASON',
+] as const;
+
+export type ExceptionDecisionOutcome =
+  | 'MANUAL_PHYSICAL_ID_APPROVED'
+  | 'MANUAL_PHYSICAL_ID_DECLINED';
+
+export interface ManualIdExceptionRecord {
+  id: string; // e.g. EX-REQ-20261024-XXXX or UUID
+  schemaVersion: typeof SCHEMA_VERSION_CURRENT;
+  voterId: string; // Foreign key referencing VoterProfile.id
+  simulationVoterId: string; // e.g. VTR-SIM-MH01-000001
+  constituencyId: string;
+  purpose: ExceptionPurpose;
+  modality?: BiometricModality; // 'FACE' | 'FINGERPRINT' for enrollment exceptions
+  electionId?: string; // Foreign key for voting-session exceptions
+  votingSessionTokenHash?: string; // Cryptographic hash of attempt token
+  requestedByOfficerId: string;
+  requestedByOfficerRole: 'VOTER_REGISTRATION_OFFICER' | 'PLATFORM_ADMIN';
+  requestedAt: number;
+  reasonCode: ExceptionReasonCode;
+  note?: string; // Short non-sensitive note
+  status: ExceptionStatus;
+  reviewedByOfficerId?: string;
+  reviewedByOfficerRole?: 'ELECTION_OFFICER' | 'PLATFORM_ADMIN';
+  reviewedAt?: number;
+  decisionReason?: string; // Required when approved or declined
+  decisionOutcome?: ExceptionDecisionOutcome;
+  expiresAt?: number; // Server-managed expiry timestamp
+  consumedAt?: number; // One-time consumption timestamp
+  consumedInElectionId?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export const FORBIDDEN_EXCEPTION_KEYS = [
+  'image',
+  'photo',
+  'scan',
+  'video',
+  'documentImage',
+  'documentScan',
+  'aadhaar',
+  'passport',
+  'ssn',
+  'pan',
+  'nationalId',
+  'cardNumber',
+  'rawBiometric',
+  'rawBytes',
+  'template',
+  'minutiae',
+];
+
+export function validateManualIdException(record: any): { isValid: boolean; errors: string[] } {
+  const errors: string[] = [];
+
+  if (!record || typeof record !== 'object') {
+    return { isValid: false, errors: ['Exception record must be a non-null object'] };
+  }
+
+  if (record.schemaVersion !== SCHEMA_VERSION_CURRENT) {
+    errors.push(`Invalid schemaVersion: expected '${SCHEMA_VERSION_CURRENT}', got '${record.schemaVersion}'`);
+  }
+
+  if (!record.id || typeof record.id !== 'string') {
+    errors.push('Missing or invalid id');
+  }
+  if (!record.voterId || typeof record.voterId !== 'string') {
+    errors.push('Missing or invalid voterId');
+  }
+  if (!record.simulationVoterId || typeof record.simulationVoterId !== 'string') {
+    errors.push('Missing or invalid simulationVoterId');
+  }
+  if (!record.constituencyId || typeof record.constituencyId !== 'string') {
+    errors.push('Missing or invalid constituencyId');
+  }
+
+  const validPurposes: ExceptionPurpose[] = ['ENROLLMENT', 'VOTING_SESSION'];
+  if (!validPurposes.includes(record.purpose)) {
+    errors.push(`Invalid purpose: '${record.purpose}'`);
+  }
+
+  if (record.purpose === 'ENROLLMENT') {
+    if (!record.modality || !['FACE', 'FINGERPRINT'].includes(record.modality)) {
+      errors.push(`Enrollment exception must specify a valid modality ('FACE' | 'FINGERPRINT'), got '${record.modality}'`);
+    }
+  }
+
+  if (record.purpose === 'VOTING_SESSION') {
+    if (!record.electionId || typeof record.electionId !== 'string') {
+      errors.push('Voting session exception must specify electionId');
+    }
+  }
+
+  const validStatuses: ExceptionStatus[] = [
+    'PENDING',
+    'APPROVED',
+    'DECLINED',
+    'EXPIRED',
+    'CANCELLED',
+    'CONSUMED',
+  ];
+  if (!validStatuses.includes(record.status)) {
+    errors.push(`Invalid status: '${record.status}'`);
+  }
+
+  if (!VALID_EXCEPTION_REASON_CODES.includes(record.reasonCode)) {
+    errors.push(`Invalid reasonCode: '${record.reasonCode}'`);
+  }
+
+  if (!record.requestedByOfficerId || typeof record.requestedByOfficerId !== 'string') {
+    errors.push('Missing requestedByOfficerId');
+  }
+
+  const validRequesterRoles = ['VOTER_REGISTRATION_OFFICER', 'ELECTION_OFFICER', 'PLATFORM_ADMIN'];
+  if (!validRequesterRoles.includes(record.requestedByOfficerRole)) {
+    errors.push(`Invalid requestedByOfficerRole: '${record.requestedByOfficerRole}'`);
+  }
+
+  if (typeof record.requestedAt !== 'number' || record.requestedAt <= 0) {
+    errors.push('Invalid requestedAt timestamp');
+  }
+
+  // Separation of duties: Requester cannot approve or decline own request
+  if (record.reviewedByOfficerId && record.reviewedByOfficerId === record.requestedByOfficerId) {
+    errors.push('Separation of duties violation: reviewing officer cannot be the requesting officer');
+  }
+
+  // Review & decision validations
+  if (record.status === 'APPROVED') {
+    if (!record.reviewedByOfficerId) {
+      errors.push('Approved exception must have reviewedByOfficerId');
+    }
+    const validReviewerRoles = ['ELECTION_OFFICER', 'PLATFORM_ADMIN'];
+    if (!validReviewerRoles.includes(record.reviewedByOfficerRole)) {
+      errors.push(`Invalid reviewedByOfficerRole: '${record.reviewedByOfficerRole}'`);
+    }
+    if (typeof record.reviewedAt !== 'number' || record.reviewedAt <= 0) {
+      errors.push('Approved exception must have valid reviewedAt timestamp');
+    }
+    if (!record.decisionReason || typeof record.decisionReason !== 'string' || record.decisionReason.trim().length < 5) {
+      errors.push('Approved exception requires a decisionReason of at least 5 characters');
+    }
+    if (record.decisionOutcome !== 'MANUAL_PHYSICAL_ID_APPROVED') {
+      errors.push(`Approved exception decisionOutcome must be 'MANUAL_PHYSICAL_ID_APPROVED', got '${record.decisionOutcome}'`);
+    }
+    if (record.purpose === 'VOTING_SESSION') {
+      if (typeof record.expiresAt !== 'number' || record.expiresAt <= 0) {
+        errors.push('Approved voting session exception must have a valid expiresAt timestamp');
+      }
+    }
+  }
+
+  if (record.status === 'DECLINED') {
+    if (!record.reviewedByOfficerId) {
+      errors.push('Declined exception must have reviewedByOfficerId');
+    }
+    if (!record.decisionReason || typeof record.decisionReason !== 'string' || record.decisionReason.trim().length < 5) {
+      errors.push('Declined exception requires a decisionReason of at least 5 characters');
+    }
+    if (record.decisionOutcome !== 'MANUAL_PHYSICAL_ID_DECLINED') {
+      errors.push(`Declined exception decisionOutcome must be 'MANUAL_PHYSICAL_ID_DECLINED', got '${record.decisionOutcome}'`);
+    }
+  }
+
+  if (record.status === 'CONSUMED') {
+    if (record.purpose !== 'VOTING_SESSION') {
+      errors.push('Only voting session exceptions can enter CONSUMED status');
+    }
+    if (typeof record.consumedAt !== 'number' || record.consumedAt <= 0) {
+      errors.push('Consumed exception must have valid consumedAt timestamp');
+    }
+  }
+
+  // Strict physical-ID document privacy: No document images, scans, or raw credentials
+  for (const forbidden of FORBIDDEN_EXCEPTION_KEYS) {
+    if (forbidden in record && record[forbidden] !== undefined) {
+      errors.push(`Privacy violation: exception record must never contain '${forbidden}'`);
+    }
+  }
+
+  return { isValid: errors.length === 0, errors };
+}
+

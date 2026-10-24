@@ -11,6 +11,8 @@ import {
 } from '../crypto';
 import { serverStore } from '../store';
 import { INITIAL_CONSTITUENCIES } from '../../src/data/mockData';
+import { getDataRepositories } from '../repositories';
+import { SCHEMA_VERSION_CURRENT } from '../../src/types/dataModel';
 
 export const voterRouter = Router();
 
@@ -704,3 +706,282 @@ voterRouter.post('/recover-transaction', (req: Request, res: Response): void => 
     message: 'Transaction recovery successful. Authorization state cleared; elector may retry voting challenge.',
   });
 });
+
+/**
+ * GET /api/voter/exceptions/:id
+ * Allows polling status of an exception request from the voting or enrollment workflow.
+ */
+voterRouter.get('/exceptions/:id', async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const repos = getDataRepositories();
+
+  const exception = await repos.exceptions.findById(id);
+  if (!exception) {
+    res.status(404).json({ success: false, message: `Exception request '${id}' not found.` });
+    return;
+  }
+
+  // Redact internal officer IDs if viewed via voter public endpoint
+  res.status(200).json({
+    success: true,
+    exception: {
+      id: exception.id,
+      voterId: exception.voterId,
+      simulationVoterId: exception.simulationVoterId,
+      purpose: exception.purpose,
+      modality: exception.modality,
+      electionId: exception.electionId,
+      status: exception.status,
+      decisionOutcome: exception.decisionOutcome,
+      decisionReason: exception.decisionReason,
+      isManualException: true,
+      expiresAt: exception.expiresAt,
+      consumedAt: exception.consumedAt,
+      requestedAt: exception.requestedAt,
+      reviewedAt: exception.reviewedAt,
+    },
+  });
+});
+
+/**
+ * POST /api/voter/consume-exception
+ * Validates and single-use consumes an approved manual physical-ID exception for a specific voting session attempt.
+ *
+ * Strict invariants enforced:
+ * 1. Purpose must be VOTING_SESSION (enrollment-time approval cannot authorize voting).
+ * 2. Status must be APPROVED and decisionOutcome must be MANUAL_PHYSICAL_ID_APPROVED.
+ * 3. Already-consumed, expired, declined, or cancelled exceptions fail closed.
+ * 4. Exception must be bound to the exact voter, election, and session token attempt.
+ * 5. Voter must not have already voted.
+ * 6. Election must be active and within voting schedule.
+ * 7. Single-use: transitions to CONSUMED.
+ */
+voterRouter.post('/consume-exception', async (req: Request, res: Response): Promise<void> => {
+  const { exceptionId, voterId, electionId } = req.body;
+  const sessionToken = req.body.sessionToken || req.body.votingSessionToken;
+
+  if (!exceptionId || typeof exceptionId !== 'string') {
+    res.status(400).json({ success: false, message: 'Missing or invalid exceptionId.' });
+    return;
+  }
+  if (!voterId || typeof voterId !== 'string') {
+    res.status(400).json({ success: false, message: 'Missing or invalid voterId.' });
+    return;
+  }
+  if (!electionId) {
+    res.status(400).json({ success: false, message: 'Missing or invalid electionId.' });
+    return;
+  }
+
+  const repos = getDataRepositories();
+
+  // 1. Fetch exception
+  const exception = await repos.exceptions.findById(exceptionId);
+  if (!exception) {
+    res.status(404).json({ success: false, message: `Exception request '${exceptionId}' not found.` });
+    return;
+  }
+
+  // 2. Invariant: Enrollment-time approval cannot authorize a later voting session
+  if (exception.purpose !== 'VOTING_SESSION') {
+    res.status(400).json({
+      success: false,
+      message: `Invalid exception purpose: '${exception.purpose}'. Purpose must be VOTING_SESSION. An enrollment-time approval cannot authorize a voting session. A separate voting-time exception is required.`,
+    });
+    return;
+  }
+
+  // 3. Status checks
+  if (exception.status === 'CONSUMED') {
+    res.status(409).json({
+      success: false,
+      message: 'Exception authorization already consumed. Approved exceptions are strictly single-use only.',
+      status: 'CONSUMED',
+    });
+    return;
+  }
+
+  if (exception.status === 'DECLINED') {
+    res.status(403).json({
+      success: false,
+      message: 'Voting exception was declined by the Election Officer upon physical document review.',
+      status: 'DECLINED',
+    });
+    return;
+  }
+
+  if (exception.status === 'EXPIRED') {
+    res.status(403).json({
+      success: false,
+      message: 'Voting exception has expired. Server-managed 15-minute validity window elapsed.',
+      status: 'EXPIRED',
+    });
+    return;
+  }
+
+  if (exception.status !== 'APPROVED') {
+    res.status(400).json({
+      success: false,
+      message: `Exception is in '${exception.status}' status (must be APPROVED by an Election Officer).`,
+      status: exception.status,
+    });
+    return;
+  }
+
+  // 4. Server-managed expiration check
+  const now = Date.now();
+  if (exception.expiresAt && now > exception.expiresAt) {
+    exception.status = 'EXPIRED';
+    exception.updatedAt = now;
+    await repos.exceptions.update(exception);
+
+    res.status(403).json({
+      success: false,
+      message: 'Voting exception has expired. Please request a new verification from the Election Officer.',
+      status: 'EXPIRED',
+    });
+    return;
+  }
+
+  // 5. Voter binding check: exact voter profile / simulation voter ID
+  const voter =
+    (await repos.voterProfiles.findById(voterId)) ||
+    (await repos.voterProfiles.findBySimulationId(voterId)) ||
+    (await repos.voterProfiles.findByLegacyEpic(voterId));
+
+  if (!voter) {
+    res.status(404).json({ success: false, message: `Voter record '${voterId}' not found.` });
+    return;
+  }
+
+  if (exception.voterId !== voter.id && exception.simulationVoterId !== voter.simulationVoterId) {
+    res.status(403).json({
+      success: false,
+      message: 'Security violation: Exception record is bound to a different voter profile.',
+    });
+    return;
+  }
+
+  // 6. Election binding check
+  if (String(exception.electionId) !== String(electionId)) {
+    res.status(403).json({
+      success: false,
+      message: `Security violation: Exception record is bound to election '${exception.electionId}', not '${electionId}'.`,
+    });
+    return;
+  }
+
+  // 7. Voting session token binding check (if bound during request)
+  if (exception.votingSessionTokenHash && sessionToken) {
+    const computedHash = crypto.createHash('sha256').update(String(sessionToken)).digest('hex');
+    if (computedHash !== exception.votingSessionTokenHash) {
+      res.status(403).json({
+        success: false,
+        message: 'Security violation: Exception is bound to a different active voting session attempt.',
+      });
+      return;
+    }
+  }
+
+  // 8. Voter lifecycle and eligibility check
+  if (
+    voter.lifecycleStatus === 'LOCKED' ||
+    voter.registrationStatus !== 'REGISTERED' ||
+    voter.eligibilityStatus !== 'ELIGIBLE'
+  ) {
+    res.status(403).json({
+      success: false,
+      message: 'Cannot consume exception: Voter record is currently suspended, locked, or ineligible.',
+    });
+    return;
+  }
+
+  // 9. One-person, one-vote check: voter must not have already cast a ballot
+  const runtimeVoter = serverStore.findVoterByEpic(voter.simulationVoterId) || serverStore.findVoterByEpic(voter.legacyEpicId || '');
+  const participation = await repos.participations.getParticipation(voter.id, String(electionId));
+  if (
+    (runtimeVoter && runtimeVoter.status === 'VOTED') ||
+    (participation && (participation.status === 'VOTE_ACCEPTED' || Boolean(participation.votedAt)))
+  ) {
+    res.status(403).json({
+      success: false,
+      message: 'Cannot consume exception: Elector has already cast a finalized ballot in this election.',
+      status: 'VOTED',
+    });
+    return;
+  }
+
+  // 10. Election active check
+  const targetElection =
+    serverStore.findElectionByNumericId(Number(electionId)) ||
+    serverStore.getElectionById(String(electionId));
+
+  if (!targetElection || targetElection.status !== 'active') {
+    res.status(403).json({
+      success: false,
+      message: 'Cannot consume exception: Election is not currently active.',
+    });
+    return;
+  }
+
+  // 11. Atomically consume the exception for this single session
+  exception.status = 'CONSUMED';
+  exception.consumedAt = now;
+  exception.consumedInElectionId = String(electionId);
+  exception.updatedAt = now;
+
+  await repos.exceptions.update(exception);
+
+  // 12. Record audit event
+  serverStore.recordAuditEvent({
+    id: `audit-ex-cons-${now}-${Math.random().toString(36).substring(2, 6)}`,
+    timestamp: now,
+    type: 'ADMIN_ACTION',
+    description: `Manual physical-ID exception '${exception.id}' consumed for voting session by '${voter.simulationVoterId}' in election '${electionId}'`,
+    electionId: Number(electionId) || 1,
+  });
+
+  try {
+    await repos.auditEvents.appendEvent({
+      id: `audit-evt-${now}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: now,
+      type: 'MANUAL_ID_EXCEPTION_CONSUMED',
+      actor: {
+        actorId: voter.id,
+        actorRole: 'VOTER_ANONYMOUS',
+      },
+      action: 'CONSUME_MANUAL_ID_EXCEPTION',
+      target: {
+        category: 'EXCEPTION_REQUEST',
+        targetReference: exception.id,
+      },
+      outcome: 'SUCCESS',
+      electionId: String(electionId),
+      constituencyId: voter.constituencyId,
+      metadata: {
+        voterId: voter.id,
+        simulationVoterId: voter.simulationVoterId,
+        electionId: String(electionId),
+        decisionOutcome: 'MANUAL_PHYSICAL_ID_APPROVED',
+      },
+      schemaVersion: SCHEMA_VERSION_CURRENT,
+    });
+  } catch (auditErr: any) {
+    console.warn('[Audit] Notice recording structured audit event:', auditErr.message);
+  }
+
+  res.status(200).json({
+    success: true,
+    message: 'Manual physical-ID exception successfully verified and consumed.',
+    outcome: 'MANUAL_PHYSICAL_ID_APPROVED',
+    authorizationGranted: true,
+    exception: {
+      id: exception.id,
+      status: exception.status,
+      consumedAt: exception.consumedAt,
+      consumedInElectionId: exception.consumedInElectionId,
+      decisionOutcome: exception.decisionOutcome,
+    },
+  });
+});
+

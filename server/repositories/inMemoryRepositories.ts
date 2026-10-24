@@ -13,12 +13,16 @@ import {
   AuthorityAccount,
   AuthorityRole,
   StructuredAuditEvent,
+  ManualIdExceptionRecord,
+  ExceptionPurpose,
+  ExceptionStatus,
   validateVoterProfile,
   validateElectionParticipation,
   validateBiometricMetadata,
   validateAnonymousBallot,
   validateAuthorityAccount,
   validateStructuredAuditEvent,
+  validateManualIdException,
   isValidParticipationTransition,
 } from '../../src/types/dataModel';
 import {
@@ -28,9 +32,11 @@ import {
   IBallotMetadataRepository,
   IAuthorityAccountRepository,
   IAuditEventRepository,
+  IManualIdExceptionRepository,
   IDataRepositories,
   VoterProfileFilter,
   AuditEventFilter,
+  ExceptionFilter,
 } from './types';
 
 export class InMemoryVoterProfileRepository implements IVoterProfileRepository {
@@ -331,6 +337,92 @@ export class InMemoryAuditEventRepository implements IAuditEventRepository {
   }
 }
 
+export class InMemoryManualIdExceptionRepository implements IManualIdExceptionRepository {
+  private requests = new Map<string, ManualIdExceptionRecord>();
+
+  public async createRequest(request: ManualIdExceptionRecord): Promise<void> {
+    const validation = validateManualIdException(request);
+    if (!validation.isValid) {
+      throw new Error(`Cannot create invalid exception request: ${validation.errors.join('; ')}`);
+    }
+    // Check for duplicate pending request for same voter and purpose
+    const existingPending = await this.findPending(
+      request.voterId,
+      request.purpose,
+      request.purpose === 'ENROLLMENT' ? request.modality : request.electionId
+    );
+    if (existingPending) {
+      throw new Error(`A pending exception request already exists for this voter and scope: ${existingPending.id}`);
+    }
+    this.requests.set(request.id, JSON.parse(JSON.stringify(request)));
+  }
+
+  public async findById(id: string): Promise<ManualIdExceptionRecord | null> {
+    const found = this.requests.get(id);
+    return found ? JSON.parse(JSON.stringify(found)) : null;
+  }
+
+  public async findPending(
+    voterId: string,
+    purpose: ExceptionPurpose,
+    modalityOrElectionId?: string
+  ): Promise<ManualIdExceptionRecord | null> {
+    for (const req of this.requests.values()) {
+      if (req.voterId === voterId && req.status === 'PENDING' && req.purpose === purpose) {
+        if (purpose === 'ENROLLMENT') {
+          if (!modalityOrElectionId || req.modality === modalityOrElectionId) {
+            return JSON.parse(JSON.stringify(req));
+          }
+        } else if (purpose === 'VOTING_SESSION') {
+          if (!modalityOrElectionId || req.electionId === modalityOrElectionId) {
+            return JSON.parse(JSON.stringify(req));
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  public async update(request: ManualIdExceptionRecord): Promise<void> {
+    const validation = validateManualIdException(request);
+    if (!validation.isValid) {
+      throw new Error(`Cannot update invalid exception request: ${validation.errors.join('; ')}`);
+    }
+    if (!this.requests.has(request.id)) {
+      throw new Error(`Exception request not found: ${request.id}`);
+    }
+    this.requests.set(request.id, JSON.parse(JSON.stringify(request)));
+  }
+
+  public async list(filter?: ExceptionFilter): Promise<ManualIdExceptionRecord[]> {
+    let result = Array.from(this.requests.values());
+    if (filter?.voterId) {
+      result = result.filter((r) => r.voterId === filter.voterId);
+    }
+    if (filter?.constituencyId) {
+      result = result.filter((r) => r.constituencyId === filter.constituencyId);
+    }
+    if (filter?.purpose) {
+      result = result.filter((r) => r.purpose === filter.purpose);
+    }
+    if (filter?.status) {
+      result = result.filter((r) => r.status === filter.status);
+    }
+    if (filter?.electionId) {
+      result = result.filter((r) => r.electionId === filter.electionId);
+    }
+    result.sort((a, b) => b.requestedAt - a.requestedAt);
+    if (filter?.limit && filter.limit > 0) {
+      result = result.slice(0, filter.limit);
+    }
+    return result.map((r) => JSON.parse(JSON.stringify(r)));
+  }
+
+  public async clear(): Promise<void> {
+    this.requests.clear();
+  }
+}
+
 export function createInMemoryRepositories(): IDataRepositories {
   return {
     voterProfiles: new InMemoryVoterProfileRepository(),
@@ -339,5 +431,6 @@ export function createInMemoryRepositories(): IDataRepositories {
     ballots: new InMemoryBallotMetadataRepository(),
     authorities: new InMemoryAuthorityAccountRepository(),
     auditEvents: new InMemoryAuditEventRepository(),
+    exceptions: new InMemoryManualIdExceptionRepository(),
   };
 }

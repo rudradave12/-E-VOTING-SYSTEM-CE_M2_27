@@ -16,6 +16,9 @@ import {
   AuditTargetCategory,
   VoterRegistrationStatus,
   VoterEligibilityStatus,
+  ManualIdExceptionRecord,
+  ExceptionPurpose,
+  ExceptionStatus,
 } from '../../src/types/dataModel';
 
 export interface VoterProfileFilter {
@@ -84,6 +87,24 @@ export interface IAuditEventRepository {
   clear(): Promise<void>;
 }
 
+export interface ExceptionFilter {
+  voterId?: string;
+  constituencyId?: string;
+  purpose?: ExceptionPurpose;
+  status?: ExceptionStatus;
+  electionId?: string;
+  limit?: number;
+}
+
+export interface IManualIdExceptionRepository {
+  createRequest(request: ManualIdExceptionRecord): Promise<void>;
+  findById(id: string): Promise<ManualIdExceptionRecord | null>;
+  findPending(voterId: string, purpose: ExceptionPurpose, modalityOrElectionId?: string): Promise<ManualIdExceptionRecord | null>;
+  update(request: ManualIdExceptionRecord): Promise<void>;
+  list(filter?: ExceptionFilter): Promise<ManualIdExceptionRecord[]>;
+  clear(): Promise<void>;
+}
+
 export interface IDataRepositories {
   voterProfiles: IVoterProfileRepository;
   participations: IVoterParticipationRepository;
@@ -91,4 +112,5 @@ export interface IDataRepositories {
   ballots: IBallotMetadataRepository;
   authorities: IAuthorityAccountRepository;
   auditEvents: IAuditEventRepository;
+  exceptions: IManualIdExceptionRepository;
 }

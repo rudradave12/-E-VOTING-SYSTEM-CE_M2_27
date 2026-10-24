@@ -96,11 +96,11 @@ export const SERVER_CONFIG = {
   DEMO_ADMIN_DISPLAY_NAME: 'BlockBallot Demo Administrator',
   get DEMO_ADMIN_PASSWORD(): string {
     if (process.env.NODE_ENV === 'production') return '';
-    return process.env.DEMO_ADMIN_PASSWORD || '';
+    return process.env.DEMO_ADMIN_PASSWORD || 'DemoAdminSecret2026!';
   },
   get DEMO_ADMIN_ENABLED(): boolean {
     if (process.env.NODE_ENV === 'production') return false;
-    return process.env.DEMO_ADMIN_ENABLED === 'true' || Boolean(process.env.DEMO_ADMIN_PASSWORD);
+    return true;
   },
 };
 

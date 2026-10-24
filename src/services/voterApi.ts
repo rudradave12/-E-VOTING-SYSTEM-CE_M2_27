@@ -17,6 +17,10 @@ import {
   BiometricModality,
   BiometricEnrollmentStatus,
   BiometricQualityCheckStatus,
+  ManualIdExceptionRecord,
+  ExceptionPurpose,
+  ExceptionStatus,
+  ExceptionReasonCode,
 } from '../types/dataModel';
 
 export interface VerifyVoterResponse {
@@ -738,6 +742,204 @@ export class VoterApiClient {
       return await res.json();
     } catch (err: any) {
       return { success: false, message: err.message || 'Network error updating poll status.' };
+    }
+  }
+
+  // ============================================================================
+  // MANUAL PHYSICAL-ID EXCEPTION METHODS (PHASE 06)
+  // ============================================================================
+
+  /**
+   * POST /api/admin/exceptions
+   * Creates a manual physical-ID verification request (VRO or Admin).
+   */
+  public async adminCreateExceptionRequest(data: {
+    voterId: string;
+    purpose: ExceptionPurpose;
+    modality?: BiometricModality;
+    electionId?: string;
+    votingSessionToken?: string;
+    reasonCode: ExceptionReasonCode;
+    note?: string;
+  }): Promise<{
+    success: boolean;
+    message: string;
+    exception?: ManualIdExceptionRecord;
+    existingRequestId?: string;
+  }> {
+    try {
+      const res = await fetch('/api/admin/exceptions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+        body: JSON.stringify(data),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error submitting exception request.' };
+    }
+  }
+
+  /**
+   * GET /api/admin/exceptions
+   * Lists visible exception requests within authorized scope.
+   */
+  public async adminListExceptions(filter?: {
+    voterId?: string;
+    purpose?: string;
+    status?: string;
+    electionId?: string;
+    constituencyId?: string;
+  }): Promise<{
+    success: boolean;
+    count?: number;
+    exceptions?: ManualIdExceptionRecord[];
+    message?: string;
+  }> {
+    try {
+      const params = new URLSearchParams();
+      if (filter?.voterId) params.append('voterId', filter.voterId);
+      if (filter?.purpose) params.append('purpose', filter.purpose);
+      if (filter?.status) params.append('status', filter.status);
+      if (filter?.electionId) params.append('electionId', filter.electionId);
+      if (filter?.constituencyId) params.append('constituencyId', filter.constituencyId);
+
+      const qs = params.toString() ? `?${params.toString()}` : '';
+      const res = await fetch(`/api/admin/exceptions${qs}`, {
+        headers: {
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error fetching exception queue.', exceptions: [] };
+    }
+  }
+
+  /**
+   * GET /api/admin/exceptions/:id
+   */
+  public async adminGetException(id: string): Promise<{
+    success: boolean;
+    exception?: ManualIdExceptionRecord;
+    message?: string;
+  }> {
+    try {
+      const res = await fetch(`/api/admin/exceptions/${encodeURIComponent(id)}`, {
+        headers: {
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error fetching exception details.' };
+    }
+  }
+
+  /**
+   * POST /api/admin/exceptions/:id/approve
+   * Approves a pending exception with mandatory reason (EO or Admin).
+   */
+  public async adminApproveException(
+    id: string,
+    decisionReason: string
+  ): Promise<{
+    success: boolean;
+    message: string;
+    exception?: ManualIdExceptionRecord;
+  }> {
+    try {
+      const res = await fetch(`/api/admin/exceptions/${encodeURIComponent(id)}/approve`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+        body: JSON.stringify({ decisionReason }),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error approving exception.' };
+    }
+  }
+
+  /**
+   * POST /api/admin/exceptions/:id/decline
+   * Declines a pending exception with mandatory reason (EO or Admin).
+   */
+  public async adminDeclineException(
+    id: string,
+    decisionReason: string
+  ): Promise<{
+    success: boolean;
+    message: string;
+    exception?: ManualIdExceptionRecord;
+  }> {
+    try {
+      const res = await fetch(`/api/admin/exceptions/${encodeURIComponent(id)}/decline`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+        body: JSON.stringify({ decisionReason }),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error declining exception.' };
+    }
+  }
+
+  /**
+   * POST /api/voter/consume-exception
+   * Validates and single-use consumes an approved voting-time exception.
+   */
+  public async voterConsumeException(data: {
+    exceptionId: string;
+    voterId: string;
+    electionId: string | number;
+    sessionToken?: string;
+  }): Promise<{
+    success: boolean;
+    message: string;
+    outcome?: string;
+    authorizationGranted?: boolean;
+    exception?: {
+      id: string;
+      status: string;
+      consumedAt?: number;
+      decisionOutcome?: string;
+    };
+  }> {
+    try {
+      const res = await fetch('/api/voter/consume-exception', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error consuming voting exception.' };
+    }
+  }
+
+  /**
+   * GET /api/voter/exceptions/:id
+   */
+  public async voterGetExceptionStatus(id: string): Promise<{
+    success: boolean;
+    exception?: Partial<ManualIdExceptionRecord>;
+    message?: string;
+  }> {
+    try {
+      const res = await fetch(`/api/voter/exceptions/${encodeURIComponent(id)}`);
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error polling exception status.' };
     }
   }
 }

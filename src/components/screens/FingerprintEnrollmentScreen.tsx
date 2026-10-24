@@ -23,7 +23,7 @@ import {
   Layers,
   FileCheck,
 } from 'lucide-react';
-import { VoterProfile, BiometricEnrollmentStatus } from '../../types/dataModel';
+import { VoterProfile, BiometricEnrollmentStatus, ExceptionReasonCode } from '../../types/dataModel';
 import { isConstituencyInScope } from '../../../server/auth/rbac';
 import {
   getFingerprintScannerAdapter,
@@ -71,6 +71,13 @@ export const FingerprintEnrollmentScreen: React.FC<FingerprintEnrollmentScreenPr
   const [loadingMetadata, setLoadingMetadata] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Manual Exception State (Phase 06)
+  const [showExceptionModal, setShowExceptionModal] = useState<boolean>(false);
+  const [exceptionReason, setExceptionReason] = useState<ExceptionReasonCode>('FINGERPRINT_SCANNER_NOT_DETECTED');
+  const [exceptionNote, setExceptionNote] = useState<string>('');
+  const [isSubmittingException, setIsSubmittingException] = useState<boolean>(false);
+  const [exceptionFeedback, setExceptionFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Load backend biometric status
   useEffect(() => {
@@ -189,6 +196,42 @@ export const FingerprintEnrollmentScreen: React.FC<FingerprintEnrollmentScreenPr
     }
   };
 
+  // Handle Request Manual Exception (Phase 06)
+  const handleRequestException = async () => {
+    if (!voter) return;
+    setIsSubmittingException(true);
+    setExceptionFeedback(null);
+    try {
+      const res = await voterApi.adminCreateExceptionRequest({
+        voterId: voter.id,
+        purpose: 'ENROLLMENT',
+        modality: 'FINGERPRINT',
+        reasonCode: exceptionReason,
+        note: exceptionNote ? exceptionNote.trim() : undefined,
+      });
+      if (res.success) {
+        setCurrentStatus('PENDING_MANUAL_REVIEW');
+        setExceptionFeedback({
+          type: 'success',
+          text: `Manual physical-ID exception requested (${res.exception?.id || 'Submitted'}). Awaiting Election Officer review.`,
+        });
+        setShowExceptionModal(false);
+      } else {
+        setExceptionFeedback({
+          type: 'error',
+          text: res.message || 'Failed to submit exception request.',
+        });
+      }
+    } catch (err: any) {
+      setExceptionFeedback({
+        type: 'error',
+        text: err.message || 'Network error submitting exception request.',
+      });
+    } finally {
+      setIsSubmittingException(false);
+    }
+  };
+
   // Unauthorized or out-of-scope guard
   if (!isAuthorizedRole || !isScopePermitted) {
     return (
@@ -291,12 +334,20 @@ export const FingerprintEnrollmentScreen: React.FC<FingerprintEnrollmentScreenPr
                 className={`font-mono font-bold px-1.5 py-0.5 rounded text-[10px] ${
                   currentStatus === 'ENROLLED'
                     ? 'bg-emerald-100 text-emerald-800'
+                    : currentStatus === 'MANUALLY_APPROVED'
+                    ? 'bg-purple-100 text-purple-800'
+                    : currentStatus === 'PENDING_MANUAL_REVIEW'
+                    ? 'bg-amber-100 text-amber-800'
                     : currentStatus === 'PENDING'
                     ? 'bg-blue-100 text-blue-800'
                     : 'bg-slate-200 text-slate-700'
                 }`}
               >
-                {loadingMetadata ? '...' : currentStatus}
+                {loadingMetadata
+                  ? '...'
+                  : currentStatus === 'MANUALLY_APPROVED'
+                  ? 'MANUAL_PHYSICAL_ID_APPROVED'
+                  : currentStatus}
               </span>
             </div>
           </div>
@@ -903,44 +954,185 @@ export const FingerprintEnrollmentScreen: React.FC<FingerprintEnrollmentScreenPr
           </div>
         </div>
 
-        {/* Supervisor Fallback / Phase 06 Notice (4 Cols) */}
+        {/* Manual Physical-ID Verification / Phase 06 Active Section (4 Cols) */}
         <div className="md:col-span-4 bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between">
           <div>
-            <div className="flex items-center gap-2 mb-2 text-red-600">
-              <AlertTriangle className="w-5 h-5 shrink-0" />
-              <h3 className="text-sm font-bold text-slate-900">If Scanner Does Not Work</h3>
+            <div className="flex items-center gap-2 mb-2 text-purple-700">
+              <FileCheck className="w-5 h-5 shrink-0" />
+              <h3 className="text-sm font-bold text-slate-900">Physical-ID Exception Workflow</h3>
             </div>
             <p className="text-xs text-slate-600 mb-3 leading-relaxed">
-              Verify the physical ID of the person and use manual approval by the Election Officer.
+              If the biometric scanner fails, an elector has worn ridges, or has a physical disability, request audited manual physical-ID verification.
             </p>
 
-            <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-900 mb-3 space-y-1">
-              <div className="font-semibold text-amber-800">Phase 06 Boundary Notice:</div>
-              <p>
-                Manual physical ID exception approvals (EO review, disability accommodations, manual override)
-                belong strictly to Phase 06.
-              </p>
-            </div>
+            {exceptionFeedback && (
+              <div
+                className={`p-2.5 rounded-lg text-xs mb-3 flex items-start gap-2 ${
+                  exceptionFeedback.type === 'success'
+                    ? 'bg-purple-50 border border-purple-200 text-purple-900'
+                    : 'bg-red-50 border border-red-200 text-red-900'
+                }`}
+              >
+                {exceptionFeedback.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                )}
+                <span>{exceptionFeedback.text}</span>
+              </div>
+            )}
+
+            {currentStatus === 'MANUALLY_APPROVED' ? (
+              <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg text-xs space-y-1.5">
+                <div className="font-bold flex items-center gap-1.5 text-purple-900">
+                  <CheckCircle2 className="w-4 h-4 text-purple-600 shrink-0" />
+                  <span>MANUAL_PHYSICAL_ID_APPROVED</span>
+                </div>
+                <p className="text-[11px] text-purple-800 leading-relaxed">
+                  Election Officer physically inspected voter credential and granted manual exception approval.
+                  <br />
+                  <strong className="text-purple-950 font-semibold">Important:</strong> This elector is not recorded as a biometric match or enrolled specimen.
+                </p>
+              </div>
+            ) : currentStatus === 'PENDING_MANUAL_REVIEW' ? (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs space-y-1.5">
+                <div className="font-bold flex items-center gap-1.5 text-amber-900">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>Pending Manual Review</span>
+                </div>
+                <p className="text-[11px] text-amber-800 leading-relaxed">
+                  Manual physical-ID exception request has been submitted. An authorized Election Officer will review the physical credential in the review queue.
+                </p>
+              </div>
+            ) : (
+              <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-600 space-y-1">
+                <div className="font-semibold text-slate-800">Physical-ID Exception Protocol:</div>
+                <p>
+                  Election Officers will physically inspect the government ID card. No photos or document numbers are uploaded or stored.
+                </p>
+              </div>
+            )}
           </div>
 
-          <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
-            <button
-              disabled
-              title="Phase 06 Feature: Manual physical ID approval workflow"
-              className="flex-1 py-1.5 bg-slate-100 text-slate-400 font-semibold rounded-lg text-xs cursor-not-allowed border border-slate-200"
-            >
-              Approve (Phase 06)
-            </button>
-            <button
-              disabled
-              title="Phase 06 Feature: Manual physical ID rejection workflow"
-              className="flex-1 py-1.5 bg-slate-100 text-slate-400 font-semibold rounded-lg text-xs cursor-not-allowed border border-slate-200"
-            >
-              Decline (Phase 06)
-            </button>
+          <div className="pt-3 border-t border-slate-100 mt-3">
+            {currentStatus !== 'MANUALLY_APPROVED' && currentStatus !== 'PENDING_MANUAL_REVIEW' && (
+              <button
+                onClick={() => setShowExceptionModal(true)}
+                className="w-full py-2 px-3 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+              >
+                <FileCheck className="w-4 h-4" />
+                <span>Request Manual Verification</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
+
+      {/* Manual Exception Request Modal */}
+      {showExceptionModal && voter && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <FileCheck className="w-5 h-5 text-purple-600" />
+                <h3 className="text-base font-bold text-slate-900">
+                  Request Manual Physical-ID Verification
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowExceptionModal(false)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Voter Details */}
+            <div className="bg-slate-50 p-3 rounded-lg text-xs space-y-1 border border-slate-200">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Elector Name:</span>
+                <span className="font-bold text-slate-900">{voter.fullName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Simulation Voter ID:</span>
+                <span className="font-mono font-bold text-slate-800">{voter.simulationVoterId}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Modality:</span>
+                <span className="font-semibold text-emerald-700">Fingerprint</span>
+              </div>
+            </div>
+
+            {/* Reason Code Dropdown */}
+            <div>
+              <label className="block text-xs font-bold text-slate-800 mb-1">
+                Reason Code <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={exceptionReason}
+                onChange={(e) => setExceptionReason(e.target.value as ExceptionReasonCode)}
+                className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-purple-500 focus:bg-white"
+              >
+                <option value="FINGERPRINT_SCANNER_NOT_DETECTED">
+                  FINGERPRINT_SCANNER_NOT_DETECTED — Hardware sensor offline or not detected
+                </option>
+                <option value="SUPPORTED_DEVICE_ERROR">
+                  SUPPORTED_DEVICE_ERROR — Device optical acquisition error
+                </option>
+                <option value="WORN_FRICTION_RIDGES">
+                  WORN_FRICTION_RIDGES — Elector has worn, damaged, or faint ridge patterns
+                </option>
+                <option value="PHYSICAL_DISABILITY_OR_AMPUTATION">
+                  PHYSICAL_DISABILITY_OR_AMPUTATION — Permanent or temporary physical disability
+                </option>
+                <option value="OTHER_OFFICIAL_REASON">
+                  OTHER_OFFICIAL_REASON — Other documented election official reason
+                </option>
+              </select>
+            </div>
+
+            {/* Non-sensitive Note Input */}
+            <div>
+              <label className="block text-xs font-bold text-slate-800 mb-1">
+                Explanatory Note <span className="text-slate-400 font-normal">(Optional, max 300 chars)</span>
+              </label>
+              <textarea
+                rows={2}
+                maxLength={300}
+                placeholder="Brief justification (e.g. 'USB optical sensor daemon failed to report platen ready'). Do NOT enter document numbers or sensitive info."
+                value={exceptionNote}
+                onChange={(e) => setExceptionNote(e.target.value)}
+                className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-purple-500 focus:bg-white"
+              />
+              <span className="text-[10px] text-slate-400 block mt-0.5">
+                Privacy Notice: Never enter ID card numbers (Aadhaar, Passport, etc.) or upload photos.
+              </span>
+            </div>
+
+            <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-900">
+              <strong>Procedural Standard:</strong> Approval will be decided by an Election Officer upon direct physical document review. The approved outcome is recorded as <code className="font-mono bg-amber-100 px-1 rounded">MANUAL_PHYSICAL_ID_APPROVED</code>, never as a biometric match.
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                onClick={() => setShowExceptionModal(false)}
+                disabled={isSubmittingException}
+                className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRequestException}
+                disabled={isSubmittingException}
+                className="px-4 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isSubmittingException ? 'Submitting...' : 'Submit Request'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

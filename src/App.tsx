@@ -57,6 +57,7 @@ import { AdminVotersScreen } from './components/screens/AdminVotersScreen';
 import { AdminAuditScreen } from './components/screens/AdminAuditScreen';
 import { FaceEnrollmentScreen } from './components/screens/FaceEnrollmentScreen';
 import { FingerprintEnrollmentScreen } from './components/screens/FingerprintEnrollmentScreen';
+import { AdminExceptionsScreen } from './components/screens/AdminExceptionsScreen';
 import { VoterProfile } from './types/dataModel';
 
 export function AppInner() {
@@ -600,6 +601,13 @@ export function AppInner() {
             auditEvents={auditEvents}
             contractAddress={activeElection.contractAddress}
             onBack={() => setCurrentScreen(isAdminAuthenticated ? 'admin-dashboard' : 'welcome')}
+          />
+        )}
+
+        {currentScreen === 'admin-exceptions' && (
+          <AdminExceptionsScreen
+            adminUser={adminUser}
+            onBack={() => setCurrentScreen('admin-dashboard')}
           />
         )}
       </main>

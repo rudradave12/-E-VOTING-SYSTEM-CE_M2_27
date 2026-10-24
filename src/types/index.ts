@@ -160,6 +160,7 @@ export type NavigationScreen =
   | 'admin-candidates'
   | 'admin-voters'
   | 'admin-audit'
+  | 'admin-exceptions'
   | 'face-enrollment'
   | 'fingerprint-enrollment';
 

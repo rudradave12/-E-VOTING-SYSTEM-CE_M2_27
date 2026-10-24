@@ -68,6 +68,7 @@ export const ROLE_PERMISSIONS: Record<AuthorityRole, readonly Permission[]> = {
     'CANDIDATE_MANAGE',
     'TURNOUT_READ',
     'AUDIT_READ',
+    'VOTER_EXCEPTION_REQUEST', // Can request exceptions during polling (must be approved by a peer EO)
     'VOTER_EXCEPTION_APPROVE', // Designated for Phase 06 exception approval
   ],
 

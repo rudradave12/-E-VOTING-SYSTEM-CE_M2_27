@@ -29,6 +29,14 @@ import {
   AuthorityAccount,
   VoterProfile,
   BiometricEnrollmentMetadata,
+  BiometricModality,
+  ManualIdExceptionRecord,
+  ExceptionPurpose,
+  ExceptionStatus,
+  ExceptionReasonCode,
+  VALID_EXCEPTION_REASON_CODES,
+  FORBIDDEN_EXCEPTION_KEYS,
+  validateManualIdException,
   SCHEMA_VERSION_CURRENT,
 } from '../../src/types/dataModel';
 import { getDataRepositories } from '../repositories';
@@ -1609,3 +1617,775 @@ adminRouter.get(
     res.status(200).json({ success: true, auditEvents });
   }
 );
+
+// ============================================================================
+// MANUAL PHYSICAL-ID EXCEPTION APPROVAL WORKFLOW (PHASE 06)
+// ============================================================================
+
+/**
+ * Helper: Detects forbidden physical ID document images, scans, or sensitive numbers.
+ */
+function containsForbiddenExceptionData(body: any): { forbidden: boolean; key?: string } {
+  if (!body || typeof body !== 'object') return { forbidden: false };
+  for (const key of Object.keys(body)) {
+    const lowerKey = key.toLowerCase();
+    for (const forbidden of FORBIDDEN_EXCEPTION_KEYS) {
+      if (lowerKey.includes(forbidden.toLowerCase())) {
+        return { forbidden: true, key };
+      }
+    }
+    const val = body[key];
+    if (typeof val === 'string') {
+      const lowerVal = val.toLowerCase();
+      if (
+        lowerVal.includes('data:image') ||
+        lowerVal.includes('base64,') ||
+        /\b\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/.test(val) // 12-digit Aadhaar / National ID pattern
+      ) {
+        return { forbidden: true, key };
+      }
+    }
+  }
+  return { forbidden: false };
+}
+
+/**
+ * POST /api/admin/exceptions & /api/exceptions
+ * Creates a manual physical-ID verification exception request.
+ * Authorized for: VOTER_REGISTRATION_OFFICER (or PLATFORM_ADMIN) within scope.
+ */
+adminRouter.post(
+  ['/exceptions', '/admin/exceptions'],
+  requirePermission('VOTER_EXCEPTION_REQUEST'),
+  async (req: Request, res: Response): Promise<void> => {
+    const session = (req as any).officer as OfficerSession;
+    const repos = getDataRepositories();
+
+    // 1. Strict physical-ID document privacy: No scans, photos, videos, or document numbers
+    const privacyCheck = containsForbiddenExceptionData(req.body);
+    if (privacyCheck.forbidden) {
+      serverStore.recordAuditEvent({
+        id: `audit-ex-leak-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        timestamp: Date.now(),
+        type: 'ADMIN_ACTION',
+        description: `Security violation: Physical document image or personal identifier in field '${privacyCheck.key}' rejected for officer '${session?.accountId}'`,
+        electionId: 1,
+      });
+
+      res.status(400).json({
+        success: false,
+        message: `Privacy violation: Physical ID photographs, scans, or document numbers are strictly prohibited. Inspect documents physically and record the outcome only.`,
+      });
+      return;
+    }
+
+    const {
+      voterId,
+      purpose,
+      modality,
+      electionId,
+      votingSessionToken,
+      votingSessionTokenHash: rawVotingSessionTokenHash,
+      reasonCode,
+      note,
+    } = req.body;
+
+    // 2. Validate purpose
+    if (!purpose || !['ENROLLMENT', 'VOTING_SESSION'].includes(purpose)) {
+      res.status(400).json({
+        success: false,
+        message: "Invalid purpose: Must be 'ENROLLMENT' or 'VOTING_SESSION'.",
+      });
+      return;
+    }
+
+    // 3. Validate reason code
+    if (!reasonCode || !VALID_EXCEPTION_REASON_CODES.includes(reasonCode)) {
+      res.status(400).json({
+        success: false,
+        message: `Invalid reasonCode '${reasonCode}'. Valid codes: ${VALID_EXCEPTION_REASON_CODES.join(', ')}`,
+      });
+      return;
+    }
+
+    // 4. Resolve voter
+    if (!voterId || typeof voterId !== 'string') {
+      res.status(400).json({ success: false, message: 'Missing voterId.' });
+      return;
+    }
+
+    const voter =
+      (await repos.voterProfiles.findById(voterId)) ||
+      (await repos.voterProfiles.findBySimulationId(voterId)) ||
+      (await repos.voterProfiles.findByLegacyEpic(voterId));
+
+    if (!voter) {
+      res.status(404).json({ success: false, message: `Voter record '${voterId}' not found.` });
+      return;
+    }
+
+    // 5. Check voter status
+    if (
+      voter.lifecycleStatus === 'LOCKED' ||
+      voter.registrationStatus === 'SUSPENDED' ||
+      voter.registrationStatus === 'DE_REGISTERED'
+    ) {
+      res.status(403).json({
+        success: false,
+        message: `Cannot request exception for inactive or suspended voter record (Current lifecycle: ${voter.lifecycleStatus}, registration: ${voter.registrationStatus}).`,
+      });
+      return;
+    }
+
+    // 6. Constituency scope enforcement
+    if (session && !isConstituencyInScope(session.assignmentScope, voter.constituencyId)) {
+      serverStore.recordAuditEvent({
+        id: `audit-ex-scope-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        timestamp: Date.now(),
+        type: 'ADMIN_ACTION',
+        description: `Scope violation: Officer '${session.accountId}' attempted exception for out-of-scope voter in constituency '${voter.constituencyId}'`,
+        electionId: 1,
+      });
+
+      res.status(403).json({
+        success: false,
+        message: `Scope violation: Access to voter in constituency '${voter.constituencyId}' is outside officer's authorized assignment scope.`,
+      });
+      return;
+    }
+
+    // 7. Purpose-specific validation
+    if (purpose === 'ENROLLMENT') {
+      if (!modality || !['FACE', 'FINGERPRINT'].includes(modality)) {
+        res.status(400).json({
+          success: false,
+          message: "Enrollment-time exception requires modality ('FACE' or 'FINGERPRINT').",
+        });
+        return;
+      }
+
+      // Check for duplicate pending enrollment exception
+      const existingPending = await repos.exceptions.findPending(voter.id, 'ENROLLMENT', modality);
+      if (existingPending) {
+        res.status(409).json({
+          success: false,
+          message: `A pending enrollment exception request already exists for this voter and modality (Request ID: ${existingPending.id}).`,
+          existingRequestId: existingPending.id,
+        });
+        return;
+      }
+    } else if (purpose === 'VOTING_SESSION') {
+      if (!electionId) {
+        res.status(400).json({
+          success: false,
+          message: 'Voting-time exception requires electionId.',
+        });
+        return;
+      }
+
+      // Check election validity
+      const targetElection =
+        serverStore.findElectionByNumericId(Number(electionId)) ||
+        serverStore.getElectionById(String(electionId));
+
+      if (!targetElection) {
+        res.status(404).json({ success: false, message: `Election record '${electionId}' not found.` });
+        return;
+      }
+
+      if (targetElection.status !== 'active') {
+        res.status(403).json({
+          success: false,
+          message: `Cannot request voting exception: Election is not active (Current status: ${targetElection.status.toUpperCase()}).`,
+        });
+        return;
+      }
+
+      if (targetElection.constituencyIds && targetElection.constituencyIds.length > 0) {
+        if (!targetElection.constituencyIds.includes(voter.constituencyId)) {
+          res.status(403).json({
+            success: false,
+            message: `Cannot request voting exception: Voter's constituency '${voter.constituencyId}' is not participating in election '${electionId}'.`,
+          });
+          return;
+        }
+      }
+
+      const part = await repos.participations.getParticipation(voter.id, String(electionId));
+      if (part && (part.status === 'VOTE_ACCEPTED' || Boolean(part.votedAt))) {
+        res.status(403).json({
+          success: false,
+          message: 'Cannot request voting exception: Voter has already finalized a ballot.',
+        });
+        return;
+      }
+
+      const existingPending = await repos.exceptions.findPending(voter.id, 'VOTING_SESSION', String(electionId));
+      if (existingPending) {
+        res.status(409).json({
+          success: false,
+          message: `A pending voting exception request already exists for this voter and election (Request ID: ${existingPending.id}).`,
+          existingRequestId: existingPending.id,
+        });
+        return;
+      }
+    }
+
+    // 8. Generate exception request record
+    const now = Date.now();
+    const exceptionId = `EX-REQ-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+    const votingSessionTokenHash = rawVotingSessionTokenHash
+      ? String(rawVotingSessionTokenHash)
+      : votingSessionToken
+      ? crypto.createHash('sha256').update(String(votingSessionToken)).digest('hex')
+      : undefined;
+
+    const requestRecord: ManualIdExceptionRecord = {
+      id: exceptionId,
+      schemaVersion: SCHEMA_VERSION_CURRENT,
+      voterId: voter.id,
+      simulationVoterId: voter.simulationVoterId,
+      constituencyId: voter.constituencyId,
+      purpose,
+      modality: purpose === 'ENROLLMENT' ? modality : undefined,
+      electionId: purpose === 'VOTING_SESSION' ? String(electionId) : undefined,
+      votingSessionTokenHash,
+      requestedByOfficerId: session?.accountId || 'VRO-SIM-001',
+      requestedByOfficerRole: (session?.role as any) || 'VOTER_REGISTRATION_OFFICER',
+      requestedAt: now,
+      reasonCode: reasonCode as ExceptionReasonCode,
+      note: note ? String(note).trim().slice(0, 300) : undefined,
+      status: 'PENDING',
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    try {
+      await repos.exceptions.createRequest(requestRecord);
+    } catch (err: any) {
+      res.status(400).json({ success: false, message: err.message });
+      return;
+    }
+
+    // 9. If enrollment-time exception, update biometric metadata to PENDING_MANUAL_REVIEW
+    if (purpose === 'ENROLLMENT' && modality) {
+      const existingBio = await repos.biometrics.getMetadata(voter.id, modality);
+      const bioMeta: BiometricEnrollmentMetadata = existingBio
+        ? {
+            ...existingBio,
+            status: 'PENDING_MANUAL_REVIEW',
+            isManualException: true,
+            qualityCheckStatus: 'PENDING',
+            exceptionDecisionReference: exceptionId,
+            manualExceptionId: exceptionId,
+            updatedAt: now,
+          }
+        : {
+            id: `bio_${voter.id}_${modality.toLowerCase()}`,
+            voterId: voter.id,
+            modality,
+            status: 'PENDING_MANUAL_REVIEW',
+            biometricReferenceId: `pending_exception_${exceptionId}`,
+            qualityCheckStatus: 'PENDING',
+            isManualException: true,
+            exceptionDecisionReference: exceptionId,
+            manualExceptionId: exceptionId,
+            createdAt: now,
+            updatedAt: now,
+            schemaVersion: SCHEMA_VERSION_CURRENT,
+          };
+      await repos.biometrics.saveMetadata(bioMeta);
+    }
+
+    // 10. Audit event
+    serverStore.recordAuditEvent({
+      id: `audit-ex-req-${now}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: now,
+      type: 'ADMIN_ACTION',
+      description: `Manual physical-ID exception requested for voter '${voter.simulationVoterId}' (${purpose}) by '${session?.accountId}' [Reason: ${reasonCode}]`,
+      electionId: electionId ? Number(electionId) : 1,
+    });
+
+    try {
+      await repos.auditEvents.appendEvent({
+        id: `audit-evt-${now}-${Math.random().toString(36).substring(2, 6)}`,
+        timestamp: now,
+        type: 'MANUAL_ID_EXCEPTION_REQUESTED',
+        actor: {
+          actorId: session?.accountId || 'VRO-SIM-001',
+          actorRole: (session?.role as any) || 'VOTER_REGISTRATION_OFFICER',
+        },
+        action: 'REQUEST_MANUAL_ID_EXCEPTION',
+        target: {
+          category: 'EXCEPTION_REQUEST',
+          targetReference: exceptionId,
+        },
+        outcome: 'SUCCESS',
+        reasonCode,
+        electionId: electionId ? String(electionId) : undefined,
+        constituencyId: voter.constituencyId,
+        metadata: {
+          voterId: voter.id,
+          simulationVoterId: voter.simulationVoterId,
+          purpose,
+          reasonCode,
+        },
+        schemaVersion: SCHEMA_VERSION_CURRENT,
+      });
+    } catch (auditErr: any) {
+      console.warn('[Audit] Notice recording structured audit event:', auditErr.message);
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Manual physical-ID exception request created successfully. Awaiting Election Officer review.',
+      exception: requestRecord,
+    });
+  }
+);
+
+/**
+ * GET /api/admin/exceptions & /api/exceptions
+ * Lists exception requests visible to the authenticated officer within scope.
+ */
+adminRouter.get(
+  ['/exceptions', '/admin/exceptions'],
+  authenticateOfficer,
+  async (req: Request, res: Response): Promise<void> => {
+    const session = (req as any).officer as OfficerSession;
+    const repos = getDataRepositories();
+
+    // Verify officer has exception viewing rights
+    const canView =
+      hasPermission(session.role, 'VOTER_EXCEPTION_APPROVE') ||
+      hasPermission(session.role, 'VOTER_EXCEPTION_REQUEST') ||
+      hasPermission(session.role, 'VOTER_READ');
+
+    if (!canView) {
+      res.status(403).json({
+        success: false,
+        message: 'Permission denied: Officer lacks permissions to view exception queue.',
+      });
+      return;
+    }
+
+    const { voterId, purpose, status, electionId, constituencyId } = req.query;
+
+    const filter: any = {};
+    if (voterId && typeof voterId === 'string') filter.voterId = voterId;
+    if (purpose && typeof purpose === 'string') filter.purpose = purpose;
+    if (status && typeof status === 'string') filter.status = status;
+    if (electionId && typeof electionId === 'string') filter.electionId = electionId;
+    if (constituencyId && typeof constituencyId === 'string') filter.constituencyId = constituencyId;
+
+    let exceptions = await repos.exceptions.list(filter);
+
+    // Apply officer assignment scope filtering
+    if (session.assignmentScope?.constituencyIds && session.assignmentScope.constituencyIds.length > 0) {
+      exceptions = exceptions.filter((e) =>
+        isConstituencyInScope(session.assignmentScope, e.constituencyId)
+      );
+    }
+    if (session.assignmentScope?.electionIds && session.assignmentScope.electionIds.length > 0) {
+      exceptions = exceptions.filter(
+        (e) => !e.electionId || isElectionInScope(session.assignmentScope, e.electionId)
+      );
+    }
+
+    res.status(200).json({
+      success: true,
+      count: exceptions.length,
+      exceptions,
+    });
+  }
+);
+
+/**
+ * GET /api/admin/exceptions/:id & /api/exceptions/:id
+ * Retrieves an individual exception request with scope validation.
+ */
+adminRouter.get(
+  ['/exceptions/:id', '/admin/exceptions/:id'],
+  authenticateOfficer,
+  async (req: Request, res: Response): Promise<void> => {
+    const session = (req as any).officer as OfficerSession;
+    const repos = getDataRepositories();
+    const { id } = req.params;
+
+    const exception = await repos.exceptions.findById(id);
+    if (!exception) {
+      res.status(404).json({ success: false, message: `Exception request '${id}' not found.` });
+      return;
+    }
+
+    // Scope check
+    if (session && !isConstituencyInScope(session.assignmentScope, exception.constituencyId)) {
+      res.status(403).json({
+        success: false,
+        message: `Scope violation: Access to exception request in constituency '${exception.constituencyId}' is outside officer's authorized assignment scope.`,
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      exception,
+    });
+  }
+);
+
+/**
+ * POST /api/admin/exceptions/:id/approve & /api/exceptions/:id/approve
+ * Approves a pending manual physical-ID exception.
+ * Authorized strictly for: ELECTION_OFFICER (or PLATFORM_ADMIN) within scope.
+ * Invariants enforced:
+ * - Requester cannot approve their own request (separation of duties).
+ * - Only PENDING requests can be decided.
+ * - Explicit decisionReason required (>= 5 chars).
+ * - Outcome is strictly MANUAL_PHYSICAL_ID_APPROVED (never biometric match).
+ * - Biometric modalities remain independent; never marked ENROLLED.
+ * - Voting session exceptions receive a 15-minute server-managed expiry.
+ */
+adminRouter.post(
+  ['/exceptions/:id/approve', '/admin/exceptions/:id/approve'],
+  requirePermission('VOTER_EXCEPTION_APPROVE'),
+  async (req: Request, res: Response): Promise<void> => {
+    const session = (req as any).officer as OfficerSession;
+    const repos = getDataRepositories();
+    const { id } = req.params;
+
+    // 1. Fetch exception
+    const exception = await repos.exceptions.findById(id);
+    if (!exception) {
+      res.status(404).json({ success: false, message: `Exception request '${id}' not found.` });
+      return;
+    }
+
+    // 2. Scope checks
+    if (session && !isConstituencyInScope(session.assignmentScope, exception.constituencyId)) {
+      serverStore.recordAuditEvent({
+        id: `audit-ex-appr-scope-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        timestamp: Date.now(),
+        type: 'ADMIN_ACTION',
+        description: `Scope violation: Officer '${session.accountId}' attempted approval of exception in out-of-scope constituency '${exception.constituencyId}'`,
+        electionId: 1,
+      });
+
+      res.status(403).json({
+        success: false,
+        message: `Scope violation: Exception in constituency '${exception.constituencyId}' is outside officer's authorized assignment scope.`,
+      });
+      return;
+    }
+
+    if (
+      exception.electionId &&
+      session &&
+      !isElectionInScope(session.assignmentScope, exception.electionId)
+    ) {
+      res.status(403).json({
+        success: false,
+        message: `Scope violation: Election '${exception.electionId}' is outside officer's authorized jurisdiction.`,
+      });
+      return;
+    }
+
+    // 3. Separation of duties: Requester cannot approve own request
+    if (session && session.accountId && session.accountId === exception.requestedByOfficerId) {
+      serverStore.recordAuditEvent({
+        id: `audit-ex-self-appr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        timestamp: Date.now(),
+        type: 'ADMIN_ACTION',
+        description: `Separation of duties violation: Officer '${session.accountId}' attempted to approve their own exception request '${id}'`,
+        electionId: 1,
+      });
+
+      res.status(403).json({
+        success: false,
+        message: 'Separation of duties violation: An officer cannot approve or decline an exception request they submitted.',
+      });
+      return;
+    }
+
+    // 4. State machine: Only PENDING requests can be decided
+    if (exception.status !== 'PENDING') {
+      res.status(409).json({
+        success: false,
+        message: `Conflict: Exception request is in '${exception.status}' status and cannot be approved. Only PENDING requests can receive a decision.`,
+      });
+      return;
+    }
+
+    // 5. Decision reason required
+    const { decisionReason } = req.body;
+    if (!decisionReason || typeof decisionReason !== 'string' || decisionReason.trim().length < 5) {
+      res.status(400).json({
+        success: false,
+        message: 'Approval requires an explicit, audited decisionReason of at least 5 characters.',
+      });
+      return;
+    }
+
+    const now = Date.now();
+
+    // 6. Handle purpose-specific updates
+    if (exception.purpose === 'ENROLLMENT') {
+      exception.status = 'APPROVED';
+      exception.decisionOutcome = 'MANUAL_PHYSICAL_ID_APPROVED';
+      exception.reviewedByOfficerId = session?.accountId || 'EO-SIM-001';
+      exception.reviewedByOfficerRole = (session?.role as any) || 'ELECTION_OFFICER';
+      exception.reviewedAt = now;
+      exception.decisionReason = decisionReason.trim();
+      exception.updatedAt = now;
+
+      await repos.exceptions.update(exception);
+
+      // Update biometric metadata record: Set status to MANUALLY_APPROVED with isManualException=true
+      // NEVER set to ENROLLED or claim a biometric match!
+      if (exception.modality) {
+        const existingBio = await repos.biometrics.getMetadata(exception.voterId, exception.modality);
+        const bioRecord: BiometricEnrollmentMetadata = existingBio
+          ? {
+              ...existingBio,
+              status: 'MANUALLY_APPROVED',
+              isManualException: true, // Invariant: must be true, represents manual physical-ID review
+              qualityCheckStatus: 'EXEMPTED',
+              exceptionDecisionReference: exception.id,
+              manualExceptionId: exception.id,
+              updatedAt: now,
+            }
+          : {
+              id: `bio_${exception.voterId}_${exception.modality.toLowerCase()}`,
+              voterId: exception.voterId,
+              modality: exception.modality,
+              status: 'MANUALLY_APPROVED',
+              biometricReferenceId: `manually_exempted_${exception.id}`,
+              qualityCheckStatus: 'EXEMPTED',
+              isManualException: true,
+              exceptionDecisionReference: exception.id,
+              manualExceptionId: exception.id,
+              createdAt: now,
+              updatedAt: now,
+              schemaVersion: SCHEMA_VERSION_CURRENT,
+            };
+        await repos.biometrics.saveMetadata(bioRecord);
+      }
+    } else if (exception.purpose === 'VOTING_SESSION') {
+      // Re-verify voter is still active and eligible
+      const voter = await repos.voterProfiles.findById(exception.voterId);
+      if (
+        !voter ||
+        voter.lifecycleStatus === 'LOCKED' ||
+        voter.registrationStatus !== 'REGISTERED' ||
+        voter.eligibilityStatus !== 'ELIGIBLE'
+      ) {
+        res.status(403).json({
+          success: false,
+          message: 'Cannot approve voting exception: Elector record is inactive or ineligible.',
+        });
+        return;
+      }
+
+      const election =
+        serverStore.findElectionByNumericId(Number(exception.electionId)) ||
+        serverStore.getElectionById(String(exception.electionId));
+
+      if (!election || election.status !== 'active') {
+        res.status(403).json({
+          success: false,
+          message: 'Cannot approve voting exception: Election is not active.',
+        });
+        return;
+      }
+
+      const part = await repos.participations.getParticipation(voter.id, String(exception.electionId));
+      if (part && (part.status === 'VOTE_ACCEPTED' || Boolean(part.votedAt))) {
+        res.status(403).json({
+          success: false,
+          message: 'Cannot approve voting exception: Elector has already cast a ballot in this election.',
+        });
+        return;
+      }
+
+      // 15-minute server-managed expiry for voting attempt
+      const expiresAt = now + 15 * 60 * 1000;
+
+      exception.status = 'APPROVED';
+      exception.decisionOutcome = 'MANUAL_PHYSICAL_ID_APPROVED';
+      exception.reviewedByOfficerId = session?.accountId || 'EO-SIM-001';
+      exception.reviewedByOfficerRole = (session?.role as any) || 'ELECTION_OFFICER';
+      exception.reviewedAt = now;
+      exception.decisionReason = decisionReason.trim();
+      exception.expiresAt = expiresAt;
+      exception.updatedAt = now;
+
+      await repos.exceptions.update(exception);
+    }
+
+    // 7. Audit log
+    serverStore.recordAuditEvent({
+      id: `audit-ex-appr-${now}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: now,
+      type: 'ADMIN_ACTION',
+      description: `Manual physical-ID exception '${id}' approved by '${session?.accountId}' (Reason: ${decisionReason.trim()})`,
+      electionId: exception.electionId ? Number(exception.electionId) : 1,
+    });
+
+    try {
+      await repos.auditEvents.appendEvent({
+        id: `audit-evt-${now}-${Math.random().toString(36).substring(2, 6)}`,
+        timestamp: now,
+        type: 'MANUAL_ID_EXCEPTION_APPROVED',
+        actor: {
+          actorId: session?.accountId || 'EO-SIM-001',
+          actorRole: (session?.role as any) || 'ELECTION_OFFICER',
+        },
+        action: 'APPROVE_MANUAL_ID_EXCEPTION',
+        target: {
+          category: 'EXCEPTION_REQUEST',
+          targetReference: exception.id,
+        },
+        outcome: 'SUCCESS',
+        reasonCode: exception.reasonCode,
+        electionId: exception.electionId,
+        constituencyId: exception.constituencyId,
+        metadata: {
+          voterId: exception.voterId,
+          simulationVoterId: exception.simulationVoterId,
+          purpose: exception.purpose,
+          decisionOutcome: 'MANUAL_PHYSICAL_ID_APPROVED',
+        },
+        schemaVersion: SCHEMA_VERSION_CURRENT,
+      });
+    } catch (auditErr: any) {
+      console.warn('[Audit] Notice recording structured audit event:', auditErr.message);
+    }
+
+    res.status(200).json({
+      success: true,
+      message:
+        'Exception request approved successfully. Authoritative decision recorded as MANUAL_PHYSICAL_ID_APPROVED.',
+      exception,
+    });
+  }
+);
+
+/**
+ * POST /api/admin/exceptions/:id/decline & /api/exceptions/:id/decline
+ * Declines a pending manual physical-ID exception.
+ * Authorized strictly for: ELECTION_OFFICER (or PLATFORM_ADMIN) within scope.
+ */
+adminRouter.post(
+  ['/exceptions/:id/decline', '/admin/exceptions/:id/decline'],
+  requirePermission('VOTER_EXCEPTION_APPROVE'),
+  async (req: Request, res: Response): Promise<void> => {
+    const session = (req as any).officer as OfficerSession;
+    const repos = getDataRepositories();
+    const { id } = req.params;
+
+    const exception = await repos.exceptions.findById(id);
+    if (!exception) {
+      res.status(404).json({ success: false, message: `Exception request '${id}' not found.` });
+      return;
+    }
+
+    if (session && !isConstituencyInScope(session.assignmentScope, exception.constituencyId)) {
+      res.status(403).json({
+        success: false,
+        message: `Scope violation: Exception in constituency '${exception.constituencyId}' is outside officer's authorized assignment scope.`,
+      });
+      return;
+    }
+
+    if (session && session.accountId && session.accountId === exception.requestedByOfficerId) {
+      res.status(403).json({
+        success: false,
+        message: 'Separation of duties violation: An officer cannot approve or decline an exception request they submitted.',
+      });
+      return;
+    }
+
+    if (exception.status !== 'PENDING') {
+      res.status(409).json({
+        success: false,
+        message: `Conflict: Exception request is in '${exception.status}' status and cannot be declined. Only PENDING requests can receive a decision.`,
+      });
+      return;
+    }
+
+    const { decisionReason } = req.body;
+    if (!decisionReason || typeof decisionReason !== 'string' || decisionReason.trim().length < 5) {
+      res.status(400).json({
+        success: false,
+        message: 'Declining requires an explicit, audited decisionReason of at least 5 characters.',
+      });
+      return;
+    }
+
+    const now = Date.now();
+    exception.status = 'DECLINED';
+    exception.decisionOutcome = 'MANUAL_PHYSICAL_ID_DECLINED';
+    exception.reviewedByOfficerId = session?.accountId || 'EO-SIM-001';
+    exception.reviewedByOfficerRole = (session?.role as any) || 'ELECTION_OFFICER';
+    exception.reviewedAt = now;
+    exception.decisionReason = decisionReason.trim();
+    exception.updatedAt = now;
+
+    await repos.exceptions.update(exception);
+
+    if (exception.purpose === 'ENROLLMENT' && exception.modality) {
+      const existingBio = await repos.biometrics.getMetadata(exception.voterId, exception.modality);
+      if (existingBio) {
+        existingBio.status = 'DECLINED';
+        existingBio.exceptionDecisionReference = exception.id;
+        existingBio.updatedAt = now;
+        await repos.biometrics.saveMetadata(existingBio);
+      }
+    }
+
+    serverStore.recordAuditEvent({
+      id: `audit-ex-dec-${now}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: now,
+      type: 'ADMIN_ACTION',
+      description: `Manual physical-ID exception '${id}' declined by '${session?.accountId}' (Reason: ${decisionReason.trim()})`,
+      electionId: exception.electionId ? Number(exception.electionId) : 1,
+    });
+
+    try {
+      await repos.auditEvents.appendEvent({
+        id: `audit-evt-${now}-${Math.random().toString(36).substring(2, 6)}`,
+        timestamp: now,
+        type: 'MANUAL_ID_EXCEPTION_DECLINED',
+        actor: {
+          actorId: session?.accountId || 'EO-SIM-001',
+          actorRole: (session?.role as any) || 'ELECTION_OFFICER',
+        },
+        action: 'DECLINE_MANUAL_ID_EXCEPTION',
+        target: {
+          category: 'EXCEPTION_REQUEST',
+          targetReference: exception.id,
+        },
+        outcome: 'SUCCESS',
+        reasonCode: exception.reasonCode,
+        electionId: exception.electionId,
+        constituencyId: exception.constituencyId,
+        metadata: {
+          voterId: exception.voterId,
+          simulationVoterId: exception.simulationVoterId,
+          purpose: exception.purpose,
+          decisionOutcome: 'MANUAL_PHYSICAL_ID_DECLINED',
+        },
+        schemaVersion: SCHEMA_VERSION_CURRENT,
+      });
+    } catch (auditErr: any) {
+      console.warn('[Audit] Notice recording structured audit event:', auditErr.message);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Exception request declined. Outcome recorded as MANUAL_PHYSICAL_ID_DECLINED.',
+      exception,
+    });
+  }
+);
+

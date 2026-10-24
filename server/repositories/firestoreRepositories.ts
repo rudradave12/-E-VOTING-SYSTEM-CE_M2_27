@@ -14,12 +14,16 @@ import {
   AuthorityAccount,
   AuthorityRole,
   StructuredAuditEvent,
+  ManualIdExceptionRecord,
+  ExceptionPurpose,
+  ExceptionStatus,
   validateVoterProfile,
   validateElectionParticipation,
   validateBiometricMetadata,
   validateAnonymousBallot,
   validateAuthorityAccount,
   validateStructuredAuditEvent,
+  validateManualIdException,
   isValidParticipationTransition,
 } from '../../src/types/dataModel';
 import {
@@ -29,9 +33,11 @@ import {
   IBallotMetadataRepository,
   IAuthorityAccountRepository,
   IAuditEventRepository,
+  IManualIdExceptionRepository,
   IDataRepositories,
   VoterProfileFilter,
   AuditEventFilter,
+  ExceptionFilter,
 } from './types';
 
 export class FirestoreVoterProfileRepository implements IVoterProfileRepository {
@@ -339,6 +345,105 @@ export class FirestoreAuditEventRepository implements IAuditEventRepository {
   }
 }
 
+export class FirestoreManualIdExceptionRepository implements IManualIdExceptionRepository {
+  private col() {
+    return serverDb.collection('manual_id_exceptions');
+  }
+
+  public async createRequest(request: ManualIdExceptionRecord): Promise<void> {
+    const validation = validateManualIdException(request);
+    if (!validation.isValid) {
+      throw new Error(`Cannot create invalid exception request: ${validation.errors.join('; ')}`);
+    }
+    const existingPending = await this.findPending(
+      request.voterId,
+      request.purpose,
+      request.purpose === 'ENROLLMENT' ? request.modality : request.electionId
+    );
+    if (existingPending) {
+      throw new Error(`A pending exception request already exists for this voter and scope: ${existingPending.id}`);
+    }
+    await this.col().doc(request.id).set(request);
+  }
+
+  public async findById(id: string): Promise<ManualIdExceptionRecord | null> {
+    const snap = await this.col().doc(id).get();
+    if (!snap.exists) return null;
+    return snap.data() as ManualIdExceptionRecord;
+  }
+
+  public async findPending(
+    voterId: string,
+    purpose: ExceptionPurpose,
+    modalityOrElectionId?: string
+  ): Promise<ManualIdExceptionRecord | null> {
+    const snap = await this.col()
+      .where('voterId', '==', voterId)
+      .where('status', '==', 'PENDING')
+      .where('purpose', '==', purpose)
+      .get();
+    for (const doc of snap.docs) {
+      const data = doc.data() as ManualIdExceptionRecord;
+      if (purpose === 'ENROLLMENT') {
+        if (!modalityOrElectionId || data.modality === modalityOrElectionId) {
+          return data;
+        }
+      } else if (purpose === 'VOTING_SESSION') {
+        if (!modalityOrElectionId || data.electionId === modalityOrElectionId) {
+          return data;
+        }
+      }
+    }
+    return null;
+  }
+
+  public async update(request: ManualIdExceptionRecord): Promise<void> {
+    const validation = validateManualIdException(request);
+    if (!validation.isValid) {
+      throw new Error(`Cannot update invalid exception request: ${validation.errors.join('; ')}`);
+    }
+    const docRef = this.col().doc(request.id);
+    const snap = await docRef.get();
+    if (!snap.exists) {
+      throw new Error(`Exception request not found: ${request.id}`);
+    }
+    await docRef.set(request, { merge: true });
+  }
+
+  public async list(filter?: ExceptionFilter): Promise<ManualIdExceptionRecord[]> {
+    let query: any = this.col();
+    if (filter?.voterId) {
+      query = query.where('voterId', '==', filter.voterId);
+    }
+    if (filter?.constituencyId) {
+      query = query.where('constituencyId', '==', filter.constituencyId);
+    }
+    if (filter?.purpose) {
+      query = query.where('purpose', '==', filter.purpose);
+    }
+    if (filter?.status) {
+      query = query.where('status', '==', filter.status);
+    }
+    if (filter?.electionId) {
+      query = query.where('electionId', '==', filter.electionId);
+    }
+    const snap = await query.get();
+    let result = snap.docs.map((d: any) => d.data() as ManualIdExceptionRecord);
+    result.sort((a: ManualIdExceptionRecord, b: ManualIdExceptionRecord) => b.requestedAt - a.requestedAt);
+    if (filter?.limit && filter.limit > 0) {
+      result = result.slice(0, filter.limit);
+    }
+    return result;
+  }
+
+  public async clear(): Promise<void> {
+    const snap = await this.col().get();
+    for (const doc of snap.docs) {
+      await doc.ref.delete();
+    }
+  }
+}
+
 export function createFirestoreRepositories(): IDataRepositories {
   return {
     voterProfiles: new FirestoreVoterProfileRepository(),
@@ -347,5 +452,6 @@ export function createFirestoreRepositories(): IDataRepositories {
     ballots: new FirestoreBallotMetadataRepository(),
     authorities: new FirestoreAuthorityAccountRepository(),
     auditEvents: new FirestoreAuditEventRepository(),
+    exceptions: new FirestoreManualIdExceptionRepository(),
   };
 }
