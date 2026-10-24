@@ -6,6 +6,7 @@ import {
   VoterRecord,
   AuditEvent,
   ElectionStatus,
+  AuthoritativeElectionStatus,
   PreferencePollConfig,
   PollAggregateRecord,
   PollResponseRecord,
@@ -393,18 +394,31 @@ export class VoterApiClient {
     }
   }
 
-  public async adminUpdateElectionStatus(
-    electionId: string,
-    status: ElectionStatus
-  ): Promise<{ success: boolean; message?: string }> {
+  public async adminGetElectionStatus(
+    electionId: string
+  ): Promise<{ success: boolean; electionStatus?: AuthoritativeElectionStatus; message?: string }> {
     try {
-      const res = await fetch(`/api/admin/elections/${encodeURIComponent(electionId)}/status`, {
-        method: 'PATCH',
+      const res = await fetch(`/api/elections/${encodeURIComponent(electionId)}/status`);
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  public async adminReconcileElections(): Promise<{
+    success: boolean;
+    serverTimeSec?: number;
+    serverTimeIso?: string;
+    transitions?: any[];
+    message?: string;
+  }> {
+    try {
+      const res = await fetch('/api/admin/elections/reconcile', {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
         },
-        body: JSON.stringify({ status }),
       });
       return await res.json();
     } catch (err: any) {
@@ -412,7 +426,46 @@ export class VoterApiClient {
     }
   }
 
-  public async adminAddCandidate(candidate: Candidate): Promise<{ success: boolean; message?: string }> {
+  public async adminUpdateElection(
+    electionId: string,
+    updates: Partial<Election>
+  ): Promise<{ success: boolean; message?: string; election?: Election }> {
+    try {
+      const res = await fetch(`/api/admin/elections/${encodeURIComponent(electionId)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+        body: JSON.stringify(updates),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  public async adminUpdateElectionStatus(
+    electionId: string,
+    status: ElectionStatus,
+    reason?: string
+  ): Promise<{ success: boolean; message?: string; status?: ElectionStatus; election?: Election }> {
+    try {
+      const res = await fetch(`/api/admin/elections/${encodeURIComponent(electionId)}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+        body: JSON.stringify({ status, reason }),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  public async adminAddCandidate(candidate: Candidate): Promise<{ success: boolean; message?: string; candidate?: Candidate }> {
     try {
       const res = await fetch('/api/admin/candidates', {
         method: 'POST',
@@ -421,6 +474,59 @@ export class VoterApiClient {
           ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
         },
         body: JSON.stringify(candidate),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  public async adminUpdateCandidate(
+    candidateId: string,
+    updates: Partial<Candidate>
+  ): Promise<{ success: boolean; message?: string; candidate?: Candidate }> {
+    try {
+      const res = await fetch(`/api/admin/candidates/${encodeURIComponent(candidateId)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+        body: JSON.stringify(updates),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  public async adminDeleteCandidate(candidateId: string): Promise<{ success: boolean; message?: string }> {
+    try {
+      const res = await fetch(`/api/admin/candidates/${encodeURIComponent(candidateId)}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  public async adminDeactivateCandidate(
+    candidateId: string,
+    reason: string
+  ): Promise<{ success: boolean; message?: string; candidate?: Candidate }> {
+    try {
+      const res = await fetch(`/api/admin/candidates/${encodeURIComponent(candidateId)}/deactivate`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+        body: JSON.stringify({ reason }),
       });
       return await res.json();
     } catch (err: any) {

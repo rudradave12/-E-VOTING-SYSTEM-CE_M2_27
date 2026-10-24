@@ -8,6 +8,11 @@ import {
   VoterLifecycleStatus,
   AuditEvent,
   ElectionStatus,
+  NormalizedElectionStatus,
+  normalizeElectionStatus,
+  isValidElectionTransition,
+  toLegacyElectionStatus,
+  AuthoritativeElectionStatus,
 } from '../src/types';
 import {
   INITIAL_ELECTIONS,
@@ -24,6 +29,7 @@ import {
   getAllElectionsFromFirestore,
   getElectionByIdFromFirestore,
   saveCandidateToFirestore,
+  deleteCandidateFromFirestore,
   getAllCandidatesFromFirestore,
   saveConstituencyToFirestore,
   getAllConstituenciesFromFirestore,
@@ -74,6 +80,34 @@ class ServerStore {
   // Test Delivery Adapter: holds dispatched synthetic test notifications
   private testDeliveryQueue: Map<string, { code: string; timestamp: number }> = new Map();
 
+  // Authoritative Server Clock & Simulation Offset (Injectable for Deterministic Testing)
+  private simulatedCurrentTimeMs: number | null = null;
+
+  public getCurrentTimeMs(): number {
+    if (this.simulatedCurrentTimeMs !== null) {
+      return this.simulatedCurrentTimeMs;
+    }
+    return Date.now();
+  }
+
+  public getCurrentTimeSec(): number {
+    return Math.floor(this.getCurrentTimeMs() / 1000);
+  }
+
+  public setSimulatedServerTime(timeMsOrSec: number): void {
+    const ms = timeMsOrSec < 10000000000 ? timeMsOrSec * 1000 : timeMsOrSec;
+    this.simulatedCurrentTimeMs = ms;
+  }
+
+  public advanceSimulatedServerTime(seconds: number): void {
+    const current = this.getCurrentTimeMs();
+    this.simulatedCurrentTimeMs = current + seconds * 1000;
+  }
+
+  public resetSimulatedServerTime(): void {
+    this.simulatedCurrentTimeMs = null;
+  }
+
   constructor() {
     this.resetDefaults();
   }
@@ -83,6 +117,9 @@ class ServerStore {
   }
 
   public resetVoters(): void {
+    // Reset simulated clock
+    this.resetSimulatedServerTime();
+
     // Phase 01: Preloaded demo voter identities removed from runtime operation.
     // In-memory voter roll starts empty. Voter enrollment is handled via backend
     // voter registry in Phase 04.
@@ -494,7 +531,133 @@ class ServerStore {
   }
 
   // --- Election Management Operations ---
+
+  /**
+   * Idempotently reconciles election schedules against the authoritative server clock.
+   * - Transitions SCHEDULED elections to ACTIVE/OPEN once nowSec >= startTime (with nominated candidates)
+   * - Transitions ACTIVE/OPEN elections to CONCLUDED/CLOSED once nowSec >= endTime
+   * Repeated executions with unchanged criteria produce 0 transitions and NO duplicate audit logs.
+   */
+  public reconcileElectionSchedules(nowSec?: number): {
+    transitions: Array<{ electionId: string; oldStatus: string; newStatus: string }>;
+  } {
+    const currentSec = nowSec ?? this.getCurrentTimeSec();
+    const transitions: Array<{ electionId: string; oldStatus: string; newStatus: string }> = [];
+
+    for (const election of this.elections.values()) {
+      const normStatus = normalizeElectionStatus(election.status);
+
+      // 1. Scheduled -> Active (or Concluded if end time is also reached)
+      if (normStatus === 'SCHEDULED' && currentSec >= election.startTime) {
+        if (currentSec >= election.endTime) {
+          const oldStatus = election.status;
+          election.status = 'concluded';
+          election.closedAt = election.closedAt || currentSec;
+          election.updatedAt = currentSec;
+
+          saveElectionToFirestore(election).catch((err) =>
+            console.warn('[ServerStore] Notice updating election status in Firestore:', err.message)
+          );
+
+          this.recordAuditEvent({
+            id: `audit-sched-close-${currentSec}-${Math.random().toString(36).substring(2, 6)}`,
+            timestamp: this.getCurrentTimeMs(),
+            type: 'ELECTION_STATE',
+            description: `Scheduled election ${election.title} reached closing deadline (${election.endTime}) and transitioned directly to CONCLUDED (CLOSED)`,
+            electionId: election.numericId,
+          });
+
+          transitions.push({ electionId: election.id, oldStatus, newStatus: 'concluded' });
+        } else {
+          // Check that candidates exist before auto-activating
+          const electionCandidates = this.getAllCandidates().filter((c) =>
+            election.constituencyIds ? election.constituencyIds.includes(c.constituencyId) : true
+          );
+
+          if (electionCandidates.length > 0) {
+            const oldStatus = election.status;
+            election.status = 'active';
+            election.openedAt = election.openedAt || currentSec;
+            election.updatedAt = currentSec;
+
+            saveElectionToFirestore(election).catch((err) =>
+              console.warn('[ServerStore] Notice updating election status in Firestore:', err.message)
+            );
+
+            this.recordAuditEvent({
+              id: `audit-sched-open-${currentSec}-${Math.random().toString(36).substring(2, 6)}`,
+              timestamp: this.getCurrentTimeMs(),
+              type: 'ELECTION_STATE',
+              description: `Authoritative schedule timer: election ${election.title} reached scheduled start time (${election.startTime}) and transitioned to ACTIVE (OPEN)`,
+              electionId: election.numericId,
+            });
+
+            transitions.push({ electionId: election.id, oldStatus, newStatus: 'active' });
+          }
+        }
+      } else if (normStatus === 'OPEN' && currentSec >= election.endTime) {
+        // 2. Open / Active -> Concluded
+        const oldStatus = election.status;
+        election.status = 'concluded';
+        election.closedAt = election.closedAt || currentSec;
+        election.updatedAt = currentSec;
+
+        saveElectionToFirestore(election).catch((err) =>
+          console.warn('[ServerStore] Notice updating election status in Firestore:', err.message)
+        );
+
+        this.recordAuditEvent({
+          id: `audit-sched-close-${currentSec}-${Math.random().toString(36).substring(2, 6)}`,
+          timestamp: this.getCurrentTimeMs(),
+          type: 'ELECTION_STATE',
+          description: `Authoritative schedule timer: election ${election.title} reached scheduled closing deadline (${election.endTime}) and transitioned to CONCLUDED (CLOSED)`,
+          electionId: election.numericId,
+        });
+
+        transitions.push({ electionId: election.id, oldStatus, newStatus: 'concluded' });
+      }
+    }
+
+    return { transitions };
+  }
+
+  public getAuthoritativeElectionStatus(electionId: string): AuthoritativeElectionStatus | null {
+    this.reconcileElectionSchedules();
+
+    const election =
+      this.getElectionById(electionId) ||
+      this.findElectionByNumericId(Number(electionId));
+
+    if (!election) return null;
+
+    const nowSec = this.getCurrentTimeSec();
+    const norm = normalizeElectionStatus(election.status);
+    const isVotingOpen = norm === 'OPEN' && nowSec >= election.startTime && nowSec < election.endTime;
+    const hasStarted = nowSec >= election.startTime;
+    const hasEnded = nowSec >= election.endTime;
+
+    return {
+      electionId: election.id,
+      numericId: election.numericId,
+      title: election.title,
+      status: election.status,
+      normalizedStatus: norm,
+      serverTimeSec: nowSec,
+      serverTimeIso: new Date(nowSec * 1000).toISOString(),
+      startTimeSec: election.startTime,
+      endTimeSec: election.endTime,
+      timezone: election.timezone || 'Asia/Kolkata',
+      isVotingOpen,
+      hasStarted,
+      hasEnded,
+      timeUntilStartSec: Math.max(0, election.startTime - nowSec),
+      timeUntilEndSec: Math.max(0, election.endTime - nowSec),
+      cancellationReason: election.cancellationReason,
+    };
+  }
+
   public getAllElections(): Election[] {
+    this.reconcileElectionSchedules();
     return Array.from(this.elections.values());
   }
 
@@ -512,10 +675,14 @@ class ServerStore {
   }
 
   public createElection(data: Omit<Election, 'totalVotesCast' | 'totalVotersRegistered'>): Election {
+    const nowSec = this.getCurrentTimeSec();
     const newElection: Election = {
       ...data,
       totalVotesCast: 0,
       totalVotersRegistered: 10000,
+      timezone: data.timezone || 'Asia/Kolkata',
+      createdAt: data.createdAt || nowSec,
+      updatedAt: data.updatedAt || nowSec,
     };
     this.elections.set(newElection.id, newElection);
     saveElectionToFirestore(newElection).catch((err) =>
@@ -525,10 +692,14 @@ class ServerStore {
   }
 
   public async createElectionAsync(data: Omit<Election, 'totalVotesCast' | 'totalVotersRegistered'>): Promise<Election> {
+    const nowSec = this.getCurrentTimeSec();
     const newElection: Election = {
       ...data,
       totalVotesCast: 0,
       totalVotersRegistered: 10000,
+      timezone: data.timezone || 'Asia/Kolkata',
+      createdAt: data.createdAt || nowSec,
+      updatedAt: data.updatedAt || nowSec,
     };
     if (isFirebaseConfigured()) {
       await saveElectionToFirestore(newElection);
@@ -537,81 +708,246 @@ class ServerStore {
     return newElection;
   }
 
-  public updateElectionStatus(electionId: string, newStatus: ElectionStatus): { success: boolean; message: string } {
+  public updateElection(
+    electionId: string,
+    updates: Partial<Election>,
+    officerId?: string
+  ): { success: boolean; message: string; election?: Election } {
+    const election = this.elections.get(electionId);
+    if (!election) {
+      return { success: false, message: 'Election record not found.' };
+    }
+
+    const norm = normalizeElectionStatus(election.status);
+    if (norm !== 'DRAFT' && norm !== 'SCHEDULED') {
+      return {
+        success: false,
+        message: 'Cannot modify election configuration after voting has commenced or concluded.',
+      };
+    }
+
+    const nowSec = this.getCurrentTimeSec();
+    const newStart = updates.startTime !== undefined ? Number(updates.startTime) : election.startTime;
+    const newEnd = updates.endTime !== undefined ? Number(updates.endTime) : election.endTime;
+
+    if (newEnd <= newStart) {
+      return { success: false, message: 'Election closing deadline must be strictly after start time.' };
+    }
+
+    if (updates.title !== undefined) election.title = updates.title.trim();
+    if (updates.description !== undefined) election.description = updates.description.trim();
+    if (updates.startTime !== undefined) election.startTime = newStart;
+    if (updates.endTime !== undefined) election.endTime = newEnd;
+    if (updates.timezone !== undefined) election.timezone = updates.timezone;
+    if (updates.constituencyIds !== undefined) election.constituencyIds = updates.constituencyIds;
+    if (updates.electionType !== undefined) election.electionType = updates.electionType;
+    election.updatedAt = nowSec;
+
+    saveElectionToFirestore(election).catch((err) =>
+      console.warn('[ServerStore] Notice updating election in Firestore:', err.message)
+    );
+
+    this.recordAuditEvent({
+      id: `audit-update-elec-${nowSec}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: this.getCurrentTimeMs(),
+      type: 'ADMIN_ACTION',
+      description: `Election configuration updated for ${election.title} (${election.id})${officerId ? ` by ${officerId}` : ''}`,
+      electionId: election.numericId,
+    });
+
+    return { success: true, message: 'Election configuration updated successfully.', election };
+  }
+
+  public async updateElectionAsync(
+    electionId: string,
+    updates: Partial<Election>,
+    officerId?: string
+  ): Promise<{ success: boolean; message: string; election?: Election }> {
+    const election = this.elections.get(electionId);
+    if (!election) {
+      return { success: false, message: 'Election record not found.' };
+    }
+
+    const norm = normalizeElectionStatus(election.status);
+    if (norm !== 'DRAFT' && norm !== 'SCHEDULED') {
+      return {
+        success: false,
+        message: 'Cannot modify election configuration after voting has commenced or concluded.',
+      };
+    }
+
+    const nowSec = this.getCurrentTimeSec();
+    const newStart = updates.startTime !== undefined ? Number(updates.startTime) : election.startTime;
+    const newEnd = updates.endTime !== undefined ? Number(updates.endTime) : election.endTime;
+
+    if (newEnd <= newStart) {
+      return { success: false, message: 'Election closing deadline must be strictly after start time.' };
+    }
+
+    if (updates.title !== undefined) election.title = updates.title.trim();
+    if (updates.description !== undefined) election.description = updates.description.trim();
+    if (updates.startTime !== undefined) election.startTime = newStart;
+    if (updates.endTime !== undefined) election.endTime = newEnd;
+    if (updates.timezone !== undefined) election.timezone = updates.timezone;
+    if (updates.constituencyIds !== undefined) election.constituencyIds = updates.constituencyIds;
+    if (updates.electionType !== undefined) election.electionType = updates.electionType;
+    election.updatedAt = nowSec;
+
+    if (isFirebaseConfigured()) {
+      await saveElectionToFirestore(election);
+    }
+
+    this.recordAuditEvent({
+      id: `audit-update-elec-${nowSec}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: this.getCurrentTimeMs(),
+      type: 'ADMIN_ACTION',
+      description: `Election configuration updated for ${election.title} (${election.id})${officerId ? ` by ${officerId}` : ''}`,
+      electionId: election.numericId,
+    });
+
+    return { success: true, message: 'Election configuration updated successfully.', election };
+  }
+
+  public updateElectionStatus(
+    electionId: string,
+    newStatus: ElectionStatus,
+    options?: { reason?: string; officerId?: string }
+  ): { success: boolean; message: string; election?: Election } {
     const election = this.elections.get(electionId);
     if (!election) {
       return { success: false, message: 'Election record not found.' };
     }
 
     const current = election.status;
-    const nowSec = Math.floor(Date.now() / 1000);
+    const nowSec = this.getCurrentTimeSec();
+    const normCurrent = normalizeElectionStatus(current);
+    const normTarget = normalizeElectionStatus(newStatus);
 
-    // Enforce valid lifecycle transitions
-    // draft -> scheduled, active
-    // scheduled -> active, draft
-    // active -> paused, concluded
-    // paused -> active, concluded
-    // concluded -> terminal (immutable)
-    if (current === 'concluded') {
+    // Terminal states cannot transition
+    if (normCurrent === 'CLOSED') {
       return { success: false, message: 'Concluded election is terminal and cannot transition.' };
     }
+    if (normCurrent === 'CANCELLED') {
+      return { success: false, message: 'Cancelled election is terminal and cannot transition.' };
+    }
 
-    if (newStatus === 'scheduled') {
+    // Validate lifecycle transitions
+    if (!isValidElectionTransition(current, newStatus)) {
+      return {
+        success: false,
+        message: `Illegal lifecycle transition: cannot transition election from '${String(current).toUpperCase()}' to '${String(newStatus).toUpperCase()}'.`,
+      };
+    }
+
+    // Cancellation requires valid justification
+    if (normTarget === 'CANCELLED') {
+      const reason = options?.reason?.trim();
+      if (!reason || reason.length < 5) {
+        return {
+          success: false,
+          message: 'A valid justification reason (minimum 5 characters) is required to cancel an election.',
+        };
+      }
+      election.cancellationReason = reason;
+      election.cancelledAt = nowSec;
+      if (options?.officerId) election.cancelledByOfficerId = options.officerId;
+    }
+
+    if (normTarget === 'SCHEDULED') {
       if (election.endTime <= election.startTime) {
         return { success: false, message: 'Election closing deadline must be strictly after the start time.' };
       }
+      election.publishedAt = election.publishedAt || nowSec;
     }
 
-    if (newStatus === 'active') {
-      // Validate election voting window
+    if (normTarget === 'OPEN') {
       if (nowSec > election.endTime) {
         return { success: false, message: 'Cannot activate election past its scheduled end time.' };
       }
-      // Validate that at least one candidate is registered in associated constituencies
       const electionCandidates = this.getAllCandidates().filter((c) =>
         election.constituencyIds ? election.constituencyIds.includes(c.constituencyId) : true
       );
       if (electionCandidates.length === 0) {
         return { success: false, message: 'Cannot activate election without nominated candidates.' };
       }
+      election.openedAt = election.openedAt || nowSec;
     }
 
-    election.status = newStatus;
+    if (normTarget === 'CLOSED') {
+      election.closedAt = election.closedAt || nowSec;
+    }
+
+    // Store compatible status representation
+    election.status = toLegacyElectionStatus(newStatus);
+    election.updatedAt = nowSec;
+
     saveElectionToFirestore(election).catch((err) =>
       console.warn('[ServerStore] Notice updating election status in Firestore:', err.message)
     );
 
     this.recordAuditEvent({
-      id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      timestamp: Date.now(),
+      id: `audit-${nowSec}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: this.getCurrentTimeMs(),
       type: 'ELECTION_STATE',
-      description: `Election ${election.title} status updated from ${current.toUpperCase()} to ${newStatus.toUpperCase()}`,
+      description: `Election ${election.title} status updated from ${String(current).toUpperCase()} to ${String(newStatus).toUpperCase()}${
+        options?.reason ? ` [Reason: ${options.reason}]` : ''
+      }${options?.officerId ? ` by ${options.officerId}` : ''}`,
       electionId: election.numericId,
     });
 
-    return { success: true, message: `Election state transitioned to ${newStatus}.` };
+    return { success: true, message: `Election state transitioned to ${newStatus}.`, election };
   }
 
-  public async updateElectionStatusAsync(electionId: string, newStatus: ElectionStatus): Promise<{ success: boolean; message: string }> {
+  public async updateElectionStatusAsync(
+    electionId: string,
+    newStatus: ElectionStatus,
+    options?: { reason?: string; officerId?: string }
+  ): Promise<{ success: boolean; message: string; election?: Election }> {
     const election = this.elections.get(electionId);
     if (!election) {
       return { success: false, message: 'Election record not found.' };
     }
 
     const current = election.status;
-    const nowSec = Math.floor(Date.now() / 1000);
+    const nowSec = this.getCurrentTimeSec();
+    const normCurrent = normalizeElectionStatus(current);
+    const normTarget = normalizeElectionStatus(newStatus);
 
-    if (current === 'concluded') {
+    if (normCurrent === 'CLOSED') {
       return { success: false, message: 'Concluded election is terminal and cannot transition.' };
     }
+    if (normCurrent === 'CANCELLED') {
+      return { success: false, message: 'Cancelled election is terminal and cannot transition.' };
+    }
 
-    if (newStatus === 'scheduled') {
+    if (!isValidElectionTransition(current, newStatus)) {
+      return {
+        success: false,
+        message: `Illegal lifecycle transition: cannot transition election from '${String(current).toUpperCase()}' to '${String(newStatus).toUpperCase()}'.`,
+      };
+    }
+
+    if (normTarget === 'CANCELLED') {
+      const reason = options?.reason?.trim();
+      if (!reason || reason.length < 5) {
+        return {
+          success: false,
+          message: 'A valid justification reason (minimum 5 characters) is required to cancel an election.',
+        };
+      }
+      election.cancellationReason = reason;
+      election.cancelledAt = nowSec;
+      if (options?.officerId) election.cancelledByOfficerId = options.officerId;
+    }
+
+    if (normTarget === 'SCHEDULED') {
       if (election.endTime <= election.startTime) {
         return { success: false, message: 'Election closing deadline must be strictly after the start time.' };
       }
+      election.publishedAt = election.publishedAt || nowSec;
     }
 
-    if (newStatus === 'active') {
+    if (normTarget === 'OPEN') {
       if (nowSec > election.endTime) {
         return { success: false, message: 'Cannot activate election past its scheduled end time.' };
       }
@@ -621,23 +957,31 @@ class ServerStore {
       if (electionCandidates.length === 0) {
         return { success: false, message: 'Cannot activate election without nominated candidates.' };
       }
+      election.openedAt = election.openedAt || nowSec;
     }
 
-    const updated = { ...election, status: newStatus };
-    if (isFirebaseConfigured()) {
-      await saveElectionToFirestore(updated);
+    if (normTarget === 'CLOSED') {
+      election.closedAt = election.closedAt || nowSec;
     }
-    election.status = newStatus;
+
+    election.status = toLegacyElectionStatus(newStatus);
+    election.updatedAt = nowSec;
+
+    if (isFirebaseConfigured()) {
+      await saveElectionToFirestore(election);
+    }
 
     this.recordAuditEvent({
-      id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      timestamp: Date.now(),
+      id: `audit-${nowSec}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: this.getCurrentTimeMs(),
       type: 'ELECTION_STATE',
-      description: `Election ${election.title} status updated from ${current.toUpperCase()} to ${newStatus.toUpperCase()}`,
+      description: `Election ${election.title} status updated from ${String(current).toUpperCase()} to ${String(newStatus).toUpperCase()}${
+        options?.reason ? ` [Reason: ${options.reason}]` : ''
+      }${options?.officerId ? ` by ${options.officerId}` : ''}`,
       electionId: election.numericId,
     });
 
-    return { success: true, message: `Election state transitioned to ${newStatus}.` };
+    return { success: true, message: `Election state transitioned to ${newStatus}.`, election };
   }
 
   // --- Constituency Operations ---
@@ -664,22 +1008,45 @@ class ServerStore {
     return Array.from(this.candidates.values());
   }
 
+  public getCandidateById(id: string): Candidate | undefined {
+    return this.candidates.get(id);
+  }
+
+  public findCandidateById(id: string): Candidate | undefined {
+    return this.candidates.get(id);
+  }
+
   public getCandidatesByConstituency(constituencyId: string): Candidate[] {
     return Array.from(this.candidates.values()).filter((c) => c.constituencyId === constituencyId);
   }
 
-  public addCandidate(candidate: Candidate): { success: boolean; message: string } {
-    // Validate election state: cannot add candidates while an associated election is active
-    const activeElections = Array.from(this.elections.values()).filter(
-      (e) => e.status === 'active'
-    );
-    for (const e of activeElections) {
-      if (e.constituencyIds && e.constituencyIds.includes(candidate.constituencyId)) {
-        return {
-          success: false,
-          message: 'Nominations are locked: cannot add candidates while an associated election is active.',
-        };
+  public isCandidateLocked(candidate: { constituencyId: string; electionId?: string; voteCount?: number }): boolean {
+    if ((candidate.voteCount || 0) > 0) return true;
+
+    if (candidate.electionId) {
+      const targetElec = this.getElectionById(candidate.electionId) || this.findElectionByNumericId(Number(candidate.electionId));
+      if (targetElec) {
+        const norm = normalizeElectionStatus(targetElec.status);
+        return norm === 'OPEN' || norm === 'PAUSED' || norm === 'CLOSED' || norm === 'CANCELLED';
       }
+    }
+
+    const lockedElections = Array.from(this.elections.values()).filter((e) => {
+      if (e.id === 'GE-2024' || e.isDemoElection) return false;
+      const norm = normalizeElectionStatus(e.status);
+      const isAssociated = e.constituencyIds ? e.constituencyIds.includes(candidate.constituencyId) : true;
+      return isAssociated && (norm === 'OPEN' || norm === 'PAUSED' || norm === 'CLOSED' || norm === 'CANCELLED');
+    });
+
+    return lockedElections.length > 0;
+  }
+
+  public addCandidate(candidate: Candidate): { success: boolean; message: string; candidate?: Candidate } {
+    if (this.isCandidateLocked(candidate)) {
+      return {
+        success: false,
+        message: 'Nominations are locked: cannot add candidates while an associated election is active, concluded, or cancelled.',
+      };
     }
 
     // Check duplicate name in constituency
@@ -697,33 +1064,36 @@ class ServerStore {
       return { success: false, message: 'Target constituency does not exist in the electoral registry.' };
     }
 
-    this.candidates.set(candidate.id, candidate);
-    saveCandidateToFirestore(candidate).catch((err) =>
+    const nowSec = this.getCurrentTimeSec();
+    const candidateToSave: Candidate = {
+      ...candidate,
+      status: candidate.status || 'ACTIVE',
+      createdAt: candidate.createdAt || nowSec,
+      updatedAt: candidate.updatedAt || nowSec,
+    };
+
+    this.candidates.set(candidateToSave.id, candidateToSave);
+    saveCandidateToFirestore(candidateToSave).catch((err) =>
       console.warn('[ServerStore] Notice saving candidate to Firestore:', err.message)
     );
 
     this.recordAuditEvent({
-      id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      timestamp: Date.now(),
+      id: `audit-${nowSec}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: this.getCurrentTimeMs(),
       type: 'CANDIDATE_REGISTERED',
-      description: `Candidate nomination registered: ${candidate.name} (${candidate.partyName}) for ${candidate.constituencyId}`,
+      description: `Candidate nomination registered: ${candidateToSave.name} (${candidateToSave.partyName}) for ${candidateToSave.constituencyId}`,
       electionId: 1,
     });
 
-    return { success: true, message: 'Candidate registered successfully.' };
+    return { success: true, message: 'Candidate registered successfully.', candidate: candidateToSave };
   }
 
-  public async addCandidateAsync(candidate: Candidate): Promise<{ success: boolean; message: string }> {
-    const activeElections = Array.from(this.elections.values()).filter(
-      (e) => e.status === 'active'
-    );
-    for (const e of activeElections) {
-      if (e.constituencyIds && e.constituencyIds.includes(candidate.constituencyId)) {
-        return {
-          success: false,
-          message: 'Nominations are locked: cannot add candidates while an associated election is active.',
-        };
-      }
+  public async addCandidateAsync(candidate: Candidate): Promise<{ success: boolean; message: string; candidate?: Candidate }> {
+    if (this.isCandidateLocked(candidate)) {
+      return {
+        success: false,
+        message: 'Nominations are locked: cannot add candidates while an associated election is active, concluded, or cancelled.',
+      };
     }
 
     const exists = Array.from(this.candidates.values()).some(
@@ -739,20 +1109,281 @@ class ServerStore {
       return { success: false, message: 'Target constituency does not exist in the electoral registry.' };
     }
 
+    const nowSec = this.getCurrentTimeSec();
+    const candidateToSave: Candidate = {
+      ...candidate,
+      status: candidate.status || 'ACTIVE',
+      createdAt: candidate.createdAt || nowSec,
+      updatedAt: candidate.updatedAt || nowSec,
+    };
+
     if (isFirebaseConfigured()) {
-      await saveCandidateToFirestore(candidate);
+      await saveCandidateToFirestore(candidateToSave);
     }
-    this.candidates.set(candidate.id, candidate);
+    this.candidates.set(candidateToSave.id, candidateToSave);
 
     this.recordAuditEvent({
-      id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      timestamp: Date.now(),
+      id: `audit-${nowSec}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: this.getCurrentTimeMs(),
       type: 'CANDIDATE_REGISTERED',
-      description: `Candidate nomination registered: ${candidate.name} (${candidate.partyName}) for ${candidate.constituencyId}`,
+      description: `Candidate nomination registered: ${candidateToSave.name} (${candidateToSave.partyName}) for ${candidateToSave.constituencyId}`,
       electionId: 1,
     });
 
-    return { success: true, message: 'Candidate registered successfully.' };
+    return { success: true, message: 'Candidate registered successfully.', candidate: candidateToSave };
+  }
+
+  public updateCandidate(
+    candidateId: string,
+    updates: Partial<Candidate>,
+    officerId?: string
+  ): { success: boolean; message: string; candidate?: Candidate } {
+    const candidate = this.candidates.get(candidateId);
+    if (!candidate) {
+      return { success: false, message: 'Candidate not found.' };
+    }
+
+    if (this.isCandidateLocked(candidate)) {
+      return {
+        success: false,
+        message: 'Candidate nominations are locked once voting opens or concludes in an associated election, or votes have been cast.',
+      };
+    }
+
+    // Validate duplicate name if changing name
+    if (updates.name && updates.name.trim().toLowerCase() !== candidate.name.trim().toLowerCase()) {
+      const duplicate = Array.from(this.candidates.values()).some(
+        (c) =>
+          c.id !== candidateId &&
+          c.constituencyId === candidate.constituencyId &&
+          c.name.trim().toLowerCase() === updates.name!.trim().toLowerCase()
+      );
+      if (duplicate) {
+        return { success: false, message: 'Another candidate with this name already exists in this constituency.' };
+      }
+      candidate.name = updates.name.trim();
+    }
+
+    if (updates.partyName !== undefined) candidate.partyName = updates.partyName.trim();
+    if (updates.partyAbbreviation !== undefined) candidate.partyAbbreviation = updates.partyAbbreviation.trim().toUpperCase();
+    if (updates.symbol !== undefined) candidate.symbol = updates.symbol.trim();
+    if (updates.symbolColor !== undefined) candidate.symbolColor = updates.symbolColor;
+    if (updates.education !== undefined) candidate.education = updates.education.trim();
+    if (updates.age !== undefined) candidate.age = Number(updates.age);
+    if (updates.criminalCases !== undefined) candidate.criminalCases = Number(updates.criminalCases);
+    if (updates.assets !== undefined) candidate.assets = updates.assets.trim();
+
+    const nowSec = this.getCurrentTimeSec();
+    candidate.updatedAt = nowSec;
+
+    saveCandidateToFirestore(candidate).catch((err) =>
+      console.warn('[ServerStore] Notice updating candidate in Firestore:', err.message)
+    );
+
+    this.recordAuditEvent({
+      id: `audit-cand-update-${nowSec}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: this.getCurrentTimeMs(),
+      type: 'ADMIN_ACTION',
+      description: `Candidate nomination updated: ${candidate.name} (${candidate.id})${officerId ? ` by ${officerId}` : ''}`,
+      electionId: 1,
+    });
+
+    return { success: true, message: 'Candidate details updated successfully.', candidate };
+  }
+
+  public async updateCandidateAsync(
+    candidateId: string,
+    updates: Partial<Candidate>,
+    officerId?: string
+  ): Promise<{ success: boolean; message: string; candidate?: Candidate }> {
+    const candidate = this.candidates.get(candidateId);
+    if (!candidate) {
+      return { success: false, message: 'Candidate not found.' };
+    }
+
+    if (this.isCandidateLocked(candidate)) {
+      return {
+        success: false,
+        message: 'Candidate nominations are locked once voting opens or concludes in an associated election, or votes have been cast.',
+      };
+    }
+
+    if (updates.name && updates.name.trim().toLowerCase() !== candidate.name.trim().toLowerCase()) {
+      const duplicate = Array.from(this.candidates.values()).some(
+        (c) =>
+          c.id !== candidateId &&
+          c.constituencyId === candidate.constituencyId &&
+          c.name.trim().toLowerCase() === updates.name!.trim().toLowerCase()
+      );
+      if (duplicate) {
+        return { success: false, message: 'Another candidate with this name already exists in this constituency.' };
+      }
+      candidate.name = updates.name.trim();
+    }
+
+    if (updates.partyName !== undefined) candidate.partyName = updates.partyName.trim();
+    if (updates.partyAbbreviation !== undefined) candidate.partyAbbreviation = updates.partyAbbreviation.trim().toUpperCase();
+    if (updates.symbol !== undefined) candidate.symbol = updates.symbol.trim();
+    if (updates.symbolColor !== undefined) candidate.symbolColor = updates.symbolColor;
+    if (updates.education !== undefined) candidate.education = updates.education.trim();
+    if (updates.age !== undefined) candidate.age = Number(updates.age);
+    if (updates.criminalCases !== undefined) candidate.criminalCases = Number(updates.criminalCases);
+    if (updates.assets !== undefined) candidate.assets = updates.assets.trim();
+
+    const nowSec = this.getCurrentTimeSec();
+    candidate.updatedAt = nowSec;
+
+    if (isFirebaseConfigured()) {
+      await saveCandidateToFirestore(candidate);
+    }
+
+    this.recordAuditEvent({
+      id: `audit-cand-update-${nowSec}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: this.getCurrentTimeMs(),
+      type: 'ADMIN_ACTION',
+      description: `Candidate nomination updated: ${candidate.name} (${candidate.id})${officerId ? ` by ${officerId}` : ''}`,
+      electionId: 1,
+    });
+
+    return { success: true, message: 'Candidate details updated successfully.', candidate };
+  }
+
+  public deleteCandidate(candidateId: string, officerId?: string): { success: boolean; message: string } {
+    const candidate = this.candidates.get(candidateId);
+    if (!candidate) {
+      return { success: false, message: 'Candidate not found.' };
+    }
+
+    if (this.isCandidateLocked(candidate)) {
+      return {
+        success: false,
+        message: 'Cannot delete candidate while an associated election is active or concluded, or votes have been cast.',
+      };
+    }
+
+    this.candidates.delete(candidateId);
+    deleteCandidateFromFirestore(candidateId).catch((err) =>
+      console.warn('[ServerStore] Notice deleting candidate from Firestore:', err.message)
+    );
+
+    const nowSec = this.getCurrentTimeSec();
+    this.recordAuditEvent({
+      id: `audit-cand-delete-${nowSec}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: this.getCurrentTimeMs(),
+      type: 'ADMIN_ACTION',
+      description: `Candidate nomination removed: ${candidate.name} (${candidate.id}) for ${candidate.constituencyId}${officerId ? ` by ${officerId}` : ''}`,
+      electionId: 1,
+    });
+
+    return { success: true, message: 'Candidate nomination removed successfully.' };
+  }
+
+  public async deleteCandidateAsync(candidateId: string, officerId?: string): Promise<{ success: boolean; message: string }> {
+    const candidate = this.candidates.get(candidateId);
+    if (!candidate) {
+      return { success: false, message: 'Candidate not found.' };
+    }
+
+    if (this.isCandidateLocked(candidate)) {
+      return {
+        success: false,
+        message: 'Cannot delete candidate while an associated election is active or concluded, or votes have been cast.',
+      };
+    }
+
+    if (isFirebaseConfigured()) {
+      await deleteCandidateFromFirestore(candidateId);
+    }
+    this.candidates.delete(candidateId);
+
+    const nowSec = this.getCurrentTimeSec();
+    this.recordAuditEvent({
+      id: `audit-cand-delete-${nowSec}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: this.getCurrentTimeMs(),
+      type: 'ADMIN_ACTION',
+      description: `Candidate nomination removed: ${candidate.name} (${candidate.id}) for ${candidate.constituencyId}${officerId ? ` by ${officerId}` : ''}`,
+      electionId: 1,
+    });
+
+    return { success: true, message: 'Candidate nomination removed successfully.' };
+  }
+
+  public deactivateCandidate(
+    candidateId: string,
+    reason: string,
+    officerId?: string
+  ): { success: boolean; message: string; candidate?: Candidate } {
+    const candidate = this.candidates.get(candidateId);
+    if (!candidate) {
+      return { success: false, message: 'Candidate not found.' };
+    }
+
+    const trimmedReason = reason?.trim();
+    if (!trimmedReason || trimmedReason.length < 5) {
+      return {
+        success: false,
+        message: 'A valid justification reason (minimum 5 characters) is required to withdraw or deactivate a candidate.',
+      };
+    }
+
+    const nowSec = this.getCurrentTimeSec();
+    candidate.status = 'WITHDRAWN';
+    candidate.deactivatedAt = nowSec;
+    candidate.deactivatedReason = trimmedReason;
+    candidate.updatedAt = nowSec;
+
+    saveCandidateToFirestore(candidate).catch((err) =>
+      console.warn('[ServerStore] Notice updating candidate status in Firestore:', err.message)
+    );
+
+    this.recordAuditEvent({
+      id: `audit-cand-withdraw-${nowSec}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: this.getCurrentTimeMs(),
+      type: 'ADMIN_ACTION',
+      description: `Candidate ${candidate.name} (${candidate.id}) marked WITHDRAWN. Reason: ${trimmedReason}${officerId ? ` by ${officerId}` : ''}`,
+      electionId: 1,
+    });
+
+    return { success: true, message: 'Candidate nomination status updated to WITHDRAWN.', candidate };
+  }
+
+  public async deactivateCandidateAsync(
+    candidateId: string,
+    reason: string,
+    officerId?: string
+  ): Promise<{ success: boolean; message: string; candidate?: Candidate }> {
+    const candidate = this.candidates.get(candidateId);
+    if (!candidate) {
+      return { success: false, message: 'Candidate not found.' };
+    }
+
+    const trimmedReason = reason?.trim();
+    if (!trimmedReason || trimmedReason.length < 5) {
+      return {
+        success: false,
+        message: 'A valid justification reason (minimum 5 characters) is required to withdraw or deactivate a candidate.',
+      };
+    }
+
+    const nowSec = this.getCurrentTimeSec();
+    candidate.status = 'WITHDRAWN';
+    candidate.deactivatedAt = nowSec;
+    candidate.deactivatedReason = trimmedReason;
+    candidate.updatedAt = nowSec;
+
+    if (isFirebaseConfigured()) {
+      await saveCandidateToFirestore(candidate);
+    }
+
+    this.recordAuditEvent({
+      id: `audit-cand-withdraw-${nowSec}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: this.getCurrentTimeMs(),
+      type: 'ADMIN_ACTION',
+      description: `Candidate ${candidate.name} (${candidate.id}) marked WITHDRAWN. Reason: ${trimmedReason}${officerId ? ` by ${officerId}` : ''}`,
+      electionId: 1,
+    });
+
+    return { success: true, message: 'Candidate nomination status updated to WITHDRAWN.', candidate };
   }
 
   public recordVoteForCandidate(candidateId: string, electionId: string): void {

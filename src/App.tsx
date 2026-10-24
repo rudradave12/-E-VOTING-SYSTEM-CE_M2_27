@@ -239,20 +239,64 @@ export function AppInner() {
     setCurrentScreen('welcome');
   };
 
-  const handleUpdateElectionStatus = async (newStatus: ElectionStatus) => {
+  const handleUpdateElectionStatus = async (
+    targetOrStatus: string | ElectionStatus,
+    maybeStatus?: ElectionStatus,
+    reason?: string
+  ): Promise<boolean> => {
+    let targetId = activeElection.id;
+    let targetStatus: ElectionStatus;
+    const targetReason: string | undefined = reason;
+
+    if (maybeStatus !== undefined) {
+      targetId = targetOrStatus as string;
+      targetStatus = maybeStatus;
+    } else {
+      targetStatus = targetOrStatus as ElectionStatus;
+    }
+
     try {
-      const res = await voterApi.adminUpdateElectionStatus(activeElection.id, newStatus);
+      const res = await voterApi.adminUpdateElectionStatus(targetId, targetStatus, targetReason);
       if (res.success) {
         setElections((prev) =>
-          prev.map((e) => (e.id === activeElection.id ? { ...e, status: newStatus } : e))
+          prev.map((e) =>
+            e.id === targetId
+              ? {
+                  ...e,
+                  status: targetStatus,
+                  ...(targetReason ? { cancellationReason: targetReason } : {}),
+                }
+              : e
+          )
         );
-        evmSimulator.setElectionStatus(newStatus);
-        setAuditEvents(evmSimulator.getAuditEvents());
+        if (targetId === activeElection.id) {
+          evmSimulator.setElectionStatus(targetStatus);
+          setAuditEvents(evmSimulator.getAuditEvents());
+        }
+        return true;
       } else {
         alert(res.message || 'Failed to update election status on server.');
+        return false;
       }
     } catch (err: any) {
       alert(err.message || 'Network error updating election status.');
+      return false;
+    }
+  };
+
+  const handleUpdateElection = async (id: string, updates: Partial<Election>): Promise<boolean> => {
+    try {
+      const res = await voterApi.adminUpdateElection(id, updates);
+      if (res.success && res.election) {
+        setElections((prev) => prev.map((e) => (e.id === id ? res.election! : e)));
+        return true;
+      } else {
+        alert(res.message || 'Failed to update election schedule.');
+        return false;
+      }
+    } catch (err: any) {
+      alert(err.message || 'Network error updating election.');
+      return false;
     }
   };
 
@@ -282,6 +326,54 @@ export function AppInner() {
       }
     } catch (err: any) {
       alert(err.message || 'Network error adding candidate.');
+    }
+  };
+
+  const handleUpdateCandidate = async (candidateId: string, updates: Partial<Candidate>): Promise<boolean> => {
+    try {
+      const res = await voterApi.adminUpdateCandidate(candidateId, updates);
+      if (res.success && res.candidate) {
+        setCandidates((prev) => prev.map((c) => (c.id === candidateId ? res.candidate! : c)));
+        return true;
+      } else {
+        alert(res.message || 'Failed to update candidate nomination.');
+        return false;
+      }
+    } catch (err: any) {
+      alert(err.message || 'Network error updating candidate.');
+      return false;
+    }
+  };
+
+  const handleDeleteCandidate = async (candidateId: string): Promise<boolean> => {
+    try {
+      const res = await voterApi.adminDeleteCandidate(candidateId);
+      if (res.success) {
+        setCandidates((prev) => prev.filter((c) => c.id !== candidateId));
+        return true;
+      } else {
+        alert(res.message || 'Failed to delete candidate nomination.');
+        return false;
+      }
+    } catch (err: any) {
+      alert(err.message || 'Network error deleting candidate.');
+      return false;
+    }
+  };
+
+  const handleDeactivateCandidate = async (candidateId: string, reason: string): Promise<boolean> => {
+    try {
+      const res = await voterApi.adminDeactivateCandidate(candidateId, reason);
+      if (res.success && res.candidate) {
+        setCandidates((prev) => prev.map((c) => (c.id === candidateId ? res.candidate! : c)));
+        return true;
+      } else {
+        alert(res.message || 'Failed to withdraw candidate nomination.');
+        return false;
+      }
+    } catch (err: any) {
+      alert(err.message || 'Network error withdrawing candidate.');
+      return false;
     }
   };
 
@@ -540,12 +632,8 @@ export function AppInner() {
             elections={elections}
             activeElectionId={activeElectionId}
             onSelectElection={(id) => setActiveElectionId(id)}
-            onUpdateStatus={(id, status) => {
-              setElections((prev) =>
-                prev.map((e) => (e.id === id ? { ...e, status } : e))
-              );
-              evmSimulator.setElectionStatus(status);
-            }}
+            onUpdateStatus={handleUpdateElectionStatus}
+            onUpdateElection={handleUpdateElection}
             onCreateElection={handleCreateElection}
             onBack={() => setCurrentScreen('admin-dashboard')}
           />
@@ -555,7 +643,11 @@ export function AppInner() {
           <AdminCandidatesScreen
             constituencies={constituencies}
             candidates={candidates}
+            elections={elections}
             onAddCandidate={handleAddCandidate}
+            onUpdateCandidate={handleUpdateCandidate}
+            onDeleteCandidate={handleDeleteCandidate}
+            onDeactivateCandidate={handleDeactivateCandidate}
             onBack={() => setCurrentScreen('admin-dashboard')}
           />
         )}

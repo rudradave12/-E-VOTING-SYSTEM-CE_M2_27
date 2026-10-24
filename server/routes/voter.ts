@@ -13,6 +13,7 @@ import { serverStore } from '../store';
 import { INITIAL_CONSTITUENCIES } from '../../src/data/mockData';
 import { getDataRepositories } from '../repositories';
 import { SCHEMA_VERSION_CURRENT } from '../../src/types/dataModel';
+import { normalizeElectionStatus } from '../../src/types';
 
 export const voterRouter = Router();
 
@@ -128,14 +129,22 @@ const handleVoterVerify = async (req: Request, res: Response): Promise<void> => 
     return;
   }
 
-  // Double voting protection: reject if already voted
+  // Double voting protection: reject if already completed voting in this target election
   if (voter.status === 'VOTED') {
-    res.status(403).json({
-      success: false,
-      message: 'This elector record has already completed an authorized vote in this election. Further challenges are prohibited.',
-      status: 'ALREADY_VOTED',
-    });
-    return;
+    const { electionId } = req.body;
+    const targetElecId = electionId ? String(electionId) : 'GE-2024';
+    const repos = getDataRepositories();
+    const part = await repos.participations.getParticipation(voter.id, targetElecId);
+
+    // If an elector voted in election A, they are NOT blocked from election B unless they voted in B as well
+    if (!electionId || (part && part.status === 'VOTE_ACCEPTED') || targetElecId === 'GE-2024') {
+      res.status(403).json({
+        success: false,
+        message: 'This elector record has already completed an authorized vote in this election. Further challenges are prohibited.',
+        status: 'ALREADY_VOTED',
+      });
+      return;
+    }
   }
 
   // Generate 6-digit OTP and compute server-side HMAC
@@ -358,18 +367,22 @@ voterRouter.post('/authorization', async (req: Request, res: Response): Promise<
     return;
   }
 
+  // Reconcile election schedules authoritatively before validating
+  serverStore.reconcileElectionSchedules();
+  const nowSec = serverStore.getCurrentTimeSec();
+  const normStatus = normalizeElectionStatus(targetElection.status);
+
   // Backend election lifecycle enforcement
-  if (targetElection.status !== 'active') {
+  if (normStatus !== 'OPEN') {
     res.status(403).json({
       success: false,
-      message: `Election is not currently active for voting (Current state: ${targetElection.status.toUpperCase()}).`,
-      status: targetElection.status.toUpperCase(),
+      message: `Election is not currently active for voting (Current state: ${normStatus}).`,
+      status: normStatus,
     });
     return;
   }
 
-  // Backend deadline enforcement
-  const nowSec = Math.floor(Date.now() / 1000);
+  // Backend deadline enforcement using authoritative server time
   if (nowSec < targetElection.startTime) {
     res.status(403).json({
       success: false,
@@ -399,21 +412,36 @@ voterRouter.post('/authorization', async (req: Request, res: Response): Promise<
     }
   }
 
-  // Derive pseudonymous nullifier
-  const nullifier = deriveServerNullifier(voter.epicId, Number(electionId));
+  // Multi-election participation check: elector may vote in Election B even if they voted in Election A
+  const repos = getDataRepositories();
+  const existingParticipation =
+    (await repos.participations.getParticipation(voter.id, targetElection.id)) ||
+    (await repos.participations.getParticipation(voter.id, String(targetElection.numericId)));
 
-  // Idempotent Reconciliation: Check if this nullifier is already spent on-chain
-  if (serverStore.isNullifierSpentOnChain(nullifier)) {
-    serverStore.updateVoterStatus(session.epicId, 'VOTED');
+  if (existingParticipation && existingParticipation.status === 'VOTE_ACCEPTED') {
     res.status(403).json({
       success: false,
-      message: 'On-chain reconciliation verified that a ballot has already been recorded for this elector nullifier.',
+      message: 'Ballot already finalized on blockchain for this elector record in this election.',
       status: 'VOTED',
     });
     return;
   }
 
-  if (voter.status === 'VOTED') {
+  // Derive pseudonymous nullifier
+  const nullifier = deriveServerNullifier(voter.epicId, Number(electionId));
+
+  // Idempotent Reconciliation: Check if this nullifier is already spent on-chain
+  if (serverStore.isNullifierSpentOnChain(nullifier)) {
+    res.status(403).json({
+      success: false,
+      message: 'On-chain reconciliation verified that a ballot has already been recorded for this elector nullifier in this election.',
+      status: 'VOTED',
+    });
+    return;
+  }
+
+  // Legacy single-election status fallback
+  if (!existingParticipation && voter.status === 'VOTED' && (!electionId || electionId === 18 || electionId === 'GE-2024')) {
     res.status(403).json({
       success: false,
       message: 'Ballot already finalized on blockchain for this elector record.',
@@ -549,50 +577,97 @@ voterRouter.post('/record-vote', async (req: Request, res: Response): Promise<vo
     return;
   }
 
-  // Validate election status and deadline if electionId is supplied
-  if (electionId) {
-    const targetElection =
-      serverStore.findElectionByNumericId(Number(electionId)) ||
-      serverStore.getElectionById(String(electionId));
-    if (targetElection) {
-      if (targetElection.status !== 'active') {
-        res.status(403).json({
-          success: false,
-          message: `Election is not currently active for voting (Current state: ${targetElection.status.toUpperCase()}).`,
-        });
-        return;
-      }
-      const nowSec = Math.floor(Date.now() / 1000);
-      if (nowSec < targetElection.startTime) {
-        res.status(403).json({
-          success: false,
-          message: 'Voting has not opened yet for this election schedule.',
-        });
-        return;
-      }
-      if (nowSec >= targetElection.endTime) {
-        res.status(403).json({
-          success: false,
-          message: 'Voting deadline has concluded for this election.',
-        });
-        return;
-      }
+  // Reconcile and validate election lifecycle authoritatively using server clock
+  serverStore.reconcileElectionSchedules();
+  const nowSec = serverStore.getCurrentTimeSec();
+
+  const targetElection = electionId
+    ? serverStore.findElectionByNumericId(Number(electionId)) || serverStore.getElectionById(String(electionId))
+    : serverStore.getElectionById('GE-2024');
+
+  if (targetElection) {
+    const normStatus = normalizeElectionStatus(targetElection.status);
+    if (normStatus !== 'OPEN') {
+      res.status(403).json({
+        success: false,
+        message: `Election is not currently active for voting (Current state: ${normStatus}).`,
+      });
+      return;
+    }
+    if (nowSec < targetElection.startTime) {
+      res.status(403).json({
+        success: false,
+        message: 'Voting has not opened yet for this election schedule.',
+      });
+      return;
+    }
+    if (nowSec >= targetElection.endTime) {
+      res.status(403).json({
+        success: false,
+        message: 'Voting deadline has concluded for this election.',
+      });
+      return;
     }
   }
 
-  // Idempotency: If already VOTED, acknowledge safely
-  if (voter.status === 'VOTED') {
-    res.status(200).json({
-      success: true,
-      message: 'Participation record already finalized.',
+  // Multi-election participation tracking
+  const repos = getDataRepositories();
+  const targetElecId = targetElection ? targetElection.id : (electionId ? String(electionId) : 'GE-2024');
+  const existingParticipation = await repos.participations.getParticipation(voter.id, targetElecId);
+
+  // Multi-election double voting protection & idempotent retry check
+  if (existingParticipation && existingParticipation.status === 'VOTE_ACCEPTED') {
+    if (existingParticipation.txHash === txHash) {
+      res.status(200).json({
+        success: true,
+        message: 'Participation record already finalized.',
+        status: 'VOTED',
+      });
+      return;
+    }
+
+    res.status(409).json({
+      success: false,
+      message: 'Double voting rejected: A ballot has already been recorded and accepted for this elector in this election.',
+      status: 'ALREADY_VOTED',
+    });
+    return;
+  }
+
+  // If this nullifier was already spent on-chain, reject duplicate
+  if (serverStore.isNullifierSpentOnChain(nullifier)) {
+    res.status(403).json({
+      success: false,
+      message: 'On-chain reconciliation verified that a ballot has already been recorded for this elector nullifier in this election.',
       status: 'VOTED',
     });
     return;
   }
 
-  // Finalize voter status to VOTED
-  await serverStore.updateVoterStatusAsync(verifiedEpic, 'VOTED');
+  if (existingParticipation) {
+    await repos.participations.updateParticipationStatus(voter.id, targetElecId, 'VOTE_ACCEPTED', {
+      votedAt: nowSec,
+    });
+  } else {
+    await repos.participations.createParticipation({
+      id: `${voter.id}_${targetElecId}`,
+      voterId: voter.id,
+      electionId: targetElecId,
+      status: 'VOTE_ACCEPTED',
+      votedAt: nowSec,
+      createdAt: nowSec,
+      updatedAt: nowSec,
+      schemaVersion: SCHEMA_VERSION_CURRENT,
+    });
+  }
+
+  // Spend nullifier
   serverStore.markNullifierSpentOnChain(nullifier);
+
+  // Legacy single-election status fallback (only when voting in default GE-2024 or unspecified)
+  if (!electionId || electionId === 18 || electionId === 'GE-2024') {
+    await serverStore.updateVoterStatusAsync(verifiedEpic, 'VOTED');
+  }
 
   // Increment constituency turnout
   const targetConstituency = constituencyId || voter.constituencyId;

@@ -156,6 +156,17 @@ export async function saveElectionToFirestore(election: Election): Promise<void>
     totalVotersRegistered: election.totalVotersRegistered || 10000,
     totalVotesCast: election.totalVotesCast || 0,
     constituencyIds: election.constituencyIds || [],
+    electionType: election.electionType || 'General Election',
+    isDemoElection: !!election.isDemoElection,
+    timezone: election.timezone || 'Asia/Kolkata',
+    cancellationReason: election.cancellationReason || null,
+    cancelledAt: election.cancelledAt || null,
+    cancelledByOfficerId: election.cancelledByOfficerId || null,
+    publishedAt: election.publishedAt || null,
+    openedAt: election.openedAt || null,
+    closedAt: election.closedAt || null,
+    createdAt: election.createdAt || null,
+    updatedAt: election.updatedAt || null,
   });
 }
 
@@ -205,6 +216,8 @@ export async function saveCandidateToFirestore(candidate: Candidate): Promise<vo
     id: candidate.id,
     numericId: candidate.numericId,
     constituencyId: candidate.constituencyId,
+    electionId: candidate.electionId || null,
+    status: candidate.status || 'ACTIVE',
     name: candidate.name,
     partyName: candidate.partyName,
     partyAbbreviation: candidate.partyAbbreviation || '',
@@ -215,7 +228,14 @@ export async function saveCandidateToFirestore(candidate: Candidate): Promise<vo
     criminalCases: candidate.criminalCases || 0,
     assets: candidate.assets || '₹1 Cr',
     voteCount: candidate.voteCount || 0,
+    deactivatedAt: candidate.deactivatedAt || null,
+    deactivatedReason: candidate.deactivatedReason || null,
   });
+}
+
+export async function deleteCandidateFromFirestore(id: string): Promise<void> {
+  assertConfigured();
+  await serverDb.collection('candidates').doc(id).delete();
 }
 
 export async function getAllCandidatesFromFirestore(): Promise<Candidate[]> {

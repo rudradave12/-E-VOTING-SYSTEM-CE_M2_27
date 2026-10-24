@@ -1,4 +1,86 @@
-export type ElectionStatus = 'draft' | 'scheduled' | 'active' | 'paused' | 'concluded';
+export type ElectionStatus =
+  | 'draft'
+  | 'scheduled'
+  | 'active'
+  | 'paused'
+  | 'concluded'
+  | 'cancelled'
+  | 'DRAFT'
+  | 'SCHEDULED'
+  | 'OPEN'
+  | 'PAUSED'
+  | 'CLOSED'
+  | 'CANCELLED';
+
+export type NormalizedElectionStatus =
+  | 'DRAFT'
+  | 'SCHEDULED'
+  | 'OPEN'
+  | 'PAUSED'
+  | 'CLOSED'
+  | 'CANCELLED';
+
+export function normalizeElectionStatus(status: ElectionStatus | string): NormalizedElectionStatus {
+  const upper = String(status || '').toUpperCase().trim();
+  if (upper === 'ACTIVE' || upper === 'OPEN') return 'OPEN';
+  if (upper === 'CONCLUDED' || upper === 'CLOSED') return 'CLOSED';
+  if (upper === 'SCHEDULED') return 'SCHEDULED';
+  if (upper === 'DRAFT') return 'DRAFT';
+  if (upper === 'PAUSED') return 'PAUSED';
+  if (upper === 'CANCELLED' || upper === 'CANCELED') return 'CANCELLED';
+  return 'DRAFT';
+}
+
+export function toLegacyElectionStatus(
+  status: ElectionStatus | string
+): 'draft' | 'scheduled' | 'active' | 'paused' | 'concluded' | 'cancelled' {
+  const norm = normalizeElectionStatus(status as any);
+  if (norm === 'OPEN') return 'active';
+  if (norm === 'CLOSED') return 'concluded';
+  return norm.toLowerCase() as any;
+}
+
+export const ALLOWED_ELECTION_TRANSITIONS: Record<
+  NormalizedElectionStatus,
+  readonly NormalizedElectionStatus[]
+> = {
+  DRAFT: ['SCHEDULED', 'OPEN', 'CANCELLED'],
+  SCHEDULED: ['OPEN', 'DRAFT', 'CANCELLED'],
+  OPEN: ['PAUSED', 'CLOSED', 'CANCELLED'],
+  PAUSED: ['OPEN', 'CLOSED', 'CANCELLED'],
+  CLOSED: [], // Terminal: voting ended, records sealed
+  CANCELLED: [], // Terminal: election aborted
+} as const;
+
+export function isValidElectionTransition(
+  from: ElectionStatus | string,
+  to: ElectionStatus | string
+): boolean {
+  const normFrom = normalizeElectionStatus(from as any);
+  const normTo = normalizeElectionStatus(to as any);
+  if (normFrom === normTo) return true; // Idempotent same-state
+  const allowed = ALLOWED_ELECTION_TRANSITIONS[normFrom];
+  return allowed ? allowed.includes(normTo) : false;
+}
+
+export interface AuthoritativeElectionStatus {
+  electionId: string;
+  numericId: number;
+  title: string;
+  status: ElectionStatus;
+  normalizedStatus: NormalizedElectionStatus;
+  serverTimeSec: number;
+  serverTimeIso: string;
+  startTimeSec: number;
+  endTimeSec: number;
+  timezone: string;
+  isVotingOpen: boolean;
+  hasStarted: boolean;
+  hasEnded: boolean;
+  timeUntilStartSec: number;
+  timeUntilEndSec: number;
+  cancellationReason?: string;
+}
 
 export interface Election {
   id: string; // e.g. "GE-2024"
@@ -6,14 +88,23 @@ export interface Election {
   title: string;
   description: string;
   status: ElectionStatus;
-  startTime: number; // Unix timestamp
-  endTime: number; // Unix timestamp
+  startTime: number; // Unix timestamp (seconds)
+  endTime: number; // Unix timestamp (seconds)
   contractAddress: string;
   totalVotersRegistered: number;
   totalVotesCast: number;
   constituencyIds: string[];
   electionType?: string; // e.g., 'Lok Sabha General Election (Academic Demo)' | 'State Assembly'
   isDemoElection?: boolean;
+  timezone?: string; // e.g. 'Asia/Kolkata' or IANA identifier
+  cancellationReason?: string; // Required when status is CANCELLED / cancelled
+  cancelledAt?: number;
+  cancelledByOfficerId?: string;
+  publishedAt?: number;
+  openedAt?: number;
+  closedAt?: number;
+  createdAt?: number;
+  updatedAt?: number;
 }
 
 export interface Constituency {
@@ -27,11 +118,14 @@ export interface Constituency {
 }
 
 export type SymbolVerificationStatus = 'VERIFIED_ECI' | 'UNAVAILABLE';
+export type CandidateStatus = 'ACTIVE' | 'WITHDRAWN' | 'DISQUALIFIED';
 
 export interface Candidate {
   id: string;
   numericId: number; // EVM candidate ID
   constituencyId: string;
+  electionId?: string;
+  status?: CandidateStatus;
   name: string;
   nameHi?: string;
   partyName: string;
@@ -62,6 +156,10 @@ export interface Candidate {
   criminalCases: number;
   assets: string;
   voteCount: number;
+  deactivatedAt?: number;
+  deactivatedReason?: string;
+  createdAt?: number;
+  updatedAt?: number;
 }
 
 export type VoterLifecycleStatus = 'ELIGIBLE' | 'AUTHORIZED' | 'VOTED';

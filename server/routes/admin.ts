@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import { serverStore } from '../store';
-import { ElectionStatus } from '../../src/types';
+import { ElectionStatus, normalizeElectionStatus } from '../../src/types';
 import { SERVER_CONFIG } from '../config';
 import { verifyAdminIdToken } from '../firebaseAdmin';
 import {
@@ -345,7 +345,8 @@ adminRouter.get('/session', authenticateOfficer, (req: Request, res: Response): 
 
 /**
  * GET /api/elections
- * Publicly lists active, draft, paused, and concluded elections.
+ * Publicly lists active, draft, paused, concluded, and cancelled elections.
+ * Automatically triggers server-authoritative schedule reconciliation.
  */
 adminRouter.get('/elections', (req: Request, res: Response): void => {
   const elections = serverStore.getAllElections();
@@ -353,16 +354,69 @@ adminRouter.get('/elections', (req: Request, res: Response): void => {
 });
 
 /**
+ * GET /api/elections/:id/status
+ * Authoritative election status endpoint with server-authoritative time,
+ * countdown metrics, and current lifecycle state.
+ */
+adminRouter.get('/elections/:id/status', (req: Request, res: Response): void => {
+  const { id } = req.params;
+  const statusInfo = serverStore.getAuthoritativeElectionStatus(id);
+
+  if (!statusInfo) {
+    res.status(404).json({ success: false, message: 'Election record not found.' });
+    return;
+  }
+
+  res.status(200).json({ success: true, electionStatus: statusInfo });
+});
+
+/**
+ * POST /api/admin/elections/reconcile
+ * Idempotently reconciles election schedules against the authoritative server clock.
+ */
+adminRouter.post('/elections/reconcile', (req: Request, res: Response): void => {
+  const result = serverStore.reconcileElectionSchedules();
+  res.status(200).json({
+    success: true,
+    serverTimeSec: serverStore.getCurrentTimeSec(),
+    serverTimeIso: new Date(serverStore.getCurrentTimeMs()).toISOString(),
+    transitions: result.transitions,
+  });
+});
+
+/**
  * POST /api/admin/elections
  * Creates a new election with timeframe and numericId validation.
- * Requires ELECTION_CREATE permission.
+ * Requires ELECTION_CREATE permission and scope verification.
  */
 adminRouter.post('/elections', requirePermission('ELECTION_CREATE'), async (req: Request, res: Response): Promise<void> => {
-  const { title, description, electionType, numericId, startTime, endTime, contractAddress, constituencyIds, status } = req.body;
+  const { title, description, electionType, numericId, startTime, endTime, contractAddress, constituencyIds, status, timezone } = req.body;
 
   if (!title || typeof title !== 'string' || title.trim().length === 0) {
     res.status(400).json({ success: false, message: 'Election title is required.' });
     return;
+  }
+
+  // Scope enforcement: verify all constituencyIds are within officer's assignment scope
+  const session = (req as any).officer as OfficerSession;
+  if (session && session.assignmentScope && constituencyIds && Array.isArray(constituencyIds)) {
+    for (const cId of constituencyIds) {
+      if (!isConstituencyInScope(session.assignmentScope, cId)) {
+        serverStore.recordAuditEvent({
+          id: `audit-scope-denied-${Date.now()}`,
+          timestamp: Date.now(),
+          type: 'ADMIN_ACTION',
+          description: `Scope violation: Account '${session.accountId}' attempted creating election with out-of-scope constituency '${cId}'`,
+          electionId: 1,
+        });
+
+        res.status(403).json({
+          success: false,
+          message: `Access denied: Constituency '${cId}' is outside officer's authorized assignment scope.`,
+        });
+        return;
+      }
+    }
   }
 
   const start = Number(startTime) || Math.floor(Date.now() / 1000);
@@ -373,9 +427,15 @@ adminRouter.post('/elections', requirePermission('ELECTION_CREATE'), async (req:
     return;
   }
 
-  const id = `ELEC-${Date.now().toString(36).toUpperCase()}`;
+  const id = (req.body.id && typeof req.body.id === 'string') ? req.body.id.trim() : `ELEC-${Date.now().toString(36).toUpperCase()}`;
   const numId = Number(numericId) || Math.floor(Math.random() * 900) + 100;
-  const initialStatus: ElectionStatus = status === 'scheduled' ? 'scheduled' : 'draft';
+  
+  let initialStatus: ElectionStatus = 'draft';
+  if (status === 'scheduled' || status === 'SCHEDULED') {
+    initialStatus = 'scheduled';
+  } else if (status === 'active' || status === 'OPEN') {
+    initialStatus = 'active';
+  }
 
   const created = await serverStore.createElectionAsync({
     id,
@@ -389,6 +449,7 @@ adminRouter.post('/elections', requirePermission('ELECTION_CREATE'), async (req:
     constituencyIds: constituencyIds || ['CONST-04-ND', 'CONST-77-VAR'],
     electionType: electionType?.trim() || 'General Election',
     isDemoElection: false,
+    timezone: timezone || 'Asia/Kolkata',
   });
 
   serverStore.recordAuditEvent({
@@ -403,9 +464,43 @@ adminRouter.post('/elections', requirePermission('ELECTION_CREATE'), async (req:
 });
 
 /**
+ * PATCH /api/admin/elections/:id
+ * Updates draft or scheduled election configuration before voting opens.
+ * Requires ELECTION_UPDATE permission and scope checking.
+ */
+adminRouter.patch('/elections/:id', requirePermission('ELECTION_UPDATE'), async (req: Request, res: Response): Promise<void> => {
+  const session = (req as any).officer as OfficerSession;
+  const { id } = req.params;
+
+  if (session && !isElectionInScope(session.assignmentScope, id)) {
+    serverStore.recordAuditEvent({
+      id: `audit-scope-denied-${Date.now()}`,
+      timestamp: Date.now(),
+      type: 'ADMIN_ACTION',
+      description: `Scope violation: Account '${session.accountId}' attempted config edit on out-of-scope election '${id}'`,
+      electionId: 1,
+    });
+
+    res.status(403).json({
+      success: false,
+      message: `Access denied: Election '${id}' is outside officer's authorized assignment scope.`,
+    });
+    return;
+  }
+
+  const result = await serverStore.updateElectionAsync(id, req.body, session?.accountId);
+  if (!result.success) {
+    res.status(400).json({ success: false, message: result.message });
+    return;
+  }
+
+  res.status(200).json({ success: true, message: result.message, election: result.election });
+});
+
+/**
  * PATCH /api/admin/elections/:id/status
- * Manages election lifecycle transitions (draft -> scheduled -> active -> paused -> concluded).
- * Enforces action-specific permissions based on target status.
+ * Manages election lifecycle transitions (draft -> scheduled -> active -> paused -> concluded / cancelled).
+ * Enforces action-specific permissions and officer assignment scope.
  */
 adminRouter.patch('/elections/:id/status', async (req: Request, res: Response): Promise<void> => {
   const token = extractSessionToken(req);
@@ -426,23 +521,55 @@ adminRouter.patch('/elections/:id/status', async (req: Request, res: Response): 
   }
 
   const { id } = req.params;
-  const { status } = req.body;
+  const { status, reason } = req.body;
 
-  if (!status || !['draft', 'scheduled', 'active', 'paused', 'concluded'].includes(status)) {
+  // Scope enforcement
+  if (session.assignmentScope && !isElectionInScope(session.assignmentScope, id)) {
+    serverStore.recordAuditEvent({
+      id: `audit-scope-denied-${Date.now()}`,
+      timestamp: Date.now(),
+      type: 'ADMIN_ACTION',
+      description: `Scope violation: Account '${session.accountId}' attempted status change on out-of-scope election '${id}'`,
+      electionId: 1,
+    });
+
+    res.status(403).json({
+      success: false,
+      message: `Access denied: Election '${id}' is outside officer's authorized assignment scope.`,
+    });
+    return;
+  }
+
+  const validStatuses = [
+    'draft',
+    'scheduled',
+    'active',
+    'paused',
+    'concluded',
+    'cancelled',
+    'DRAFT',
+    'SCHEDULED',
+    'OPEN',
+    'PAUSED',
+    'CLOSED',
+    'CANCELLED',
+  ];
+  if (!status || !validStatuses.includes(status)) {
     res.status(400).json({
       success: false,
-      message: 'Invalid status. Must be one of draft, scheduled, active, paused, or concluded.',
+      message: 'Invalid status. Must be one of draft, scheduled, active/OPEN, paused, concluded/CLOSED, or cancelled.',
     });
     return;
   }
 
   // Resolve target permission
+  const normStatus = normalizeElectionStatus(status);
   let requiredPermission: Permission = 'ELECTION_UPDATE';
-  if (status === 'active') {
+  if (normStatus === 'OPEN') {
     requiredPermission = 'ELECTION_ACTIVATE';
-  } else if (status === 'paused') {
+  } else if (normStatus === 'PAUSED') {
     requiredPermission = 'ELECTION_PAUSE';
-  } else if (status === 'concluded') {
+  } else if (normStatus === 'CLOSED' || normStatus === 'CANCELLED') {
     requiredPermission = 'ELECTION_CONCLUDE';
   }
 
@@ -464,13 +591,31 @@ adminRouter.patch('/elections/:id/status', async (req: Request, res: Response): 
     return;
   }
 
-  const result = await serverStore.updateElectionStatusAsync(id, status as ElectionStatus);
+  if (normStatus === 'CANCELLED') {
+    if (!reason || typeof reason !== 'string' || reason.trim().length < 5) {
+      res.status(400).json({
+        success: false,
+        message: 'A valid justification reason (minimum 5 characters) is required to cancel an election.',
+      });
+      return;
+    }
+  }
+
+  const result = await serverStore.updateElectionStatusAsync(id, status as ElectionStatus, {
+    reason,
+    officerId: session.accountId,
+  });
   if (!result.success) {
     res.status(400).json({ success: false, message: result.message });
     return;
   }
 
-  res.status(200).json({ success: true, message: result.message, status });
+  res.status(200).json({
+    success: true,
+    message: result.message,
+    status: result.election?.status || status,
+    election: result.election,
+  });
 });
 
 /**
@@ -499,6 +644,7 @@ adminRouter.get('/candidates', (req: Request, res: Response): void => {
  */
 adminRouter.post('/candidates', requirePermission('CANDIDATE_MANAGE'), async (req: Request, res: Response): Promise<void> => {
   const {
+    electionId,
     constituencyId,
     name,
     partyName,
@@ -537,8 +683,10 @@ adminRouter.post('/candidates', requirePermission('CANDIDATE_MANAGE'), async (re
     return;
   }
 
-  const numericId = Math.floor(Math.random() * 800) + 100;
-  const id = `CAND-${constituencyId.split('-')[1] || 'GEN'}-${Date.now().toString(36).substring(3, 6)}`;
+  const numericId = Number(req.body.numericId) || Math.floor(Math.random() * 800) + 100;
+  const id = (req.body.id && typeof req.body.id === 'string')
+    ? req.body.id.trim()
+    : `CAND-${constituencyId.split('-')[1] || 'GEN'}-${Date.now().toString(36).substring(3, 6)}`;
 
   let symbolKey: any = 'UNAVAILABLE';
   let symbolDesc = 'Free symbol allotted by Returning Officer';
@@ -581,6 +729,7 @@ adminRouter.post('/candidates', requirePermission('CANDIDATE_MANAGE'), async (re
   const cand = {
     id,
     numericId,
+    electionId: electionId ? String(electionId) : undefined,
     constituencyId,
     name: name.trim(),
     partyName: partyName.trim(),
@@ -605,6 +754,141 @@ adminRouter.post('/candidates', requirePermission('CANDIDATE_MANAGE'), async (re
   }
 
   res.status(201).json({ success: true, message: result.message, candidate: cand });
+});
+
+/**
+ * PATCH /api/admin/candidates/:id
+ * Edits candidate fields before the election opens.
+ * Requires CANDIDATE_MANAGE permission and scope checking.
+ */
+adminRouter.patch('/candidates/:id', requirePermission('CANDIDATE_MANAGE'), async (req: Request, res: Response): Promise<void> => {
+  const session = (req as any).officer as OfficerSession;
+  const { id } = req.params;
+  const candidate = serverStore.getAllCandidates().find((c) => c.id === id);
+
+  if (!candidate) {
+    res.status(404).json({ success: false, message: 'Candidate record not found.' });
+    return;
+  }
+
+  if (session && !isConstituencyInScope(session.assignmentScope, candidate.constituencyId)) {
+    serverStore.recordAuditEvent({
+      id: `audit-scope-denied-${Date.now()}`,
+      timestamp: Date.now(),
+      type: 'ADMIN_ACTION',
+      description: `Scope violation: Account '${session.accountId}' attempted editing candidate in out-of-scope constituency '${candidate.constituencyId}'`,
+      electionId: 1,
+    });
+
+    res.status(403).json({
+      success: false,
+      message: `Access denied: Candidate constituency '${candidate.constituencyId}' is outside officer's authorized assignment scope.`,
+    });
+    return;
+  }
+
+  const result = await serverStore.updateCandidateAsync(id, req.body, session?.accountId);
+  if (!result.success) {
+    const isLocked = result.message.toLowerCase().includes('lock') || result.message.toLowerCase().includes('vote');
+    res.status(isLocked ? 403 : 400).json({ success: false, message: result.message });
+    return;
+  }
+
+  res.status(200).json({ success: true, message: result.message, candidate: result.candidate });
+});
+
+/**
+ * DELETE /api/admin/candidates/:id
+ * Removes candidate nomination before voting opens.
+ * Requires CANDIDATE_MANAGE permission and scope checking.
+ */
+adminRouter.delete('/candidates/:id', requirePermission('CANDIDATE_MANAGE'), async (req: Request, res: Response): Promise<void> => {
+  const session = (req as any).officer as OfficerSession;
+  const { id } = req.params;
+  const candidate = serverStore.getAllCandidates().find((c) => c.id === id);
+
+  if (!candidate) {
+    res.status(404).json({ success: false, message: 'Candidate record not found.' });
+    return;
+  }
+
+  if (session && !isConstituencyInScope(session.assignmentScope, candidate.constituencyId)) {
+    serverStore.recordAuditEvent({
+      id: `audit-scope-denied-${Date.now()}`,
+      timestamp: Date.now(),
+      type: 'ADMIN_ACTION',
+      description: `Scope violation: Account '${session.accountId}' attempted deleting candidate in out-of-scope constituency '${candidate.constituencyId}'`,
+      electionId: 1,
+    });
+
+    res.status(403).json({
+      success: false,
+      message: `Access denied: Candidate constituency '${candidate.constituencyId}' is outside officer's authorized assignment scope.`,
+    });
+    return;
+  }
+
+  const result = await serverStore.deleteCandidateAsync(id, session?.accountId);
+  if (!result.success) {
+    const isLocked =
+      result.message.toLowerCase().includes('lock') ||
+      result.message.toLowerCase().includes('active') ||
+      result.message.toLowerCase().includes('conclude') ||
+      result.message.toLowerCase().includes('vote');
+    res.status(isLocked ? 403 : 400).json({ success: false, message: result.message });
+    return;
+  }
+
+  res.status(200).json({ success: true, message: result.message });
+});
+
+/**
+ * PATCH /api/admin/candidates/:id/deactivate
+ * Formally withdraws/deactivates a candidate with an audited reason.
+ * Requires CANDIDATE_MANAGE permission and scope checking.
+ */
+adminRouter.patch('/candidates/:id/deactivate', requirePermission('CANDIDATE_MANAGE'), async (req: Request, res: Response): Promise<void> => {
+  const session = (req as any).officer as OfficerSession;
+  const { id } = req.params;
+  const { reason } = req.body;
+  const candidate = serverStore.getAllCandidates().find((c) => c.id === id);
+
+  if (!candidate) {
+    res.status(404).json({ success: false, message: 'Candidate record not found.' });
+    return;
+  }
+
+  if (session && !isConstituencyInScope(session.assignmentScope, candidate.constituencyId)) {
+    serverStore.recordAuditEvent({
+      id: `audit-scope-denied-${Date.now()}`,
+      timestamp: Date.now(),
+      type: 'ADMIN_ACTION',
+      description: `Scope violation: Account '${session.accountId}' attempted deactivating candidate in out-of-scope constituency '${candidate.constituencyId}'`,
+      electionId: 1,
+    });
+
+    res.status(403).json({
+      success: false,
+      message: `Access denied: Candidate constituency '${candidate.constituencyId}' is outside officer's authorized assignment scope.`,
+    });
+    return;
+  }
+
+  if (!reason || typeof reason !== 'string' || reason.trim().length < 5) {
+    res.status(400).json({
+      success: false,
+      message: 'A valid justification reason (minimum 5 characters) is required to deactivate or withdraw a candidate.',
+    });
+    return;
+  }
+
+  const result = await serverStore.deactivateCandidateAsync(id, reason.trim(), session?.accountId);
+  if (!result.success) {
+    res.status(400).json({ success: false, message: result.message });
+    return;
+  }
+
+  res.status(200).json({ success: true, message: result.message, candidate: result.candidate });
 });
 
 const FORBIDDEN_BIOMETRIC_REGISTRATION_KEYS = [
