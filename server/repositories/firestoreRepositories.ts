@@ -1,0 +1,351 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { serverDb } from '../firestore';
+import {
+  VoterProfile,
+  VoterElectionParticipation,
+  ParticipationStatus,
+  BiometricEnrollmentMetadata,
+  BiometricModality,
+  AnonymousBallotRecord,
+  AuthorityAccount,
+  AuthorityRole,
+  StructuredAuditEvent,
+  validateVoterProfile,
+  validateElectionParticipation,
+  validateBiometricMetadata,
+  validateAnonymousBallot,
+  validateAuthorityAccount,
+  validateStructuredAuditEvent,
+  isValidParticipationTransition,
+} from '../../src/types/dataModel';
+import {
+  IVoterProfileRepository,
+  IVoterParticipationRepository,
+  IBiometricMetadataRepository,
+  IBallotMetadataRepository,
+  IAuthorityAccountRepository,
+  IAuditEventRepository,
+  IDataRepositories,
+  VoterProfileFilter,
+  AuditEventFilter,
+} from './types';
+
+export class FirestoreVoterProfileRepository implements IVoterProfileRepository {
+  private col() {
+    return serverDb.collection('voter_profiles');
+  }
+
+  public async findById(id: string): Promise<VoterProfile | null> {
+    const snap = await this.col().doc(id).get();
+    if (!snap.exists) return null;
+    return snap.data() as VoterProfile;
+  }
+
+  public async findBySimulationId(simulationVoterId: string): Promise<VoterProfile | null> {
+    const target = simulationVoterId.trim().toUpperCase();
+    const snap = await this.col().where('simulationVoterId', '==', target).limit(1).get();
+    if (snap.empty) return null;
+    return snap.docs[0].data() as VoterProfile;
+  }
+
+  public async findByLegacyEpic(epicId: string): Promise<VoterProfile | null> {
+    const target = epicId.trim().toUpperCase();
+    const snap = await this.col().where('legacyEpicId', '==', target).limit(1).get();
+    if (snap.empty) return null;
+    return snap.docs[0].data() as VoterProfile;
+  }
+
+  public async save(profile: VoterProfile): Promise<void> {
+    const validation = validateVoterProfile(profile);
+    if (!validation.isValid) {
+      throw new Error(`Cannot save invalid voter profile: ${validation.errors.join('; ')}`);
+    }
+    await this.col().doc(profile.id).set(profile, { merge: true });
+  }
+
+  public async list(filter?: VoterProfileFilter): Promise<VoterProfile[]> {
+    let query: any = this.col();
+    if (filter?.constituencyId) {
+      query = query.where('constituencyId', '==', filter.constituencyId);
+    }
+    if (filter?.registrationStatus) {
+      query = query.where('registrationStatus', '==', filter.registrationStatus);
+    }
+    if (filter?.eligibilityStatus) {
+      query = query.where('eligibilityStatus', '==', filter.eligibilityStatus);
+    }
+    if (filter?.limit && filter.limit > 0) {
+      query = query.limit(filter.limit);
+    }
+    const snap = await query.get();
+    return snap.docs.map((d: any) => d.data() as VoterProfile);
+  }
+
+  public async count(): Promise<number> {
+    const snap = await this.col().get();
+    return snap.size;
+  }
+
+  public async clear(): Promise<void> {
+    const snap = await this.col().get();
+    for (const doc of snap.docs) {
+      await doc.ref.delete();
+    }
+  }
+}
+
+export class FirestoreVoterParticipationRepository implements IVoterParticipationRepository {
+  private col() {
+    return serverDb.collection('voter_election_participation');
+  }
+
+  public async getParticipation(voterId: string, electionId: string): Promise<VoterElectionParticipation | null> {
+    const docId = `${voterId}_${electionId}`;
+    const snap = await this.col().doc(docId).get();
+    if (!snap.exists) return null;
+    return snap.data() as VoterElectionParticipation;
+  }
+
+  public async createParticipation(participation: VoterElectionParticipation): Promise<void> {
+    const validation = validateElectionParticipation(participation);
+    if (!validation.isValid) {
+      throw new Error(`Cannot create invalid participation record: ${validation.errors.join('; ')}`);
+    }
+
+    const docId = `${participation.voterId}_${participation.electionId}`;
+    const existing = await this.col().doc(docId).get();
+    if (existing.exists) {
+      throw new Error(
+        `DUPLICATE_PARTICIPATION: Participation record already exists for voter '${participation.voterId}' in election '${participation.electionId}'.`
+      );
+    }
+
+    await this.col().doc(docId).set(participation);
+  }
+
+  public async updateParticipationStatus(
+    voterId: string,
+    electionId: string,
+    nextStatus: ParticipationStatus,
+    metadata?: Partial<VoterElectionParticipation>
+  ): Promise<VoterElectionParticipation> {
+    const docId = `${voterId}_${electionId}`;
+    const snap = await this.col().doc(docId).get();
+
+    if (!snap.exists) {
+      throw new Error(
+        `PARTICIPATION_NOT_FOUND: No existing participation found for voter '${voterId}' in election '${electionId}'.`
+      );
+    }
+
+    const current = snap.data() as VoterElectionParticipation;
+    if (!isValidParticipationTransition(current.status, nextStatus)) {
+      throw new Error(
+        `ILLEGAL_STATE_TRANSITION: Cannot transition participation for voter '${voterId}' in election '${electionId}' from '${current.status}' to '${nextStatus}'.`
+      );
+    }
+
+    const updated: VoterElectionParticipation = {
+      ...current,
+      ...metadata,
+      status: nextStatus,
+      updatedAt: Date.now(),
+    };
+
+    if (nextStatus === 'VOTE_ACCEPTED' && !updated.votedAt) {
+      updated.votedAt = Date.now();
+    }
+
+    const validation = validateElectionParticipation(updated);
+    if (!validation.isValid) {
+      throw new Error(`Updated participation record is invalid: ${validation.errors.join('; ')}`);
+    }
+
+    await this.col().doc(docId).set(updated, { merge: true });
+    return updated;
+  }
+
+  public async listByVoter(voterId: string): Promise<VoterElectionParticipation[]> {
+    const snap = await this.col().where('voterId', '==', voterId).get();
+    return snap.docs.map((d: any) => d.data() as VoterElectionParticipation);
+  }
+
+  public async listByElection(electionId: string): Promise<VoterElectionParticipation[]> {
+    const snap = await this.col().where('electionId', '==', electionId).get();
+    return snap.docs.map((d: any) => d.data() as VoterElectionParticipation);
+  }
+
+  public async clear(): Promise<void> {
+    const snap = await this.col().get();
+    for (const doc of snap.docs) {
+      await doc.ref.delete();
+    }
+  }
+}
+
+export class FirestoreBiometricMetadataRepository implements IBiometricMetadataRepository {
+  private col() {
+    return serverDb.collection('biometric_enrollments');
+  }
+
+  public async getMetadata(voterId: string, modality: BiometricModality): Promise<BiometricEnrollmentMetadata | null> {
+    const docId = `bio_${voterId}_${modality.toLowerCase()}`;
+    const snap = await this.col().doc(docId).get();
+    if (!snap.exists) return null;
+    return snap.data() as BiometricEnrollmentMetadata;
+  }
+
+  public async saveMetadata(metadata: BiometricEnrollmentMetadata): Promise<void> {
+    const validation = validateBiometricMetadata(metadata);
+    if (!validation.isValid) {
+      throw new Error(`Cannot save invalid biometric metadata: ${validation.errors.join('; ')}`);
+    }
+    const docId = `bio_${metadata.voterId}_${metadata.modality.toLowerCase()}`;
+    await this.col().doc(docId).set(metadata, { merge: true });
+  }
+
+  public async listByVoter(voterId: string): Promise<BiometricEnrollmentMetadata[]> {
+    const snap = await this.col().where('voterId', '==', voterId).get();
+    return snap.docs.map((d: any) => d.data() as BiometricEnrollmentMetadata);
+  }
+
+  public async clear(): Promise<void> {
+    const snap = await this.col().get();
+    for (const doc of snap.docs) {
+      await doc.ref.delete();
+    }
+  }
+}
+
+export class FirestoreBallotMetadataRepository implements IBallotMetadataRepository {
+  private col() {
+    return serverDb.collection('ballots');
+  }
+
+  public async saveBallot(ballot: AnonymousBallotRecord): Promise<void> {
+    const validation = validateAnonymousBallot(ballot);
+    if (!validation.isValid) {
+      throw new Error(`Cannot save invalid anonymous ballot: ${validation.errors.join('; ')}`);
+    }
+    await this.col().doc(ballot.id).set(ballot);
+  }
+
+  public async getBallotById(id: string): Promise<AnonymousBallotRecord | null> {
+    const snap = await this.col().doc(id).get();
+    if (!snap.exists) return null;
+    return snap.data() as AnonymousBallotRecord;
+  }
+
+  public async listByElection(electionId: string): Promise<AnonymousBallotRecord[]> {
+    const snap = await this.col().where('electionId', '==', electionId).get();
+    return snap.docs.map((d: any) => d.data() as AnonymousBallotRecord);
+  }
+
+  public async countByElection(electionId: string): Promise<number> {
+    const snap = await this.col().where('electionId', '==', electionId).get();
+    return snap.size;
+  }
+
+  public async clear(): Promise<void> {
+    const snap = await this.col().get();
+    for (const doc of snap.docs) {
+      await doc.ref.delete();
+    }
+  }
+}
+
+export class FirestoreAuthorityAccountRepository implements IAuthorityAccountRepository {
+  private col() {
+    return serverDb.collection('authority_accounts');
+  }
+
+  public async getAccount(id: string): Promise<AuthorityAccount | null> {
+    const snap = await this.col().doc(id).get();
+    if (!snap.exists) return null;
+    return snap.data() as AuthorityAccount;
+  }
+
+  public async findByEmail(email: string): Promise<AuthorityAccount | null> {
+    const target = email.trim().toLowerCase();
+    const snap = await this.col().where('email', '==', target).limit(1).get();
+    if (snap.empty) return null;
+    return snap.docs[0].data() as AuthorityAccount;
+  }
+
+  public async saveAccount(account: AuthorityAccount): Promise<void> {
+    const validation = validateAuthorityAccount(account);
+    if (!validation.isValid) {
+      throw new Error(`Cannot save invalid authority account: ${validation.errors.join('; ')}`);
+    }
+    await this.col().doc(account.id).set(account, { merge: true });
+  }
+
+  public async listAccounts(role?: AuthorityRole): Promise<AuthorityAccount[]> {
+    let query: any = this.col();
+    if (role) {
+      query = query.where('role', '==', role);
+    }
+    const snap = await query.get();
+    return snap.docs.map((d: any) => d.data() as AuthorityAccount);
+  }
+
+  public async clear(): Promise<void> {
+    const snap = await this.col().get();
+    for (const doc of snap.docs) {
+      await doc.ref.delete();
+    }
+  }
+}
+
+export class FirestoreAuditEventRepository implements IAuditEventRepository {
+  private col() {
+    return serverDb.collection('audit_events');
+  }
+
+  public async appendEvent(event: StructuredAuditEvent): Promise<void> {
+    const validation = validateStructuredAuditEvent(event);
+    if (!validation.isValid) {
+      throw new Error(`Cannot append invalid audit event: ${validation.errors.join('; ')}`);
+    }
+    await this.col().doc(event.id).set(event);
+  }
+
+  public async getEvents(filter?: AuditEventFilter): Promise<StructuredAuditEvent[]> {
+    let query: any = this.col();
+    if (filter?.electionId) {
+      query = query.where('electionId', '==', filter.electionId);
+    }
+    const snap = await query.get();
+    let events = snap.docs.map((d: any) => d.data() as StructuredAuditEvent);
+    if (filter?.category) {
+      events = events.filter((e: StructuredAuditEvent) => e.target?.category === filter.category);
+    }
+    events.sort((a: StructuredAuditEvent, b: StructuredAuditEvent) => b.timestamp - a.timestamp);
+    if (filter?.limit && filter.limit > 0) {
+      events = events.slice(0, filter.limit);
+    }
+    return events;
+  }
+
+  public async clear(): Promise<void> {
+    const snap = await this.col().get();
+    for (const doc of snap.docs) {
+      await doc.ref.delete();
+    }
+  }
+}
+
+export function createFirestoreRepositories(): IDataRepositories {
+  return {
+    voterProfiles: new FirestoreVoterProfileRepository(),
+    participations: new FirestoreVoterParticipationRepository(),
+    biometrics: new FirestoreBiometricMetadataRepository(),
+    ballots: new FirestoreBallotMetadataRepository(),
+    authorities: new FirestoreAuthorityAccountRepository(),
+    auditEvents: new FirestoreAuditEventRepository(),
+  };
+}

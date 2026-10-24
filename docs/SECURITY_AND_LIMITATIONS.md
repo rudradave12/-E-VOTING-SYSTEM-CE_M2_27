@@ -91,3 +91,33 @@ Because the server-side authorization engine validates the voter's identity and 
 
 ### Limitation 3: Synthetic Test Registries
 All voter rolls in this repository use synthetic demographic records. Live production deployments in India would require integration with Aadhaar/UIDAI e-KYC or the ECI Electoral Roll Management System (ERMS), which are legally restricted government systems.
+
+---
+
+## 4. Phase 02 Data Model Security & Privacy Safeguards
+
+The Phase 02 versioned backend data model introduces structural privacy boundaries:
+
+### A. Elector Identity vs. Anonymous Ballot Separation
+* Elector demographic records reside strictly in `/voter_profiles`.
+* Accepted vote receipts reside strictly in `/ballots`.
+* Ballot metadata records strictly reject any personal identifiers (`voterId`, `simulationVoterId`, `name`, `mobile`, `biometricReferenceId`).
+* Voter profile and participation records strictly reject candidate choice fields (`candidateId`, `selectedCandidate`, `ballot`).
+
+### B. Strict Non-Storage of Raw Biometric Payloads
+* The simulation platform **NEVER** stores raw biometric bytes, face camera captures, fingerprint scans, minutiae points, or continuous video streams in metadata documents.
+* `/biometric_enrollments` records store solely high-level device enrollment status (`ENROLLED`, `PENDING`, `DEVICE_UNAVAILABLE`, `MANUALLY_APPROVED`), an opaque reference hash/UUID, quality scores, and device provider descriptors.
+* Runtime validators strictly reject and fail closed if raw template or image properties are inserted into metadata payloads.
+
+### C. Manual Administrative Exception vs. Biometric Match Distinction
+* `MANUALLY_APPROVED` is modeled as an administrative exception decision, **NOT** an algorithmic biometric match.
+* When manual approval is granted by an authorized officer, `isManualException: true` is explicitly recorded alongside an auditable case reference.
+
+### D. Independent Per-Election Participation Invariant
+* Elector eligibility and voting progress are tracked independently per election via `/voter_election_participation/{voterId}_{electionId}`.
+* A voter who completes voting in Election A (`VOTE_ACCEPTED`) remains independently eligible to participate in Election B.
+* Duplicate participation attempts for the same `(voterId, electionId)` pair are rejected at the repository and transaction layer.
+
+### E. Redacted Security Audit Logging
+* `/audit_events` is append-only at the application layer.
+* Audit event validators strictly reject secrets, raw passwords, OTP codes, bearer tokens, private keys, or biometric template data.

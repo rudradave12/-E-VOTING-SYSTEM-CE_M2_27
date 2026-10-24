@@ -190,3 +190,6 @@ export interface PollAggregateRecord {
   reconciledAt: number;
 }
 
+// Phase 02 Data Model exports
+export * from './dataModel';
+

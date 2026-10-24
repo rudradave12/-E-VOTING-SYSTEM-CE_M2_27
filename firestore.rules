@@ -124,12 +124,45 @@ service cloud.firestore {
       allow delete: if isAdmin() && isValidId(candidateId);
     }
 
-    // 4. Voters: Protected elector roll. Bulk listing restricted to admin officers; direct client tampering blocked.
+    // 4. Voters: Protected elector roll (legacy transitional). Bulk listing restricted to admin officers; direct client tampering blocked.
     match /voters/{voterId} {
       allow read: if isValidId(voterId) && (isAdmin() || (isSignedIn() && request.auth.uid == voterId));
       allow list: if isAdmin();
       allow create, update: if isAdmin() && isValidId(voterId) && isValidVoter(request.resource.data);
       allow delete: if isAdmin() && isValidId(voterId);
+    }
+
+    // 4b. Voter Profiles (Phase 02): Identity records. Read restricted to self or admin; write locked from client SDK.
+    match /voter_profiles/{profileId} {
+      allow read: if isValidId(profileId) && (isAdmin() || (isSignedIn() && request.auth.uid == profileId));
+      allow list: if isAdmin();
+      allow write: if false; // Server-only management via Firebase Admin SDK
+    }
+
+    // 4c. Voter Election Participation (Phase 02): Per-election tracking. Write locked from client SDK.
+    match /voter_election_participation/{partId} {
+      allow read: if isValidId(partId) && (isAdmin() || isSignedIn());
+      allow list: if isAdmin();
+      allow write: if false; // Server-only management
+    }
+
+    // 4d. Biometric Enrollment Metadata (Phase 02): Strictly confidential metadata. Direct client SDK read/write prohibited.
+    match /biometric_enrollments/{enrollId} {
+      allow read, write: if false; // Authoritative backend only
+    }
+
+    // 4e. Anonymous Ballots (Phase 02): Public receipt verification; write locked from client SDK.
+    match /ballots/{ballotId} {
+      allow read: if isValidId(ballotId);
+      allow list: if isAdmin();
+      allow write: if false; // Authoritative backend atomic recording only
+    }
+
+    // 4f. Authority Accounts (Phase 02): RBAC metadata. Read self or admin; write locked.
+    match /authority_accounts/{accountId} {
+      allow read: if isSignedIn() && (request.auth.uid == accountId || isAdmin());
+      allow list: if isAdmin();
+      allow write: if false; // Server-only provisioning
     }
 
     // 5. OTP Challenges: Strictly server-side HMAC challenges; client direct read/write prohibited.
