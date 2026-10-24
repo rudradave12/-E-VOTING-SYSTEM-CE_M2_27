@@ -72,7 +72,7 @@ test('BlockBallot — Phase 7A: Critical Security Hardening Test Suite', async (
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'Rogue Election' }),
     });
-    assert.equal(createElec.status, 403, 'Unauthenticated election creation must return 403');
+    assert.ok([401, 403].includes(createElec.status), 'Unauthenticated election creation must return 401 or 403');
 
     // C. PATCH /api/admin/elections/1/status without auth
     const updateElec = await fetch(`${baseUrl}/api/admin/elections/ELEC-18-LS/status`, {
@@ -80,7 +80,7 @@ test('BlockBallot — Phase 7A: Critical Security Hardening Test Suite', async (
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: 'concluded' }),
     });
-    assert.equal(updateElec.status, 403, 'Unauthenticated election status update must return 403');
+    assert.ok([401, 403].includes(updateElec.status), 'Unauthenticated election status update must return 401 or 403');
 
     // D. POST /api/admin/candidates without auth
     const addCand = await fetch(`${baseUrl}/api/admin/candidates`, {
@@ -88,11 +88,11 @@ test('BlockBallot — Phase 7A: Critical Security Hardening Test Suite', async (
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'Rogue Candidate', constituencyId: 'CONST-04-ND', partyName: 'Independent' }),
     });
-    assert.equal(addCand.status, 403, 'Unauthenticated candidate creation must return 403');
+    assert.ok([401, 403].includes(addCand.status), 'Unauthenticated candidate creation must return 401 or 403');
 
     // E. GET /api/admin/voters without auth
     const getVoters = await fetch(`${baseUrl}/api/admin/voters`);
-    assert.equal(getVoters.status, 403, 'Unauthenticated voter roll access must return 403');
+    assert.ok([401, 403].includes(getVoters.status), 'Unauthenticated voter roll access must return 401 or 403');
 
     // F. PATCH /api/admin/voters/:id/eligibility without auth
     const patchEligibility = await fetch(`${baseUrl}/api/admin/voters/VOTER-ND-01/eligibility`, {
@@ -100,13 +100,13 @@ test('BlockBallot — Phase 7A: Critical Security Hardening Test Suite', async (
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ isEligible: false }),
     });
-    assert.equal(patchEligibility.status, 403, 'Unauthenticated voter eligibility modification must return 403');
+    assert.ok([401, 403].includes(patchEligibility.status), 'Unauthenticated voter eligibility modification must return 401 or 403');
 
     // G. POST /api/admin/voters/:id/reset without auth
     const resetVoter = await fetch(`${baseUrl}/api/admin/voters/VOTER-ND-01/reset`, {
       method: 'POST',
     });
-    assert.equal(resetVoter.status, 403, 'Unauthenticated voter authorization reset must return 403');
+    assert.ok([401, 403].includes(resetVoter.status), 'Unauthenticated voter authorization reset must return 401 or 403');
 
     // H. POST /api/historical/import without auth
     const importHist = await fetch(`${baseUrl}/api/historical/import`, {
@@ -202,7 +202,7 @@ test('BlockBallot — Phase 7A: Critical Security Hardening Test Suite', async (
       },
       body: JSON.stringify({ title: 'Illegal Election' }),
     });
-    assert.equal(tamperedSession.status, 403);
+    assert.ok([401, 403].includes(tamperedSession.status), 'Tampered session must be rejected with 401 or 403');
   });
 
   // --------------------------------------------------------------------------

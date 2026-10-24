@@ -6,7 +6,7 @@ import { auth } from '../../lib/firebase';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 
 interface AdminLoginScreenProps {
-  onLoginSuccess: () => void;
+  onLoginSuccess: (user?: any) => void;
   onCancel: () => void;
 }
 
@@ -36,14 +36,14 @@ export const AdminLoginScreen: React.FC<AdminLoginScreenProps> = ({
         if (password.trim().startsWith('eyJ')) {
           idToken = password.trim();
         } else {
-          // Fall back to server-side demo admin authentication (academic/local demonstration mode)
+          // Fall back to server-side demo officer authentication (academic/local demonstration mode)
           const fallbackRes = await voterApi.adminLogin({
             email: email.trim(),
             password: password.trim(),
           });
 
           if (fallbackRes.success) {
-            onLoginSuccess();
+            onLoginSuccess(fallbackRes.user);
             return;
           }
 
@@ -61,7 +61,7 @@ export const AdminLoginScreen: React.FC<AdminLoginScreenProps> = ({
       // 2. Transmit verified Firebase ID token to the hardened server-side authorization gateway
       const res = await voterApi.adminLogin(idToken);
       if (res.success) {
-        onLoginSuccess();
+        onLoginSuccess(res.user);
       } else {
         // Fail closed
         setError(res.message || 'Access denied: Valid Commission officer authorization required.');
@@ -88,7 +88,7 @@ export const AdminLoginScreen: React.FC<AdminLoginScreenProps> = ({
             Officer Administrative Gateway
           </h1>
           <p className="text-xs text-slate-600 mt-1">
-            Restricted access portal for authorized election returning officers and system auditors.
+            Restricted access portal for authorized election returning officers, registration officers, and system auditors.
           </p>
         </div>
 
@@ -104,29 +104,43 @@ export const AdminLoginScreen: React.FC<AdminLoginScreenProps> = ({
         </div>
 
         {/* Local Demo Account Notice */}
-        <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-lg text-xs text-amber-900 mb-6 space-y-1">
+        <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-lg text-xs text-amber-900 mb-6 space-y-2">
           <div className="flex items-center gap-1.5 font-bold text-amber-950">
             <Shield className="w-3.5 h-3.5 text-amber-700" />
-            <span>Local Academic Demonstration:</span>
+            <span>Local Operational Officer Accounts:</span>
           </div>
-          <p className="text-[11px] text-amber-800 leading-relaxed">
-            Demo ID: <code className="bg-amber-100/80 px-1 py-0.5 rounded text-[10px] font-mono">demo.admin@blockballot.local</code>
-            <br />
-            Password: Set in ignored <code className="bg-amber-100/80 px-1 py-0.5 rounded text-[10px] font-mono">.env.local</code> (run <code className="bg-amber-100/80 px-1 py-0.5 rounded text-[10px] font-mono">npm run admin:seed</code>). Disabled in production.
-          </p>
+          <div className="text-[11px] text-amber-800 leading-relaxed space-y-1">
+            <div>
+              <span className="font-semibold">Election Officer:</span>{' '}
+              <code className="bg-amber-100/80 px-1 py-0.5 rounded text-[10px] font-mono">EO-SIM-001</code>
+              <span className="text-amber-700 text-[10px] block">Elections, candidates, turnout, lifecycle management</span>
+            </div>
+            <div>
+              <span className="font-semibold">Voter Registration Officer:</span>{' '}
+              <code className="bg-amber-100/80 px-1 py-0.5 rounded text-[10px] font-mono">VRO-SIM-001</code>
+              <span className="text-amber-700 text-[10px] block">Voter records, registration scope, enrollment access</span>
+            </div>
+            <div>
+              <span className="font-semibold">Platform Admin:</span>{' '}
+              <code className="bg-amber-100/80 px-1 py-0.5 rounded text-[10px] font-mono">demo.admin@blockballot.local</code>
+            </div>
+            <div className="pt-1 text-[10px] text-amber-700 italic border-t border-amber-200/60">
+              Run <code className="bg-amber-100/80 px-1 py-0.5 rounded font-mono">npm run officers:seed</code> to generate secure credentials in <code className="bg-amber-100/80 px-1 py-0.5 rounded font-mono">.env.local</code>. Disabled in production.
+            </div>
+          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label htmlFor="admin-email" className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
-              Officer Email
+              Officer Login ID or Email
             </label>
             <input
               id="admin-email"
-              type="email"
+              type="text"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="officer@domain.gov.in"
+              placeholder="EO-SIM-001 or VRO-SIM-001 or email"
               className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white"
               required
               disabled={isLoading}

@@ -295,7 +295,7 @@ describe('BlockBallot — Core E-Voting UX Redesign & Architecture Verification'
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'Rogue Election' }),
     });
-    assert.equal(res1.status, 403);
+    assert.ok([401, 403].includes(res1.status));
 
     // Unauthenticated status update
     const res2 = await fetch(`${baseUrl}/api/admin/elections/GE-2024/status`, {
@@ -303,7 +303,7 @@ describe('BlockBallot — Core E-Voting UX Redesign & Architecture Verification'
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: 'paused' }),
     });
-    assert.equal(res2.status, 403);
+    assert.ok([401, 403].includes(res2.status));
   });
 
   it('8. Lifecycle state transitions: Draft -> Scheduled -> Active -> Paused -> Concluded', async () => {

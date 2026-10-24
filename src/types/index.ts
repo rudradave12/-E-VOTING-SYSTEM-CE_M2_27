@@ -193,3 +193,6 @@ export interface PollAggregateRecord {
 // Phase 02 Data Model exports
 export * from './dataModel';
 
+// Phase 03 Permissions & RBAC exports
+export * from './permissions';
+

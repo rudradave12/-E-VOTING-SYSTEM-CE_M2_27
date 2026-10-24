@@ -307,7 +307,7 @@ export class VoterApiClient {
   public async adminLogin(
     tokenOrPayload: string | { idToken?: string; googleToken?: string; email?: string; password?: string },
     legacyPassword?: string
-  ): Promise<{ success: boolean; token?: string; message?: string }> {
+  ): Promise<{ success: boolean; token?: string; user?: any; message?: string }> {
     try {
       const body =
         typeof tokenOrPayload === 'string'
@@ -326,6 +326,39 @@ export class VoterApiClient {
         this.currentAdminToken = data.token;
       }
       return data;
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  public async adminLogout(): Promise<{ success: boolean; message?: string }> {
+    try {
+      const res = await fetch('/api/admin/logout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+      });
+      this.currentAdminToken = null;
+      return await res.json();
+    } catch (err: any) {
+      this.currentAdminToken = null;
+      return { success: true, message: 'Logged out locally.' };
+    }
+  }
+
+  public async getAdminSession(): Promise<{ success: boolean; user?: any; message?: string }> {
+    try {
+      if (!this.currentAdminToken) {
+        return { success: false, message: 'No active session token' };
+      }
+      const res = await fetch('/api/admin/session', {
+        headers: {
+          Authorization: `Bearer ${this.currentAdminToken}`,
+        },
+      });
+      return await res.json();
     } catch (err: any) {
       return { success: false, message: err.message };
     }

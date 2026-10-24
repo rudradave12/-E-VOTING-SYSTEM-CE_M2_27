@@ -7,7 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
-import { getFirebaseAdminAuth, getFirebaseAdminFirestore } from '../server/firebaseAdmin';
+import { getFirebaseAdminAuth, getFirebaseAdminFirestore, isFirebaseConfigured } from '../server/firebaseAdmin';
 
 dotenv.config();
 
@@ -44,41 +44,38 @@ export async function seedDemoAdmin(): Promise<{ email: string; password: string
     fs.writeFileSync(ENV_LOCAL_PATH, newConfig, 'utf8');
   }
 
-  // Provision into Firebase Authentication Emulator if running
-  try {
-    const auth = getFirebaseAdminAuth();
+  // Provision into Firebase Authentication & Firestore Emulator if running
+  if (isFirebaseConfigured()) {
     try {
-      await auth.createUser({
-        uid: 'demo-admin-uid',
-        email: 'demo.admin@blockballot.local',
-        password: demoPassword,
-        displayName: 'BlockBallot Demo Administrator',
-      });
-    } catch (createErr: any) {
-      if (createErr.code === 'auth/uid-already-exists' || createErr.code === 'auth/email-already-exists') {
-        await auth.updateUser('demo-admin-uid', {
+      const auth = getFirebaseAdminAuth();
+      try {
+        await auth.createUser({
+          uid: 'demo-admin-uid',
+          email: 'demo.admin@blockballot.local',
           password: demoPassword,
           displayName: 'BlockBallot Demo Administrator',
         });
+      } catch (createErr: any) {
+        if (createErr.code === 'auth/uid-already-exists' || createErr.code === 'auth/email-already-exists') {
+          await auth.updateUser('demo-admin-uid', {
+            password: demoPassword,
+            displayName: 'BlockBallot Demo Administrator',
+          });
+        }
       }
-    }
-    await auth.setCustomUserClaims('demo-admin-uid', { admin: true, role: 'commissioner' });
-  } catch {
-    // Firebase Auth emulator may not be running locally; local server fallback handles direct verification
-  }
+      await auth.setCustomUserClaims('demo-admin-uid', { admin: true, role: 'commissioner' });
 
-  // Provision into Firestore Emulator if running
-  try {
-    const db = getFirebaseAdminFirestore();
-    await db.collection('admins').doc('demo-admin-uid').set({
-      email: 'demo.admin@blockballot.local',
-      displayName: 'BlockBallot Demo Administrator',
-      role: 'Returning Officer',
-      isDemoAccount: true,
-      updatedAt: Date.now(),
-    });
-  } catch {
-    // Firestore emulator may not be running locally; handled gracefully
+      const db = getFirebaseAdminFirestore();
+      await db.collection('admins').doc('demo-admin-uid').set({
+        email: 'demo.admin@blockballot.local',
+        displayName: 'BlockBallot Demo Administrator',
+        role: 'Returning Officer',
+        isDemoAccount: true,
+        updatedAt: Date.now(),
+      });
+    } catch {
+      // Emulator provisioning handled gracefully
+    }
   }
 
   console.log('\n==============================================================================');

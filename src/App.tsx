@@ -60,6 +60,7 @@ export function AppInner() {
   const [currentScreen, setCurrentScreen] = useState<NavigationScreen>('welcome');
   const [isSimulatedEVM, setIsSimulatedEVM] = useState<boolean>(true);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(false);
+  const [adminUser, setAdminUser] = useState<any>(null);
 
   const [elections, setElections] = useState<Election[]>(INITIAL_ELECTIONS);
   const [activeElectionId, setActiveElectionId] = useState<string>('GE-2024');
@@ -312,8 +313,9 @@ export function AppInner() {
     }
   };
 
-  const handleAdminLoginSuccess = async () => {
+  const handleAdminLoginSuccess = async (user?: any) => {
     setIsAdminAuthenticated(true);
+    setAdminUser(user || null);
     setCurrentScreen('admin-dashboard');
     try {
       const [freshElections, freshVoters, freshAudit] = await Promise.all([
@@ -327,6 +329,13 @@ export function AppInner() {
     } catch {
       // Local state is preserved if offline
     }
+  };
+
+  const handleAdminLogout = async () => {
+    await voterApi.adminLogout();
+    setIsAdminAuthenticated(false);
+    setAdminUser(null);
+    setCurrentScreen('welcome');
   };
 
   const isVoterFlow = [
@@ -345,10 +354,7 @@ export function AppInner() {
         currentScreen={currentScreen}
         onNavigate={(screen) => setCurrentScreen(screen)}
         isAdminAuthenticated={isAdminAuthenticated}
-        onAdminLogout={() => {
-          setIsAdminAuthenticated(false);
-          setCurrentScreen('welcome');
-        }}
+        onAdminLogout={handleAdminLogout}
         voterName={currentVoter?.name}
         onResetVoterSession={handleResetSession}
       />
@@ -517,8 +523,10 @@ export function AppInner() {
             constituencies={constituencies}
             candidates={candidates}
             voters={voters}
+            adminUser={adminUser}
             onUpdateElectionStatus={handleUpdateElectionStatus}
             onNavigate={(screen) => setCurrentScreen(screen)}
+            onLogout={handleAdminLogout}
           />
         )}
 

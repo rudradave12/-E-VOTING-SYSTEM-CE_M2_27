@@ -1,21 +1,46 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import { serverStore } from '../store';
 import { ElectionStatus } from '../../src/types';
 import { SERVER_CONFIG } from '../config';
-
 import { verifyAdminIdToken } from '../firebaseAdmin';
+import {
+  OfficerSession,
+  verifyOfficerCredentials,
+  createOfficerSession,
+  getOfficerSession,
+  revokeOfficerSession,
+  clearOfficerSessionsForTesting,
+  registerOfficerSessionForTesting,
+  extractSessionToken,
+  authenticateOfficer,
+  requirePermission,
+  isConstituencyInScope,
+  isElectionInScope,
+} from '../auth/rbac';
+import {
+  Permission,
+  AuthorityRole,
+  ROLE_PERMISSIONS,
+  hasPermission,
+  getPermissionsForRole,
+} from '../../src/types/permissions';
+import { AuthorityAccount, SCHEMA_VERSION_CURRENT } from '../../src/types/dataModel';
 
 export const adminRouter = Router();
 
-// In-memory admin session store: token -> { email: string; uid?: string; role?: string; expiresAt: number }
+// In-memory admin session store for backward compatibility
 const adminSessions: Map<string, { email: string; uid?: string; role?: string; expiresAt: number }> = new Map();
 
 export function clearAdminSessionsForTesting(): void {
   adminSessions.clear();
+  clearOfficerSessionsForTesting();
 }
 
-export function createAdminSessionForTesting(email = 'officer@blockballot.gov.in', role = 'Returning Officer'): { token: string; expiresAt: number } {
+export function createAdminSessionForTesting(
+  email = 'officer@blockballot.gov.in',
+  role: string = 'PLATFORM_ADMIN'
+): { token: string; expiresAt: number } {
   const token = `adm_${crypto.randomBytes(32).toString('hex')}`;
   const expiresAt = Date.now() + 4 * 60 * 60 * 1000;
   adminSessions.set(token, {
@@ -23,17 +48,45 @@ export function createAdminSessionForTesting(email = 'officer@blockballot.gov.in
     role,
     expiresAt,
   });
+
+  // Map to AuthorityRole
+  let mappedRole: AuthorityRole = 'PLATFORM_ADMIN';
+  const upper = role.toUpperCase().replace(/\s+/g, '_');
+  if (upper === 'ELECTION_OFFICER' || upper === 'EO') mappedRole = 'ELECTION_OFFICER';
+  else if (upper === 'VOTER_REGISTRATION_OFFICER' || upper === 'VRO') mappedRole = 'VOTER_REGISTRATION_OFFICER';
+
+  const officerSession: OfficerSession = {
+    token,
+    accountId: email.startsWith('EO') ? 'EO-SIM-001' : email.startsWith('VRO') ? 'VRO-SIM-001' : 'demo-admin-uid',
+    email,
+    displayName: email,
+    role: mappedRole,
+    status: 'ACTIVE',
+    assignmentScope: mappedRole === 'PLATFORM_ADMIN' ? undefined : {
+      state: 'Delhi',
+      district: 'New Delhi',
+      constituencyIds: ['CONST-04-ND', 'CONST-77-VAR'],
+      electionIds: ['GE-2024'],
+    },
+    permissions: getPermissionsForRole(mappedRole),
+    createdAt: Date.now(),
+    expiresAt,
+    isRevoked: false,
+  };
+  registerOfficerSessionForTesting(officerSession);
+
   return { token, expiresAt };
 }
 
-
 /**
- * Validates whether the incoming HTTP request holds a valid, active admin session token.
+ * Validates whether the incoming HTTP request holds a valid, active admin or officer session token.
  */
 export function verifyAdminAuth(req: Request): boolean {
-  const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7).trim() : undefined;
+  const token = extractSessionToken(req);
   if (!token) return false;
+
+  const officerSession = getOfficerSession(token);
+  if (officerSession) return true;
 
   const session = adminSessions.get(token);
   if (!session) return false;
@@ -47,7 +100,7 @@ export function verifyAdminAuth(req: Request): boolean {
 /**
  * POST /api/admin/login
  * Validates Election Commission officer authentication via verified Firebase ID tokens
- * or local demo administrator credentials in non-production environments.
+ * or local demo officer/administrator credentials in non-production environments.
  * Fails closed in production.
  */
 adminRouter.post('/login', async (req: Request, res: Response): Promise<void> => {
@@ -59,6 +112,14 @@ adminRouter.post('/login', async (req: Request, res: Response): Promise<void> =>
     const verification = await verifyAdminIdToken(tokenToVerify);
 
     if (!verification.isValid) {
+      serverStore.recordAuditEvent({
+        id: `audit-login-fail-${Date.now()}`,
+        timestamp: Date.now(),
+        type: 'ADMIN_ACTION',
+        description: `Firebase ID token verification failed: ${verification.error || 'Invalid credentials'}`,
+        electionId: 1,
+      });
+
       res.status(401).json({
         success: false,
         message: verification.error || 'Administrator authentication failed. Unauthorized credentials.',
@@ -67,7 +128,14 @@ adminRouter.post('/login', async (req: Request, res: Response): Promise<void> =>
     }
 
     const officerEmail = verification.email || 'officer@blockballot.gov.in';
-    const officerRole = verification.role || 'Returning Officer';
+    const rawRole = (verification.role || '').toUpperCase();
+    let officerRole: AuthorityRole = 'PLATFORM_ADMIN';
+    if (rawRole.includes('ELECTION_OFFICER') || rawRole.includes('RETURNING')) {
+      officerRole = 'ELECTION_OFFICER';
+    } else if (rawRole.includes('VOTER_REGISTRATION')) {
+      officerRole = 'VOTER_REGISTRATION_OFFICER';
+    }
+
     const token = `adm_${crypto.randomBytes(32).toString('hex')}`;
     const expiresAt = Date.now() + 4 * 60 * 60 * 1000; // 4 hours
 
@@ -78,11 +146,42 @@ adminRouter.post('/login', async (req: Request, res: Response): Promise<void> =>
       expiresAt,
     });
 
+    const sessionAccount: AuthorityAccount = {
+      id: verification.uid || `auth-${Date.now()}`,
+      email: officerEmail,
+      displayName: verification.email || 'Authorized Officer',
+      role: officerRole,
+      status: 'ACTIVE',
+      assignmentScope: officerRole === 'PLATFORM_ADMIN' ? undefined : {
+        state: 'Delhi',
+        district: 'New Delhi',
+        constituencyIds: ['CONST-04-ND', 'CONST-77-VAR'],
+      },
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      schemaVersion: SCHEMA_VERSION_CURRENT,
+    };
+
+    const session: OfficerSession = {
+      token,
+      accountId: sessionAccount.id,
+      email: sessionAccount.email,
+      displayName: sessionAccount.displayName,
+      role: sessionAccount.role,
+      status: 'ACTIVE',
+      assignmentScope: sessionAccount.assignmentScope,
+      permissions: getPermissionsForRole(officerRole),
+      createdAt: Date.now(),
+      expiresAt,
+      isRevoked: false,
+    };
+    registerOfficerSessionForTesting(session);
+
     serverStore.recordAuditEvent({
       id: `audit-admin-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       timestamp: Date.now(),
       type: 'ADMIN_ACTION',
-      description: `Administrative officer authenticated: ${officerEmail} (Role: ${officerRole})`,
+      description: `Administrative officer authenticated via token: ${officerEmail} (Role: ${officerRole})`,
       electionId: 1,
     });
 
@@ -92,15 +191,18 @@ adminRouter.post('/login', async (req: Request, res: Response): Promise<void> =>
       token,
       expiresAt,
       user: {
+        id: session.accountId,
         email: officerEmail,
+        displayName: session.displayName,
         role: officerRole,
-        permissions: ['MANAGE_ELECTIONS', 'MANAGE_CANDIDATES', 'MANAGE_VOTERS', 'VIEW_AUDIT'],
+        scope: session.assignmentScope,
+        permissions: session.permissions,
       },
     });
     return;
   }
 
-  // Flow B: Local Demo Administrator login (strictly disabled in production)
+  // Flow B: Local Operational Officer & Demo Administrator login (strictly disabled in production)
   if (email && typeof email === 'string' && password && typeof password === 'string') {
     if (SERVER_CONFIG.NODE_ENV === 'production' || process.env.NODE_ENV === 'production') {
       res.status(403).json({
@@ -110,60 +212,59 @@ adminRouter.post('/login', async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    if (!SERVER_CONFIG.DEMO_ADMIN_ENABLED) {
-      res.status(403).json({
-        success: false,
-        message: 'Access denied: Local demo administrator is disabled in this environment.',
+    const verification = await verifyOfficerCredentials(email, password);
+    if (!verification.success || !verification.account) {
+      serverStore.recordAuditEvent({
+        id: `audit-login-fail-${Date.now()}`,
+        timestamp: Date.now(),
+        type: 'ADMIN_ACTION',
+        description: `Failed officer login attempt for identifier '${email.trim()}'`,
+        electionId: 1,
       });
-      return;
-    }
 
-    const cleanEmail = email.trim().toLowerCase();
-    if (cleanEmail !== SERVER_CONFIG.DEMO_ADMIN_EMAIL.toLowerCase()) {
       res.status(401).json({
         success: false,
-        message: 'Invalid administrative credentials.',
+        message: verification.message || 'Invalid administrative credentials.',
       });
       return;
     }
 
-    const expectedPassword = SERVER_CONFIG.DEMO_ADMIN_PASSWORD;
-    if (!expectedPassword || expectedPassword.length < 8 || password.trim() !== expectedPassword) {
-      res.status(401).json({
-        success: false,
-        message: 'Invalid administrative credentials.',
-      });
-      return;
-    }
+    const account = verification.account;
+    const session = createOfficerSession(account);
 
-    const token = `adm_${crypto.randomBytes(32).toString('hex')}`;
-    const expiresAt = Date.now() + 4 * 60 * 60 * 1000; // 4 hours
-
-    adminSessions.set(token, {
-      email: SERVER_CONFIG.DEMO_ADMIN_EMAIL,
-      uid: 'demo-admin-uid',
-      role: 'Returning Officer',
-      expiresAt,
+    // Also populate legacy adminSessions map for backward compatibility
+    adminSessions.set(session.token, {
+      email: account.email,
+      uid: account.id,
+      role: account.role,
+      expiresAt: session.expiresAt,
     });
 
     serverStore.recordAuditEvent({
       id: `audit-admin-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       timestamp: Date.now(),
       type: 'ADMIN_ACTION',
-      description: `Local demo administrator authenticated: ${SERVER_CONFIG.DEMO_ADMIN_EMAIL} (${SERVER_CONFIG.DEMO_ADMIN_DISPLAY_NAME})`,
+      description: `Operational officer authenticated: ${account.id} (${account.displayName}, Role: ${account.role})`,
       electionId: 1,
     });
 
+    const userPermissions: string[] = [...session.permissions];
+    if (account.role === 'PLATFORM_ADMIN') {
+      userPermissions.push('MANAGE_ELECTIONS', 'MANAGE_CANDIDATES', 'MANAGE_VOTERS', 'VIEW_AUDIT');
+    }
+
     res.status(200).json({
       success: true,
-      message: 'BlockBallot local demo administrator authenticated successfully.',
-      token,
-      expiresAt,
+      message: `BlockBallot ${account.displayName} authenticated successfully.`,
+      token: session.token,
+      expiresAt: session.expiresAt,
       user: {
-        email: SERVER_CONFIG.DEMO_ADMIN_EMAIL,
-        displayName: SERVER_CONFIG.DEMO_ADMIN_DISPLAY_NAME,
-        role: 'Returning Officer',
-        permissions: ['MANAGE_ELECTIONS', 'MANAGE_CANDIDATES', 'MANAGE_VOTERS', 'VIEW_AUDIT'],
+        id: account.id,
+        email: account.email,
+        displayName: account.displayName,
+        role: account.role,
+        scope: account.assignmentScope,
+        permissions: userPermissions,
         isDemoAccount: true,
       },
     });
@@ -173,6 +274,53 @@ adminRouter.post('/login', async (req: Request, res: Response): Promise<void> =>
   res.status(401).json({
     success: false,
     message: 'Access denied: Valid Firebase officer authentication token or demo credentials required.',
+  });
+});
+
+/**
+ * POST /api/admin/logout
+ * Revokes current officer session.
+ */
+adminRouter.post('/logout', (req: Request, res: Response): void => {
+  const token = extractSessionToken(req);
+  if (!token) {
+    res.status(401).json({ success: false, message: 'No active session token provided.' });
+    return;
+  }
+
+  const session = getOfficerSession(token);
+  revokeOfficerSession(token);
+  adminSessions.delete(token);
+
+  if (session) {
+    serverStore.recordAuditEvent({
+      id: `audit-logout-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: Date.now(),
+      type: 'ADMIN_ACTION',
+      description: `Officer logged out and session revoked: ${session.accountId} (${session.displayName})`,
+      electionId: 1,
+    });
+  }
+
+  res.status(200).json({ success: true, message: 'Administrative officer session terminated and revoked.' });
+});
+
+/**
+ * GET /api/admin/session
+ * Validates current session and returns verified account profile.
+ */
+adminRouter.get('/session', authenticateOfficer, (req: Request, res: Response): void => {
+  const session = (req as any).officer as OfficerSession;
+  res.status(200).json({
+    success: true,
+    user: {
+      id: session.accountId,
+      email: session.email,
+      displayName: session.displayName,
+      role: session.role,
+      scope: session.assignmentScope,
+      permissions: session.permissions,
+    },
   });
 });
 
@@ -188,13 +336,9 @@ adminRouter.get('/elections', (req: Request, res: Response): void => {
 /**
  * POST /api/admin/elections
  * Creates a new election with timeframe and numericId validation.
+ * Requires ELECTION_CREATE permission.
  */
-adminRouter.post('/elections', async (req: Request, res: Response): Promise<void> => {
-  if (!verifyAdminAuth(req)) {
-    res.status(403).json({ success: false, message: 'Unauthorized. Officer authentication required.' });
-    return;
-  }
-
+adminRouter.post('/elections', requirePermission('ELECTION_CREATE'), async (req: Request, res: Response): Promise<void> => {
   const { title, description, electionType, numericId, startTime, endTime, contractAddress, constituencyIds, status } = req.body;
 
   if (!title || typeof title !== 'string' || title.trim().length === 0) {
@@ -242,10 +386,23 @@ adminRouter.post('/elections', async (req: Request, res: Response): Promise<void
 /**
  * PATCH /api/admin/elections/:id/status
  * Manages election lifecycle transitions (draft -> scheduled -> active -> paused -> concluded).
+ * Enforces action-specific permissions based on target status.
  */
 adminRouter.patch('/elections/:id/status', async (req: Request, res: Response): Promise<void> => {
-  if (!verifyAdminAuth(req)) {
-    res.status(403).json({ success: false, message: 'Unauthorized. Officer authentication required.' });
+  const token = extractSessionToken(req);
+  if (!token) {
+    res.status(401).json({ success: false, message: 'Unauthorized. Officer authentication required.' });
+    return;
+  }
+
+  const session = getOfficerSession(token);
+  if (!session) {
+    res.status(401).json({ success: false, message: 'Unauthorized. Session invalid, expired, or revoked.' });
+    return;
+  }
+
+  if (session.status !== 'ACTIVE') {
+    res.status(403).json({ success: false, message: `Forbidden. Account is ${session.status}.` });
     return;
   }
 
@@ -256,6 +413,34 @@ adminRouter.patch('/elections/:id/status', async (req: Request, res: Response): 
     res.status(400).json({
       success: false,
       message: 'Invalid status. Must be one of draft, scheduled, active, paused, or concluded.',
+    });
+    return;
+  }
+
+  // Resolve target permission
+  let requiredPermission: Permission = 'ELECTION_UPDATE';
+  if (status === 'active') {
+    requiredPermission = 'ELECTION_ACTIVATE';
+  } else if (status === 'paused') {
+    requiredPermission = 'ELECTION_PAUSE';
+  } else if (status === 'concluded') {
+    requiredPermission = 'ELECTION_CONCLUDE';
+  }
+
+  if (!hasPermission(session.role, requiredPermission)) {
+    serverStore.recordAuditEvent({
+      id: `audit-denied-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: Date.now(),
+      type: 'ADMIN_ACTION',
+      description: `Access denied: Account '${session.accountId}' (${session.role}) lacks permission '${requiredPermission}' to transition election to '${status}'`,
+      electionId: 1,
+    });
+
+    res.status(403).json({
+      success: false,
+      message: `Forbidden: Account role '${session.role}' lacks permission '${requiredPermission}' required to transition election to '${status}'.`,
+      requiredPermission,
+      role: session.role,
     });
     return;
   }
@@ -291,13 +476,9 @@ adminRouter.get('/candidates', (req: Request, res: Response): void => {
 /**
  * POST /api/admin/candidates
  * Registers a nominated candidate before an election becomes active.
+ * Requires CANDIDATE_MANAGE permission and enforces jurisdiction scope.
  */
-adminRouter.post('/candidates', async (req: Request, res: Response): Promise<void> => {
-  if (!verifyAdminAuth(req)) {
-    res.status(403).json({ success: false, message: 'Unauthorized. Officer authentication required.' });
-    return;
-  }
-
+adminRouter.post('/candidates', requirePermission('CANDIDATE_MANAGE'), async (req: Request, res: Response): Promise<void> => {
   const {
     constituencyId,
     name,
@@ -315,6 +496,24 @@ adminRouter.post('/candidates', async (req: Request, res: Response): Promise<voi
     res.status(400).json({
       success: false,
       message: 'Missing candidate parameters (constituencyId, name, partyName).',
+    });
+    return;
+  }
+
+  // Scope enforcement: verify candidate constituency is within officer's assignment scope
+  const session = (req as any).officer as OfficerSession;
+  if (session && !isConstituencyInScope(session.assignmentScope, constituencyId)) {
+    serverStore.recordAuditEvent({
+      id: `audit-scope-denied-${Date.now()}`,
+      timestamp: Date.now(),
+      type: 'ADMIN_ACTION',
+      description: `Scope violation: Account '${session.accountId}' attempted adding candidate to out-of-scope constituency '${constituencyId}'`,
+      electionId: 1,
+    });
+
+    res.status(403).json({
+      success: false,
+      message: `Access denied: Constituency '${constituencyId}' is outside officer's authorized assignment scope.`,
     });
     return;
   }
@@ -391,25 +590,18 @@ adminRouter.post('/candidates', async (req: Request, res: Response): Promise<voi
 
 /**
  * GET /api/admin/voters
+ * Requires VOTER_READ permission.
  */
-adminRouter.get('/voters', (req: Request, res: Response): void => {
-  if (!verifyAdminAuth(req)) {
-    res.status(403).json({ success: false, message: 'Unauthorized. Officer authentication required.' });
-    return;
-  }
+adminRouter.get('/voters', requirePermission('VOTER_READ'), (req: Request, res: Response): void => {
   const voters = serverStore.getAllVoters();
   res.status(200).json({ success: true, voters });
 });
 
 /**
  * PATCH /api/admin/voters/:id/eligibility
+ * Requires VOTER_UPDATE permission.
  */
-adminRouter.patch('/voters/:id/eligibility', async (req: Request, res: Response): Promise<void> => {
-  if (!verifyAdminAuth(req)) {
-    res.status(403).json({ success: false, message: 'Unauthorized. Officer authentication required.' });
-    return;
-  }
-
+adminRouter.patch('/voters/:id/eligibility', requirePermission('VOTER_UPDATE'), async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
   const { isEligible } = req.body;
 
@@ -427,13 +619,9 @@ adminRouter.patch('/voters/:id/eligibility', async (req: Request, res: Response)
 
 /**
  * POST /api/admin/voters/:id/reset
+ * Requires VOTER_UPDATE permission.
  */
-adminRouter.post('/voters/:id/reset', async (req: Request, res: Response): Promise<void> => {
-  if (!verifyAdminAuth(req)) {
-    res.status(403).json({ success: false, message: 'Unauthorized. Officer authentication required.' });
-    return;
-  }
-
+adminRouter.post('/voters/:id/reset', requirePermission('VOTER_UPDATE'), async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
   const success = await serverStore.resetVoterAuthorizationAsync(id);
   if (!success) {
@@ -505,8 +693,22 @@ adminRouter.get('/results', (req: Request, res: Response): void => {
 
 /**
  * GET /api/audit-events
+ * Public summary or administrative audit stream.
  */
 adminRouter.get('/audit-events', (req: Request, res: Response): void => {
   const auditEvents = serverStore.getAllAuditEvents();
   res.status(200).json({ success: true, auditEvents });
 });
+
+/**
+ * GET /api/admin/audit or /api/admin/audit-events
+ * Requires AUDIT_READ permission.
+ */
+adminRouter.get(
+  ['/audit', '/admin/audit', '/audit-events-protected'],
+  requirePermission('AUDIT_READ'),
+  (req: Request, res: Response): void => {
+    const auditEvents = serverStore.getAllAuditEvents();
+    res.status(200).json({ success: true, auditEvents });
+  }
+);

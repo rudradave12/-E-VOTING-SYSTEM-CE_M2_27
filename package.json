@@ -13,6 +13,7 @@
     "test:integration": "tsx scripts/run-blockchain-integration.ts",
     "benchmark": "tsx scripts/benchmark-performance.ts",
     "admin:seed": "tsx scripts/seed-demo-admin.ts",
+    "officers:seed": "tsx scripts/seed-demo-officers.ts",
     "voters:cleanup": "tsx scripts/cleanup-legacy-demo-voters.ts",
     "model:migrate": "tsx scripts/inspect-and-migrate-data-model.ts",
     "node:start": "hardhat --config hardhat.config.cjs node --hostname 127.0.0.1 --port 8545",
