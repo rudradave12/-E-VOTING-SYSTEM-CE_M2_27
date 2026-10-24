@@ -18,6 +18,7 @@ import {
   RecognizedPartyRecord,
 } from '../src/data/historical2024';
 import { OtpChallengeRecord } from './store';
+import { computeEpicHash } from './crypto';
 
 /**
  * Shared Firestore instance via Firebase Admin SDK.
@@ -85,13 +86,19 @@ export async function getOtpChallengeFromFirestore(epicId: string): Promise<OtpC
 
 /**
  * 2. Voter Lifecycle State Persistence in Firestore (/voters/{voterId})
+ * Implements salted HMAC-SHA256 digest indexing (epicHash) as specified in the research report,
+ * preserving fast indexed lookup and duplicate vote prevention without exposing plaintext roll identifiers.
  */
 export async function saveVoterRecordToFirestore(voter: VoterRecord): Promise<void> {
   assertConfigured();
   const docRef = serverDb.collection('voters').doc(voter.id);
+  const epicUpper = voter.epicId.trim().toUpperCase();
+  const epicHash = computeEpicHash(epicUpper);
+
   const payload: any = {
     id: voter.id,
-    epicId: voter.epicId.trim().toUpperCase(),
+    epicId: epicUpper,
+    epicHash,
     name: voter.name,
     gender: voter.gender,
     age: voter.age,
@@ -111,8 +118,17 @@ export async function saveVoterRecordToFirestore(voter: VoterRecord): Promise<vo
 
 export async function getVoterRecordByEpicFromFirestore(epicId: string): Promise<VoterRecord | null> {
   assertConfigured();
-  const epicKey = epicId.trim().toUpperCase();
-  const snap = await serverDb.collection('voters').where('epicId', '==', epicKey).limit(1).get();
+  const epicUpper = epicId.trim().toUpperCase();
+  const epicHash = computeEpicHash(epicUpper);
+
+  // 1. Primary lookup using keyed HMAC hash index
+  const snapByHash = await serverDb.collection('voters').where('epicHash', '==', epicHash).limit(1).get();
+  if (!snapByHash.empty) {
+    return snapByHash.docs[0].data() as VoterRecord;
+  }
+
+  // 2. Backward compatibility fallback for legacy unindexed test documents
+  const snap = await serverDb.collection('voters').where('epicId', '==', epicUpper).limit(1).get();
   if (snap.empty) return null;
   return snap.docs[0].data() as VoterRecord;
 }

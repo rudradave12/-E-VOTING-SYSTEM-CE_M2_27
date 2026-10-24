@@ -45,16 +45,40 @@ voterRouter.get('/config', (_req: Request, res: Response): void => {
 });
 
 /**
+ * Validates EPIC ID format.
+ * - Standard Indian ECI format: 10 alphanumeric characters (3 uppercase letters followed by 7 digits, e.g., 'ABC1234567').
+ * - Academic Demo Mode (strictly disabled in production): allows synthetic test prefix format (e.g. 'IND-DL-982341' or 'IND-...').
+ */
+export function isValidEpicFormat(epicId: string, isProduction: boolean = SERVER_CONFIG.NODE_ENV === 'production'): boolean {
+  if (!epicId || typeof epicId !== 'string') return false;
+  const trimmed = epicId.trim().toUpperCase();
+
+  // 1. Standard 10-character alphanumeric Indian EPIC format (3 letters + 7 digits)
+  const standardEpicRegex = /^[A-Z]{3}[0-9]{7}$/;
+  if (standardEpicRegex.test(trimmed)) {
+    return true;
+  }
+
+  // 2. Synthetic prefixed demo identities permitted ONLY when NOT in production
+  if (!isProduction) {
+    const syntheticDemoRegex = /^IND-[A-Z0-9-]+$/;
+    return syntheticDemoRegex.test(trimmed);
+  }
+
+  return false;
+}
+
+/**
  * POST /api/voter/verify & POST /api/voter/lookup (alias)
  * Initiates synthetic voter verification and issues an HMAC-SHA256 protected OTP challenge.
  */
 const handleVoterVerify = async (req: Request, res: Response): Promise<void> => {
   const { epicId } = req.body;
 
-  if (!epicId || typeof epicId !== 'string' || epicId.trim().length < 5) {
+  if (!epicId || typeof epicId !== 'string' || !isValidEpicFormat(epicId)) {
     res.status(400).json({
       success: false,
-      message: 'Invalid voter identification format provided.',
+      message: 'Invalid voter identification format provided. Standard EPIC format requires 10 alphanumeric characters (3 letters followed by 7 digits).',
     });
     return;
   }
@@ -174,7 +198,7 @@ voterRouter.post('/verify-otp', async (req: Request, res: Response): Promise<voi
   if (now > challenge.expiresAt) {
     res.status(400).json({
       success: false,
-      message: 'The verification code challenge has expired. Challenges are valid for 5 minutes only.',
+      message: 'The verification code challenge has expired. Challenges are valid for 180 seconds only.',
     });
     return;
   }

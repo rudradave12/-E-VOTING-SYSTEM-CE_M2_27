@@ -21,7 +21,7 @@ export const OtpScreen: React.FC<OtpScreenProps> = ({
   const [currentCode, setCurrentCode] = useState<string>(testDeliveryCode || DEMO_OTP);
   const [otp, setOtp] = useState<string>('');
   const [attemptsRemaining, setAttemptsRemaining] = useState<number>(3);
-  const [timeLeft, setTimeLeft] = useState<number>(300); // 5 mins
+  const [timeLeft, setTimeLeft] = useState<number>(180); // 180 seconds (3 mins as per research report)
   const [resendCooldown, setResendCooldown] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState<boolean>(false);
@@ -103,7 +103,7 @@ export const OtpScreen: React.FC<OtpScreenProps> = ({
     } catch {
       // fallback
     }
-    setTimeLeft(300);
+    setTimeLeft(180);
     setAttemptsRemaining(3);
     setResendCooldown(60);
     setError(null);

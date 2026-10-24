@@ -32,6 +32,7 @@ import {
   getAllAuditEventsFromFirestore,
 } from './firestore';
 import { isFirebaseConfigured } from './firebaseAdmin';
+import { createVoterJwt, verifyVoterJwt } from './crypto';
 
 export interface OtpChallengeRecord {
   epicId: string;
@@ -52,6 +53,8 @@ export interface VoterSession {
   constituencyCode: number;
   createdAt: number;
   expiresAt: number;
+  jti?: string;
+  isJwt?: boolean;
 }
 
 class ServerStore {
@@ -59,6 +62,7 @@ class ServerStore {
   private voters: Map<string, VoterRecord> = new Map();
   private otpChallenges: Map<string, OtpChallengeRecord> = new Map();
   private sessions: Map<string, VoterSession> = new Map();
+  private revokedJtis: Set<string> = new Set();
   private elections: Map<string, Election> = new Map();
   private constituencies: Map<string, Constituency> = new Map();
   private candidates: Map<string, Candidate> = new Map();
@@ -334,9 +338,16 @@ class ServerStore {
     return undefined;
   }
 
-  // --- Session Management ---
+  // --- Session Management (Signed Expiring JWT Bearer Tokens) ---
   public createSession(voter: VoterRecord, constituencyCode: number): VoterSession {
-    const token = `session_${crypto.randomBytes(24).toString('hex')}`;
+    const { token, jti, expiresAt } = createVoterJwt({
+      epicId: voter.epicId,
+      voterId: voter.id,
+      name: voter.name,
+      constituencyId: voter.constituencyId,
+      constituencyCode,
+    });
+
     const session: VoterSession = {
       token,
       epicId: voter.epicId,
@@ -345,13 +356,56 @@ class ServerStore {
       constituencyId: voter.constituencyId,
       constituencyCode,
       createdAt: Date.now(),
-      expiresAt: Date.now() + SERVER_CONFIG.SESSION_EXPIRY_MS,
+      expiresAt,
+      jti,
+      isJwt: true,
     };
+
     this.sessions.set(token, session);
     return session;
   }
 
   public getSession(token: string): VoterSession | undefined {
+    if (!token || typeof token !== 'string') return undefined;
+
+    // 1. If it has 3 dot-separated parts, it is a signed JWT bearer token
+    if (token.split('.').length === 3) {
+      const jwtResult = verifyVoterJwt(token);
+      if (!jwtResult.isValid || !jwtResult.payload) {
+        return undefined;
+      }
+
+      // Check if jti has been explicitly revoked / logged out
+      if (this.revokedJtis.has(jwtResult.payload.jti)) {
+        return undefined;
+      }
+
+      // If present in active in-memory sessions cache, check memory expiry
+      const inMemory = this.sessions.get(token);
+      if (inMemory) {
+        if (Date.now() > inMemory.expiresAt) {
+          this.sessions.delete(token);
+          return undefined;
+        }
+        return inMemory;
+      }
+
+      // Reconstruct verified session from validated cryptographic claims
+      return {
+        token,
+        epicId: jwtResult.payload.sub,
+        voterId: jwtResult.payload.voterId,
+        name: jwtResult.payload.name,
+        constituencyId: jwtResult.payload.constituencyId,
+        constituencyCode: jwtResult.payload.constituencyCode,
+        createdAt: jwtResult.payload.iat * 1000,
+        expiresAt: jwtResult.payload.exp * 1000,
+        jti: jwtResult.payload.jti,
+        isJwt: true,
+      };
+    }
+
+    // 2. Fallback for legacy opaque tokens (if present in tests)
     const session = this.sessions.get(token);
     if (!session) return undefined;
     if (Date.now() > session.expiresAt) {
@@ -362,7 +416,25 @@ class ServerStore {
   }
 
   public deleteSession(token: string): void {
+    const session = this.sessions.get(token);
+    if (session?.jti) {
+      this.revokedJtis.add(session.jti);
+    } else if (token.split('.').length === 3) {
+      const parsed = verifyVoterJwt(token);
+      if (parsed.payload?.jti) {
+        this.revokedJtis.add(parsed.payload.jti);
+      }
+    }
     this.sessions.delete(token);
+  }
+
+  public revokeSession(tokenOrJti: string): void {
+    this.revokedJtis.add(tokenOrJti);
+    this.sessions.delete(tokenOrJti);
+  }
+
+  public isJtiRevoked(jti: string): boolean {
+    return this.revokedJtis.has(jti);
   }
 
   // --- Election Management Operations ---

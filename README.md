@@ -166,10 +166,19 @@ Run the full verification suite to validate system integrity:
 # 1. Static Typecheck (0 errors)
 npm run lint
 
-# 2. Automated Test Suite (15 test suites, 79 tests: 75 passed, 0 failed, 4 skipped)
+# 2. Automated Test Suite (15 test files, 114 test assertions: 100% passed)
 npm test
 
-# 3. Production Bundle Build (Vite production build: dist/ in < 1s)
+# 3. Dedicated Live Blockchain Integration Tests (Fails closed if node is offline)
+npm run test:integration
+
+# 4. Repeatable Gas and Latency Benchmark Suite
+npm run benchmark
+
+# 5. Live Local Firestore Emulator Integration Tests
+npm run emulator:test
+
+# 6. Production Bundle Build (Vite production build: dist/ in < 1s)
 npm run build
 ```
 
@@ -179,11 +188,12 @@ npm run build
 
 | Original Requirement | Architectural Specification | Implementation Files & Routes | Verification Evidence | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **Voter Identity & OTP** | EPIC verification against electoral roll followed by rate-limited 6-digit OTP challenge | `server/routes/voter.ts` (`/verify`, `/lookup`, `/verify-otp`) | `src/test/ux_redesign.test.ts` (Test 2) | **Implemented** |
-| **Session Management** | Cryptographic session token generation with configurable TTL (default 15m) | `server/store.ts` (`createSession`, `getSession`) | `src/test/phase7f_final_completion.test.ts` (Part 1, Test 2) | **Implemented** |
-| **Constituency Eligibility** | Electors can only vote for candidates in their registered constituency | `server/routes/voter.ts` (`/authorization`) | `src/test/phase7f_final_completion.test.ts` (Part 4, Test 4) | **Implemented** |
-| **One-Person / One-Vote** | Status lifecycle transition from `ELIGIBLE` -> `AUTHORIZED` -> `VOTED` + Nullifier tracking | `server/routes/voter.ts` (`/record-vote`), `contracts/IndianElection.sol` | `src/test/phase7f_final_completion.test.ts` (Test 4) | **Implemented** |
-| **Live Voting Windows** | Strict time boundaries rejecting votes before start, at closing, or after closing | `server/routes/voter.ts` (`/authorization`, `/record-vote`), `contracts/IndianElection.sol` | `src/test/phase7f_final_completion.test.ts` (Test 3) | **Implemented** |
+| **Voter Identity & OTP** | Standard 10-char alphanumeric EPIC format with rate-limited 6-digit OTP valid for 180 seconds | `server/routes/voter.ts` (`/verify`, `/lookup`, `/verify-otp`) | `src/test/crypto.test.ts`, `src/test/ux_redesign.test.ts` | **Implemented** |
+| **Session Management** | RFC 7519 / HS256 signed JWT bearer tokens with issuer/audience validation and revocation | `server/crypto.ts` (`createVoterJwt`), `server/store.ts` (`createSession`) | `src/test/crypto.test.ts`, `src/test/phase7f_final_completion.test.ts` | **Implemented** |
+| **Off-Chain Data Protection** | Salted HMAC-SHA256 indexing (`epicHash`), masked mobile numbers, zero plaintext OTP storage | `server/crypto.ts`, `server/firestore.ts`, `firestore.rules` | `src/test/crypto.test.ts`, `src/test/phase7a2_emulator_integration.test.ts` | **Implemented** |
+| **Constituency Eligibility** | Electors can only vote for candidates in their registered constituency | `server/routes/voter.ts` (`/authorization`), `contracts/IndianElection.sol` | `src/test/phase7f_final_completion.test.ts` (Test 4) | **Implemented** |
+| **One-Person / One-Vote** | Status lifecycle transition from `ELIGIBLE` -> `AUTHORIZED` -> `VOTED` + Nullifier burning | `server/routes/voter.ts` (`/record-vote`), `contracts/IndianElection.sol` | `src/test/eip712.test.ts`, `src/test/contract_guards.test.ts` | **Implemented** |
+| **Live Voting Windows** | Strict time boundaries rejecting votes before start, at closing, or after closing | `server/routes/voter.ts` (`/authorization`), `contracts/IndianElection.sol` | `src/test/phase7f_final_completion.test.ts` (Test 3) | **Implemented** |
 | **Admin Election Lifecycle** | State machine: `draft` -> `scheduled` -> `active` -> `paused` -> `concluded` | `server/routes/admin.ts` (`/status`), `server/store.ts` | `src/test/ux_redesign.test.ts` (Test 8) | **Implemented** |
 | **Admin Candidate Nomination** | Candidate registration with ECI symbol verification and nomination lock | `server/routes/admin.ts` (`/candidates`), `server/store.ts` | `src/test/phase5_election_management.test.ts` (Test 3) | **Implemented** |
 | **Read-Only Concluded Archive** | Concluded elections displayed for public audit without voting forms | `src/components/screens/ElectionsResultsScreen.tsx` | `src/test/phase7f_final_completion.test.ts` (Test 5) | **Implemented** |
@@ -205,8 +215,9 @@ npm run build
 
 ---
 
-## 8. Project Documentation Index
+## 9. Project Documentation Index
 
+* [**Final Verification and Gap Closure Report**](file:///E:/Projects/BlockBallot-EVoting-System/docs/FINAL_VERIFICATION_AND_GAPS.md) — *Authoritative requirement-by-requirement audit & benchmarks*
 * [Configuration Reference Guide](file:///E:/Projects/BlockBallot-EVoting-System/docs/CONFIGURATION_REFERENCE.md)
 * [Firebase Staging Setup Guide](file:///E:/Projects/BlockBallot-EVoting-System/docs/FIREBASE_STAGING_GUIDE.md)
 * [AWS Staging Architecture & Cost Notes](file:///E:/Projects/BlockBallot-EVoting-System/docs/AWS_STAGING_ARCHITECTURE.md)

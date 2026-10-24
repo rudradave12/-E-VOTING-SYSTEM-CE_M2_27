@@ -126,7 +126,7 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
               <Search className="w-5 h-5 text-slate-400 absolute right-3.5 top-3.5 pointer-events-none" />
             </div>
             <p className="text-[11px] text-slate-500 mt-1.5">
-              Standard format: 3-letter Country, 2-letter State, 6 digits (e.g. <span className="font-mono">IND-DL-982341</span>)
+              Standard ECI format: 10 alphanumeric characters (e.g. <span className="font-mono">ABC1234567</span>) or Academic Demo format (e.g. <span className="font-mono">IND-DL-982341</span>)
             </p>
           </div>
 

@@ -86,7 +86,7 @@ export const SERVER_CONFIG = {
   },
 
   // Limits
-  OTP_EXPIRY_MS: 5 * 60 * 1000, // 5 minutes
+  OTP_EXPIRY_MS: 180 * 1000, // 180 seconds (3 minutes) as specified in research report
   OTP_COOLDOWN_MS: 60 * 1000, // 60 seconds
   OTP_MAX_ATTEMPTS: 3,
   SESSION_EXPIRY_MS: 15 * 60 * 1000, // 15 minutes
