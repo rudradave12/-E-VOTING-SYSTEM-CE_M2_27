@@ -45,10 +45,10 @@ voterRouter.get('/config', (_req: Request, res: Response): void => {
 });
 
 /**
- * POST /api/voter/verify
+ * POST /api/voter/verify & POST /api/voter/lookup (alias)
  * Initiates synthetic voter verification and issues an HMAC-SHA256 protected OTP challenge.
  */
-voterRouter.post('/verify', async (req: Request, res: Response): Promise<void> => {
+const handleVoterVerify = async (req: Request, res: Response): Promise<void> => {
   const { epicId } = req.body;
 
   if (!epicId || typeof epicId !== 'string' || epicId.trim().length < 5) {
@@ -129,7 +129,10 @@ voterRouter.post('/verify', async (req: Request, res: Response): Promise<void> =
       testNotice: 'Academic Demo: testDeliveryCode included because live SMS gateway is unconfigured.',
     }),
   });
-});
+};
+
+voterRouter.post('/verify', handleVoterVerify);
+voterRouter.post('/lookup', handleVoterVerify);
 
 /**
  * POST /api/voter/verify-otp

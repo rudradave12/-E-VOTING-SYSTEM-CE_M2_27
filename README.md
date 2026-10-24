@@ -166,16 +166,38 @@ Run the full verification suite to validate system integrity:
 # 1. Static Typecheck (0 errors)
 npm run lint
 
-# 2. Automated Test Suite (15 test suites, 74+ tests passing)
+# 2. Automated Test Suite (15 test suites, 79 tests: 75 passed, 0 failed, 4 skipped)
 npm test
 
-# 3. Production Bundle Build (Vite production build)
+# 3. Production Bundle Build (Vite production build: dist/ in < 1s)
 npm run build
 ```
 
 ---
 
-## 7. Staging Credentials & Secrets Security
+## 7. Requirements Traceability (Academic Specification vs Implementation)
+
+| Original Requirement | Architectural Specification | Implementation Files & Routes | Verification Evidence | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **Voter Identity & OTP** | EPIC verification against electoral roll followed by rate-limited 6-digit OTP challenge | `server/routes/voter.ts` (`/verify`, `/lookup`, `/verify-otp`) | `src/test/ux_redesign.test.ts` (Test 2) | **Implemented** |
+| **Session Management** | Cryptographic session token generation with configurable TTL (default 15m) | `server/store.ts` (`createSession`, `getSession`) | `src/test/phase7f_final_completion.test.ts` (Part 1, Test 2) | **Implemented** |
+| **Constituency Eligibility** | Electors can only vote for candidates in their registered constituency | `server/routes/voter.ts` (`/authorization`) | `src/test/phase7f_final_completion.test.ts` (Part 4, Test 4) | **Implemented** |
+| **One-Person / One-Vote** | Status lifecycle transition from `ELIGIBLE` -> `AUTHORIZED` -> `VOTED` + Nullifier tracking | `server/routes/voter.ts` (`/record-vote`), `contracts/IndianElection.sol` | `src/test/phase7f_final_completion.test.ts` (Test 4) | **Implemented** |
+| **Live Voting Windows** | Strict time boundaries rejecting votes before start, at closing, or after closing | `server/routes/voter.ts` (`/authorization`, `/record-vote`), `contracts/IndianElection.sol` | `src/test/phase7f_final_completion.test.ts` (Test 3) | **Implemented** |
+| **Admin Election Lifecycle** | State machine: `draft` -> `scheduled` -> `active` -> `paused` -> `concluded` | `server/routes/admin.ts` (`/status`), `server/store.ts` | `src/test/ux_redesign.test.ts` (Test 8) | **Implemented** |
+| **Admin Candidate Nomination** | Candidate registration with ECI symbol verification and nomination lock | `server/routes/admin.ts` (`/candidates`), `server/store.ts` | `src/test/phase5_election_management.test.ts` (Test 3) | **Implemented** |
+| **Read-Only Concluded Archive** | Concluded elections displayed for public audit without voting forms | `src/components/screens/ElectionsResultsScreen.tsx` | `src/test/phase7f_final_completion.test.ts` (Test 5) | **Implemented** |
+| **Persistent Audit Logging** | Append-only audit events for election states, logins, authorizations, and votes | `server/store.ts` (`recordAuditEvent`), `server/firestore.ts` | `src/test/phase7f_final_completion.test.ts` (Test 7) | **Implemented** |
+| **Restart Recovery & Sync** | Server restores all election state from Firestore on boot | `server.ts`, `server/store.ts` (`syncFromFirestore`) | `src/test/phase7f_final_completion.test.ts` (Test 7) | **Implemented** |
+
+### Intentionally Excluded Tasks (Scope Boundaries)
+1. **Public Cloud Resource Provisioning**: AWS ECS, EKS, RDS, or CloudFront creation is excluded to prevent cloud costs.
+2. **Production Government Integrations**: Live connections to ECI NVSP/VHA portal or UIDAI Aadhaar biometric servers are prohibited outside authorized national agencies.
+3. **ZK-SNARKs Ceremony & Verifier**: While candidate choice is separated from identity via cryptographic nullifiers, full zero-knowledge tally encryption is deferred as documented future work.
+
+---
+
+## 8. Staging Credentials & Secrets Security
 
 * **Local Environment (`.env.local`)**: Contains local secrets (demo admin password, local salts). Gitignored and never committed.
 * **Production Deployment**: Real cloud deployments must configure environment variables directly in cloud secret managers (e.g., AWS Secrets Manager or GCP Secret Manager).
