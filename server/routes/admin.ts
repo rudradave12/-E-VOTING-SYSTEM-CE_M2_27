@@ -25,7 +25,18 @@ import {
   hasPermission,
   getPermissionsForRole,
 } from '../../src/types/permissions';
-import { AuthorityAccount, SCHEMA_VERSION_CURRENT } from '../../src/types/dataModel';
+import {
+  AuthorityAccount,
+  VoterProfile,
+  BiometricEnrollmentMetadata,
+  SCHEMA_VERSION_CURRENT,
+} from '../../src/types/dataModel';
+import { getDataRepositories } from '../repositories';
+import {
+  generateUniqueSimulationVoterId,
+  calculateAgeFromDob,
+  isValidSimulationVoterId,
+} from '../utils/voterId';
 
 export const adminRouter = Router();
 
@@ -588,17 +599,700 @@ adminRouter.post('/candidates', requirePermission('CANDIDATE_MANAGE'), async (re
   res.status(201).json({ success: true, message: result.message, candidate: cand });
 });
 
+const FORBIDDEN_BIOMETRIC_REGISTRATION_KEYS = [
+  'rawBytes',
+  'rawImage',
+  'faceImage',
+  'fingerprintImage',
+  'fingerprintScan',
+  'fingerprintTemplate',
+  'template',
+  'minutiae',
+  'embedding',
+  'vector',
+  'imageData',
+  'imageBytes',
+  'videoStream',
+  'photo',
+  'biometrics',
+  'biometricPayload',
+  'rawBiometric',
+];
+
+/**
+ * POST /api/admin/voters
+ * Enrolls a new synthetic voter profile with backend-generated unique simulation voter ID.
+ * Requires VOTER_CREATE permission and scope check.
+ */
+adminRouter.post('/voters', requirePermission('VOTER_CREATE'), async (req: Request, res: Response): Promise<void> => {
+  const session = (req as any).officer as OfficerSession;
+  const repos = getDataRepositories();
+
+  // 1. Invariant: Strict biometric prohibition in registration endpoints
+  for (const forbiddenKey of FORBIDDEN_BIOMETRIC_REGISTRATION_KEYS) {
+    if (forbiddenKey in req.body && req.body[forbiddenKey] !== undefined) {
+      serverStore.recordAuditEvent({
+        id: `audit-voter-reject-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        timestamp: Date.now(),
+        type: 'ADMIN_ACTION',
+        description: `Rejected voter registration attempt: Prohibited biometric field '${forbiddenKey}' submitted by '${session?.accountId}'`,
+        electionId: 1,
+      });
+
+      res.status(400).json({
+        success: false,
+        message: 'Biometric data payloads are not accepted in Phase 04 voter registry endpoints.',
+      });
+      return;
+    }
+  }
+
+  const {
+    fullName,
+    dateOfBirth,
+    gender,
+    state,
+    district,
+    constituencyId,
+    pollingStation,
+    maskedMobile,
+  } = req.body;
+
+  // 2. Validate required registration fields
+  if (!fullName || typeof fullName !== 'string' || fullName.trim().length < 2) {
+    res.status(400).json({
+      success: false,
+      message: 'Invalid fullName: Elector full name must be at least 2 characters long.',
+    });
+    return;
+  }
+
+  if (!dateOfBirth || !/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) {
+    res.status(400).json({
+      success: false,
+      message: 'Invalid dateOfBirth: Must be in canonical ISO 8601 format (YYYY-MM-DD).',
+    });
+    return;
+  }
+
+  // 3. Voting-age eligibility validation (age >= 18 on registration date)
+  const age = calculateAgeFromDob(dateOfBirth);
+  if (age < 18) {
+    serverStore.recordAuditEvent({
+      id: `audit-age-fail-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: Date.now(),
+      type: 'ADMIN_ACTION',
+      description: `Voter registration rejected: Age ${age} is under statutory minimum (18) for registration by '${session?.accountId}'`,
+      electionId: 1,
+    });
+
+    res.status(400).json({
+      success: false,
+      message: 'Voting-age eligibility violation: Elector must be at least 18 years of age on registration date.',
+    });
+    return;
+  }
+
+  if (!gender || !['M', 'F', 'O'].includes(gender)) {
+    res.status(400).json({
+      success: false,
+      message: "Invalid gender: Must be 'M', 'F', or 'O'.",
+    });
+    return;
+  }
+
+  if (!constituencyId || typeof constituencyId !== 'string') {
+    res.status(400).json({
+      success: false,
+      message: 'Missing constituencyId: Elector must be assigned to an active constituency.',
+    });
+    return;
+  }
+
+  // 4. Validate geographic assignment against reference registry
+  const validConstituency = serverStore.getAllConstituencies().some((c) => c.id === constituencyId);
+  if (!validConstituency) {
+    res.status(400).json({
+      success: false,
+      message: `Invalid geographic assignment: Constituency '${constituencyId}' does not exist in the electoral registry.`,
+    });
+    return;
+  }
+
+  // 5. Scope enforcement: verify constituency is within officer's authorized assignment scope
+  if (session && !isConstituencyInScope(session.assignmentScope, constituencyId)) {
+    serverStore.recordAuditEvent({
+      id: `audit-voter-scope-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: Date.now(),
+      type: 'ADMIN_ACTION',
+      description: `Scope violation: Account '${session.accountId}' attempted creating voter in out-of-scope constituency '${constituencyId}'`,
+      electionId: 1,
+    });
+
+    res.status(403).json({
+      success: false,
+      message: `Scope violation: Constituency '${constituencyId}' is outside officer's authorized assignment scope.`,
+    });
+    return;
+  }
+
+  // 6. Generate server-owned unique simulation voter ID (ignoring any client-supplied ID)
+  let simulationVoterId = '';
+  try {
+    simulationVoterId = await generateUniqueSimulationVoterId(repos.voterProfiles);
+  } catch (err: any) {
+    serverStore.recordAuditEvent({
+      id: `audit-id-col-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: Date.now(),
+      type: 'ADMIN_ACTION',
+      description: `Failed to generate unique simulation ID: ${err.message}`,
+      electionId: 1,
+    });
+    res.status(500).json({ success: false, message: 'Internal error generating unique simulation ID.' });
+    return;
+  }
+
+  const internalId = `vpr_${crypto.randomUUID()}`;
+  const now = Date.now();
+
+  const profile: VoterProfile = {
+    id: internalId,
+    simulationVoterId,
+    fullName: fullName.trim(),
+    dateOfBirth,
+    gender,
+    state: state?.trim() || 'NCT of Delhi',
+    district: district?.trim() || 'New Delhi',
+    constituencyId,
+    pollingStation: pollingStation?.trim() || 'Civic Community Centre, Polling Booth 1',
+    maskedMobile: maskedMobile?.trim() || '+91 ••••• •1122',
+    registrationStatus: 'REGISTERED',
+    eligibilityStatus: 'ELIGIBLE',
+    lifecycleStatus: 'ACTIVE',
+    createdAt: now,
+    updatedAt: now,
+    createdByOfficerId: session?.accountId || 'VRO-SIM-001',
+    schemaVersion: SCHEMA_VERSION_CURRENT,
+  };
+
+  // 7. Persist to repository
+  try {
+    await repos.voterProfiles.save(profile);
+  } catch (err: any) {
+    serverStore.recordAuditEvent({
+      id: `audit-persist-fail-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: Date.now(),
+      type: 'ADMIN_ACTION',
+      description: `Failed to persist voter profile '${simulationVoterId}': ${err.message}`,
+      electionId: 1,
+    });
+    res.status(500).json({ success: false, message: `Persistence failure: ${err.message}` });
+    return;
+  }
+
+  // 8. Initialize biometric enrollment metadata stubs (both NOT_STARTED)
+  try {
+    const faceMeta: BiometricEnrollmentMetadata = {
+      id: `bio_${profile.id}_face`,
+      voterId: profile.id,
+      modality: 'FACE',
+      status: 'NOT_STARTED',
+      biometricReferenceId: 'unassigned',
+      qualityCheckStatus: 'PENDING',
+      isManualException: false,
+      createdAt: now,
+      updatedAt: now,
+      schemaVersion: SCHEMA_VERSION_CURRENT,
+    };
+    const fpMeta: BiometricEnrollmentMetadata = {
+      id: `bio_${profile.id}_fingerprint`,
+      voterId: profile.id,
+      modality: 'FINGERPRINT',
+      status: 'NOT_STARTED',
+      biometricReferenceId: 'unassigned',
+      qualityCheckStatus: 'PENDING',
+      isManualException: false,
+      createdAt: now,
+      updatedAt: now,
+      schemaVersion: SCHEMA_VERSION_CURRENT,
+    };
+    await repos.biometrics.saveMetadata(faceMeta);
+    await repos.biometrics.saveMetadata(fpMeta);
+  } catch (err: any) {
+    console.warn('[VoterRegistry] Notice initializing biometric metadata stubs:', err.message);
+  }
+
+  // 9. Synchronize with runtime serverStore cache for seamless voter journey lookup
+  serverStore.setVoterRecord({
+    id: profile.id,
+    epicId: profile.simulationVoterId,
+    name: profile.fullName,
+    gender: profile.gender,
+    age,
+    constituencyId: profile.constituencyId,
+    pollingStation: profile.pollingStation,
+    maskedMobile: profile.maskedMobile,
+    isEligible: true,
+    status: 'ELIGIBLE',
+  });
+
+  // 10. Record structured audit event
+  serverStore.recordAuditEvent({
+    id: `audit-voter-create-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    timestamp: Date.now(),
+    type: 'ADMIN_ACTION',
+    description: `Voter profile created: '${profile.simulationVoterId}' in constituency '${profile.constituencyId}' by officer '${session?.accountId}'`,
+    electionId: 1,
+  });
+
+  res.status(201).json({
+    success: true,
+    message: 'Voter profile registered successfully with backend-generated simulation ID.',
+    voter: {
+      id: profile.id,
+      simulationVoterId: profile.simulationVoterId,
+      fullName: profile.fullName,
+      gender: profile.gender,
+      dateOfBirth: profile.dateOfBirth,
+      state: profile.state,
+      district: profile.district,
+      constituencyId: profile.constituencyId,
+      pollingStation: profile.pollingStation,
+      maskedMobile: profile.maskedMobile,
+      registrationStatus: profile.registrationStatus,
+      eligibilityStatus: profile.eligibilityStatus,
+      lifecycleStatus: profile.lifecycleStatus,
+      createdAt: profile.createdAt,
+    },
+  });
+});
+
 /**
  * GET /api/admin/voters
+ * Lists voter records within the officer's authorized assignment scope.
+ * Supports query parameters: constituencyId, search, registrationStatus, eligibilityStatus, limit.
  * Requires VOTER_READ permission.
  */
-adminRouter.get('/voters', requirePermission('VOTER_READ'), (req: Request, res: Response): void => {
-  const voters = serverStore.getAllVoters();
-  res.status(200).json({ success: true, voters });
+adminRouter.get('/voters', requirePermission('VOTER_READ'), async (req: Request, res: Response): Promise<void> => {
+  const session = (req as any).officer as OfficerSession;
+  const repos = getDataRepositories();
+
+  const { constituencyId, search, registrationStatus, eligibilityStatus, limit } = req.query;
+
+  // Scope check on explicit constituency query
+  if (constituencyId && typeof constituencyId === 'string') {
+    if (session && !isConstituencyInScope(session.assignmentScope, constituencyId)) {
+      res.status(403).json({
+        success: false,
+        message: `Scope violation: Access to constituency '${constituencyId}' is outside officer's authorized assignment scope.`,
+      });
+      return;
+    }
+  }
+
+  // Query repository
+  let profiles = await repos.voterProfiles.list({
+    constituencyId: constituencyId ? String(constituencyId) : undefined,
+    registrationStatus: registrationStatus ? (String(registrationStatus) as any) : undefined,
+    eligibilityStatus: eligibilityStatus ? (String(eligibilityStatus) as any) : undefined,
+    limit: limit ? Number(limit) : undefined,
+  });
+
+  // Apply officer scope filtering
+  if (session && session.assignmentScope?.constituencyIds && session.assignmentScope.constituencyIds.length > 0) {
+    const allowed = new Set(session.assignmentScope.constituencyIds);
+    profiles = profiles.filter((p) => allowed.has(p.constituencyId));
+  }
+
+  // Include in-memory serverStore voters for backwards compatibility
+  const serverVoters = serverStore.getAllVoters();
+  const knownSimulationIds = new Set(profiles.map((p) => p.simulationVoterId.toUpperCase()));
+
+  for (const sv of serverVoters) {
+    if (knownSimulationIds.has(sv.epicId.toUpperCase())) continue;
+    if (constituencyId && sv.constituencyId !== String(constituencyId)) continue;
+    if (session && !isConstituencyInScope(session.assignmentScope, sv.constituencyId)) continue;
+
+    profiles.push({
+      id: sv.id,
+      simulationVoterId: sv.epicId,
+      fullName: sv.name,
+      dateOfBirth: '1995-01-01',
+      gender: sv.gender,
+      state: 'NCT of Delhi',
+      district: 'New Delhi',
+      constituencyId: sv.constituencyId,
+      pollingStation: sv.pollingStation,
+      maskedMobile: sv.maskedMobile,
+      registrationStatus: 'REGISTERED',
+      eligibilityStatus: sv.isEligible ? 'ELIGIBLE' : 'INELIGIBLE_DISQUALIFIED',
+      lifecycleStatus: 'ACTIVE',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      schemaVersion: SCHEMA_VERSION_CURRENT,
+    });
+  }
+
+  // Apply search query filter if supplied
+  if (search && typeof search === 'string' && search.trim()) {
+    const q = search.trim().toLowerCase();
+    profiles = profiles.filter(
+      (p) =>
+        p.simulationVoterId.toLowerCase().includes(q) ||
+        p.fullName.toLowerCase().includes(q) ||
+        p.constituencyId.toLowerCase().includes(q)
+    );
+  }
+
+  res.status(200).json({ success: true, voters: profiles, count: profiles.length });
+});
+
+/**
+ * GET /api/admin/voters/:id
+ * Retrieves a permitted voter profile by internal ID or simulation ID.
+ * Returns safe registration details and biometric status metadata.
+ * Requires VOTER_READ permission.
+ */
+adminRouter.get('/voters/:id', requirePermission('VOTER_READ'), async (req: Request, res: Response): Promise<void> => {
+  const session = (req as any).officer as OfficerSession;
+  const repos = getDataRepositories();
+  const { id } = req.params;
+
+  let profile =
+    (await repos.voterProfiles.findById(id)) ||
+    (await repos.voterProfiles.findBySimulationId(id)) ||
+    (await repos.voterProfiles.findByLegacyEpic(id));
+
+  // Fallback to serverStore if not yet in profile repository
+  if (!profile) {
+    const sv = serverStore.findVoterByEpic(id) || serverStore.findVoterById(id);
+    if (sv) {
+      profile = {
+        id: sv.id,
+        simulationVoterId: sv.epicId,
+        fullName: sv.name,
+        dateOfBirth: '1995-01-01',
+        gender: sv.gender,
+        state: 'NCT of Delhi',
+        district: 'New Delhi',
+        constituencyId: sv.constituencyId,
+        pollingStation: sv.pollingStation,
+        maskedMobile: sv.maskedMobile,
+        registrationStatus: 'REGISTERED',
+        eligibilityStatus: sv.isEligible ? 'ELIGIBLE' : 'INELIGIBLE_DISQUALIFIED',
+        lifecycleStatus: 'ACTIVE',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        schemaVersion: SCHEMA_VERSION_CURRENT,
+      };
+    }
+  }
+
+  if (!profile) {
+    res.status(404).json({ success: false, message: `Voter record '${id}' not found.` });
+    return;
+  }
+
+  // Scope check
+  if (session && !isConstituencyInScope(session.assignmentScope, profile.constituencyId)) {
+    res.status(403).json({
+      success: false,
+      message: `Scope violation: Access to voter in constituency '${profile.constituencyId}' is outside officer's authorized assignment scope.`,
+    });
+    return;
+  }
+
+  // Fetch biometric status summary
+  const bioList = await repos.biometrics.listByVoter(profile.id);
+  const face = bioList.find((b) => b.modality === 'FACE');
+  const fp = bioList.find((b) => b.modality === 'FINGERPRINT');
+
+  res.status(200).json({
+    success: true,
+    voter: profile,
+    biometrics: {
+      faceStatus: face?.status || 'NOT_STARTED',
+      fingerprintStatus: fp?.status || 'NOT_STARTED',
+    },
+  });
+});
+
+/**
+ * PATCH /api/admin/voters/:id
+ * Edits permitted registration fields (fullName, dateOfBirth, gender, state, district, constituencyId, pollingStation, maskedMobile, isEligible).
+ * Rejects immutable/server-owned identifiers.
+ * Requires VOTER_UPDATE permission.
+ */
+adminRouter.patch('/voters/:id', requirePermission('VOTER_UPDATE'), async (req: Request, res: Response): Promise<void> => {
+  const session = (req as any).officer as OfficerSession;
+  const repos = getDataRepositories();
+  const { id } = req.params;
+
+  // 1. Prohibit biometric payloads
+  for (const forbiddenKey of FORBIDDEN_BIOMETRIC_REGISTRATION_KEYS) {
+    if (forbiddenKey in req.body && req.body[forbiddenKey] !== undefined) {
+      res.status(400).json({
+        success: false,
+        message: 'Biometric data payloads are not accepted in Phase 04 voter registry endpoints.',
+      });
+      return;
+    }
+  }
+
+  // 2. Find voter profile
+  let profile =
+    (await repos.voterProfiles.findById(id)) ||
+    (await repos.voterProfiles.findBySimulationId(id)) ||
+    (await repos.voterProfiles.findByLegacyEpic(id));
+
+  if (!profile) {
+    // Check if in serverStore
+    const sv = serverStore.findVoterByEpic(id) || serverStore.findVoterById(id);
+    if (sv) {
+      profile = {
+        id: sv.id,
+        simulationVoterId: sv.epicId,
+        fullName: sv.name,
+        dateOfBirth: '1995-01-01',
+        gender: sv.gender,
+        state: 'NCT of Delhi',
+        district: 'New Delhi',
+        constituencyId: sv.constituencyId,
+        pollingStation: sv.pollingStation,
+        maskedMobile: sv.maskedMobile,
+        registrationStatus: 'REGISTERED',
+        eligibilityStatus: sv.isEligible ? 'ELIGIBLE' : 'INELIGIBLE_DISQUALIFIED',
+        lifecycleStatus: 'ACTIVE',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        schemaVersion: SCHEMA_VERSION_CURRENT,
+      };
+    }
+  }
+
+  if (!profile) {
+    res.status(404).json({ success: false, message: `Voter record '${id}' not found.` });
+    return;
+  }
+
+  // 3. Scope check on existing voter constituency
+  if (session && !isConstituencyInScope(session.assignmentScope, profile.constituencyId)) {
+    res.status(403).json({
+      success: false,
+      message: `Scope violation: Access to voter in constituency '${profile.constituencyId}' is outside officer's authorized assignment scope.`,
+    });
+    return;
+  }
+
+  // 4. Reject attempts to alter immutable / server-owned identifiers
+  if ('id' in req.body && req.body.id !== profile.id) {
+    res.status(400).json({ success: false, message: 'Modification of internal record ID is strictly prohibited.' });
+    return;
+  }
+  if ('simulationVoterId' in req.body && req.body.simulationVoterId !== profile.simulationVoterId) {
+    res.status(400).json({ success: false, message: 'Modification of simulation voter ID is strictly prohibited.' });
+    return;
+  }
+  if ('legacyEpicId' in req.body && req.body.legacyEpicId !== profile.legacyEpicId) {
+    res.status(400).json({ success: false, message: 'Modification of legacy EPIC ID is strictly prohibited.' });
+    return;
+  }
+  if ('createdAt' in req.body || 'createdByOfficerId' in req.body) {
+    res.status(400).json({ success: false, message: 'Modification of creation audit metadata is strictly prohibited.' });
+    return;
+  }
+
+  // 5. Scope check on new constituencyId if being updated
+  if (req.body.constituencyId && req.body.constituencyId !== profile.constituencyId) {
+    const newConst = String(req.body.constituencyId);
+    if (!serverStore.getAllConstituencies().some((c) => c.id === newConst)) {
+      res.status(400).json({ success: false, message: `Invalid target constituency '${newConst}'.` });
+      return;
+    }
+    if (session && !isConstituencyInScope(session.assignmentScope, newConst)) {
+      res.status(403).json({
+        success: false,
+        message: `Scope violation: Target constituency '${newConst}' is outside officer's authorized assignment scope.`,
+      });
+      return;
+    }
+  }
+
+  // 6. Age validation if dateOfBirth is being updated
+  if (req.body.dateOfBirth) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(req.body.dateOfBirth)) {
+      res.status(400).json({ success: false, message: 'Invalid dateOfBirth: Must be in YYYY-MM-DD format.' });
+      return;
+    }
+    const newAge = calculateAgeFromDob(req.body.dateOfBirth);
+    if (newAge < 18) {
+      res.status(400).json({ success: false, message: 'Voting-age eligibility violation: Elector must be at least 18 years of age.' });
+      return;
+    }
+    profile.dateOfBirth = req.body.dateOfBirth;
+  }
+
+  // 7. Apply permitted field updates
+  const changedFields: string[] = [];
+  if (req.body.fullName && typeof req.body.fullName === 'string' && req.body.fullName.trim()) {
+    profile.fullName = req.body.fullName.trim();
+    changedFields.push('fullName');
+  }
+  if (req.body.gender && ['M', 'F', 'O'].includes(req.body.gender)) {
+    profile.gender = req.body.gender;
+    changedFields.push('gender');
+  }
+  if (req.body.state && typeof req.body.state === 'string') {
+    profile.state = req.body.state.trim();
+    changedFields.push('state');
+  }
+  if (req.body.district && typeof req.body.district === 'string') {
+    profile.district = req.body.district.trim();
+    changedFields.push('district');
+  }
+  if (req.body.constituencyId && typeof req.body.constituencyId === 'string') {
+    profile.constituencyId = req.body.constituencyId.trim();
+    changedFields.push('constituencyId');
+  }
+  if (req.body.pollingStation && typeof req.body.pollingStation === 'string') {
+    profile.pollingStation = req.body.pollingStation.trim();
+    changedFields.push('pollingStation');
+  }
+  if (req.body.maskedMobile && typeof req.body.maskedMobile === 'string') {
+    profile.maskedMobile = req.body.maskedMobile.trim();
+    changedFields.push('maskedMobile');
+  }
+  if (req.body.isEligible !== undefined) {
+    profile.eligibilityStatus = req.body.isEligible ? 'ELIGIBLE' : 'INELIGIBLE_DISQUALIFIED';
+    changedFields.push('eligibilityStatus');
+  }
+
+  profile.updatedAt = Date.now();
+  profile.lastUpdatedByOfficerId = session?.accountId || 'VRO-SIM-001';
+
+  // 8. Persist updated profile
+  await repos.voterProfiles.save(profile);
+
+  // Sync serverStore
+  const sv = serverStore.findVoterByEpic(profile.simulationVoterId);
+  if (sv) {
+    sv.name = profile.fullName;
+    sv.gender = profile.gender;
+    sv.constituencyId = profile.constituencyId;
+    sv.pollingStation = profile.pollingStation;
+    sv.maskedMobile = profile.maskedMobile;
+    sv.isEligible = profile.eligibilityStatus === 'ELIGIBLE' && profile.registrationStatus === 'REGISTERED';
+  }
+
+  // 9. Record audit event
+  serverStore.recordAuditEvent({
+    id: `audit-voter-update-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    timestamp: Date.now(),
+    type: 'ADMIN_ACTION',
+    description: `Voter profile updated: '${profile.simulationVoterId}' (fields: ${changedFields.join(', ')}) by officer '${session?.accountId}'`,
+    electionId: 1,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: 'Voter profile updated successfully.',
+    voter: profile,
+  });
+});
+
+/**
+ * DELETE /api/admin/voters/:id
+ * Deactivates an elector record safely via lifecycle status transition (soft delete).
+ * Preserves past election participation history and accepted ballots.
+ * Prevents future voting authorizations.
+ * Requires VOTER_DEACTIVATE permission.
+ */
+adminRouter.delete('/voters/:id', requirePermission('VOTER_DEACTIVATE'), async (req: Request, res: Response): Promise<void> => {
+  const session = (req as any).officer as OfficerSession;
+  const repos = getDataRepositories();
+  const { id } = req.params;
+
+  let profile =
+    (await repos.voterProfiles.findById(id)) ||
+    (await repos.voterProfiles.findBySimulationId(id)) ||
+    (await repos.voterProfiles.findByLegacyEpic(id));
+
+  if (!profile) {
+    const sv = serverStore.findVoterByEpic(id) || serverStore.findVoterById(id);
+    if (sv) {
+      profile = {
+        id: sv.id,
+        simulationVoterId: sv.epicId,
+        fullName: sv.name,
+        dateOfBirth: '1995-01-01',
+        gender: sv.gender,
+        state: 'NCT of Delhi',
+        district: 'New Delhi',
+        constituencyId: sv.constituencyId,
+        pollingStation: sv.pollingStation,
+        maskedMobile: sv.maskedMobile,
+        registrationStatus: 'REGISTERED',
+        eligibilityStatus: 'ELIGIBLE',
+        lifecycleStatus: 'ACTIVE',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        schemaVersion: SCHEMA_VERSION_CURRENT,
+      };
+    }
+  }
+
+  if (!profile) {
+    res.status(404).json({ success: false, message: `Voter record '${id}' not found.` });
+    return;
+  }
+
+  // Scope check
+  if (session && !isConstituencyInScope(session.assignmentScope, profile.constituencyId)) {
+    res.status(403).json({
+      success: false,
+      message: `Scope violation: Deactivation of voter in constituency '${profile.constituencyId}' is outside officer's authorized assignment scope.`,
+    });
+    return;
+  }
+
+  // Transition to deactivated state
+  profile.registrationStatus = 'DE_REGISTERED';
+  profile.eligibilityStatus = 'INELIGIBLE_DISQUALIFIED';
+  profile.lifecycleStatus = 'ARCHIVED';
+  profile.updatedAt = Date.now();
+  profile.lastUpdatedByOfficerId = session?.accountId || 'VRO-SIM-001';
+
+  await repos.voterProfiles.save(profile);
+
+  // Sync serverStore
+  const sv = serverStore.findVoterByEpic(profile.simulationVoterId);
+  if (sv) {
+    sv.isEligible = false;
+    sv.status = 'ELIGIBLE'; // reset authorization tokens
+    sv.authorizedWallet = undefined;
+    sv.activeNullifier = undefined;
+    sv.ticketExpiry = undefined;
+  }
+
+  // Record audit event
+  serverStore.recordAuditEvent({
+    id: `audit-voter-deactivate-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    timestamp: Date.now(),
+    type: 'ADMIN_ACTION',
+    description: `Voter record deactivated: '${profile.simulationVoterId}' in constituency '${profile.constituencyId}' by officer '${session?.accountId}'`,
+    electionId: 1,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: 'Voter record deactivated successfully. Past ballots and audit trail remain intact.',
+    voter: profile,
+  });
 });
 
 /**
  * PATCH /api/admin/voters/:id/eligibility
+ * Legacy compatibility endpoint: modifies eligibility flag.
  * Requires VOTER_UPDATE permission.
  */
 adminRouter.patch('/voters/:id/eligibility', requirePermission('VOTER_UPDATE'), async (req: Request, res: Response): Promise<void> => {
@@ -614,11 +1308,28 @@ adminRouter.patch('/voters/:id/eligibility', requirePermission('VOTER_UPDATE'), 
     return;
   }
 
+  // Also sync repos.voterProfiles if present
+  try {
+    const repos = getDataRepositories();
+    const profile =
+      (await repos.voterProfiles.findById(id)) ||
+      (await repos.voterProfiles.findBySimulationId(id)) ||
+      (await repos.voterProfiles.findByLegacyEpic(id));
+    if (profile) {
+      profile.eligibilityStatus = isEligible ? 'ELIGIBLE' : 'INELIGIBLE_DISQUALIFIED';
+      profile.updatedAt = Date.now();
+      await repos.voterProfiles.save(profile);
+    }
+  } catch (err: any) {
+    console.warn('[VoterRegistry] Notice updating eligibility in repository:', err.message);
+  }
+
   res.status(200).json({ success: true, message: 'Voter eligibility updated successfully.' });
 });
 
 /**
  * POST /api/admin/voters/:id/reset
+ * Legacy compatibility endpoint: resets active authorization.
  * Requires VOTER_UPDATE permission.
  */
 adminRouter.post('/voters/:id/reset', requirePermission('VOTER_UPDATE'), async (req: Request, res: Response): Promise<void> => {

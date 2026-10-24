@@ -90,10 +90,10 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
             <span>Voter Authentication</span>
           </div>
           <h2 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-            Elector Photo Identity Card (EPIC) Verification
+            Simulation Voter ID & Electoral Roll Verification
           </h2>
           <p className="mt-1 text-sm text-slate-600">
-            Please enter your EPIC ID to verify your enrollment in the registered parliamentary electoral roll.
+            Please enter your server-generated Simulation Voter ID to verify your enrollment in the registered parliamentary electoral roll.
           </p>
         </div>
 
@@ -101,14 +101,14 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
         <div className="p-3.5 bg-blue-50/70 border border-blue-200 rounded-lg text-xs text-blue-900 mb-6 flex items-start gap-2.5">
           <AlertCircle className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
           <p className="leading-relaxed">
-            <span className="font-semibold">Fail-Closed Verification:</span> Identification requires real-time verification against the backend voter registry. Preloaded demo voter accounts have been retired in Phase 01.
+            <span className="font-semibold">Academic Prototype Notice:</span> Verification operates strictly fail-closed against the backend registry. Simulation IDs (format: <span className="font-mono font-bold">BBV-SIM-...</span>) are internal prototype tokens and not official Election Commission of India EPIC documents.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <label htmlFor="epic-id" className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-              EPIC ID Number <span className="text-red-500">*</span>
+              Simulation Voter ID / EPIC <span className="text-red-500">*</span>
             </label>
             <div className="relative">
               <input
@@ -119,14 +119,14 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
                   setEpicInput(e.target.value);
                   setError(null);
                 }}
-                placeholder="e.g. ABC1234567"
+                placeholder="e.g. BBV-SIM-7K9M2X4W"
                 disabled={isVerifying}
                 className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-lg text-slate-900 font-mono text-base uppercase focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white transition-all tracking-wider disabled:opacity-50"
               />
               <Search className="w-5 h-5 text-slate-400 absolute right-3.5 top-3.5 pointer-events-none" />
             </div>
             <p className="text-[11px] text-slate-500 mt-1.5">
-              Standard ECI format: 10 alphanumeric characters (e.g. <span className="font-mono">ABC1234567</span>).
+              Simulation ID format: <span className="font-mono">BBV-SIM-&lt;token&gt;</span> (or legacy 10-char alphanumeric test EPIC).
             </p>
           </div>
 

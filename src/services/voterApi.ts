@@ -11,6 +11,7 @@ import {
   PollResponseRecord,
 } from '../types';
 import { RecognizedPartyRecord } from '../data/historical2024';
+import { VoterProfile } from '../types/dataModel';
 
 export interface VerifyVoterResponse {
   success: boolean;
@@ -417,9 +418,14 @@ export class VoterApiClient {
     }
   }
 
-  public async adminGetVoters(): Promise<VoterRecord[]> {
+  public async adminGetVoters(params?: { constituencyId?: string; search?: string }): Promise<any[]> {
     try {
-      const res = await fetch('/api/admin/voters', {
+      const query = new URLSearchParams();
+      if (params?.constituencyId) query.set('constituencyId', params.constituencyId);
+      if (params?.search) query.set('search', params.search);
+      const url = `/api/admin/voters${query.toString() ? `?${query.toString()}` : ''}`;
+
+      const res = await fetch(url, {
         headers: {
           ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
         },
@@ -428,6 +434,105 @@ export class VoterApiClient {
       return data.voters || [];
     } catch {
       return [];
+    }
+  }
+
+  public async adminListVoterProfiles(params?: {
+    constituencyId?: string;
+    search?: string;
+  }): Promise<{ success: boolean; voters: VoterProfile[]; count: number; message?: string }> {
+    try {
+      const query = new URLSearchParams();
+      if (params?.constituencyId) query.set('constituencyId', params.constituencyId);
+      if (params?.search) query.set('search', params.search);
+      const url = `/api/admin/voters${query.toString() ? `?${query.toString()}` : ''}`;
+
+      const res = await fetch(url, {
+        headers: {
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, voters: [], count: 0, message: err.message || 'Failed to fetch voters.' };
+    }
+  }
+
+  public async adminRegisterVoter(data: {
+    fullName: string;
+    dateOfBirth: string;
+    gender: 'M' | 'F' | 'O';
+    constituencyId: string;
+    state?: string;
+    district?: string;
+    pollingStation?: string;
+    maskedMobile?: string;
+  }): Promise<{ success: boolean; message?: string; simulationVoterId?: string; voter?: VoterProfile }> {
+    try {
+      const res = await fetch('/api/admin/voters', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+        body: JSON.stringify(data),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error enrolling synthetic voter.' };
+    }
+  }
+
+  public async adminGetVoter(id: string): Promise<{
+    success: boolean;
+    voter?: VoterProfile;
+    biometrics?: { faceStatus: string; fingerprintStatus: string };
+    message?: string;
+  }> {
+    try {
+      const res = await fetch(`/api/admin/voters/${encodeURIComponent(id)}`, {
+        headers: {
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error retrieving voter profile.' };
+    }
+  }
+
+  public async adminUpdateVoter(
+    id: string,
+    updates: Partial<VoterProfile> & { isEligible?: boolean }
+  ): Promise<{ success: boolean; message?: string; voter?: VoterProfile }> {
+    try {
+      const res = await fetch(`/api/admin/voters/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+        body: JSON.stringify(updates),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error updating voter profile.' };
+    }
+  }
+
+  public async adminDeactivateVoter(
+    id: string
+  ): Promise<{ success: boolean; message?: string; voter?: VoterProfile }> {
+    try {
+      const res = await fetch(`/api/admin/voters/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: {
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error deactivating voter profile.' };
     }
   }
 

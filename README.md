@@ -122,21 +122,19 @@ Open your browser to: [http://127.0.0.1:3000](http://127.0.0.1:3000)
 3. Click **Sign In**.
 4. You are granted full Returning Officer privileges to create elections, configure deadlines, pause/resume voting, and inspect audit logs.
 
-### B. Voter Authentication Architecture (Phase 01: Preloaded Demo Voters Removed)
-As of Phase 01, all preloaded sample voter accounts have been retired from runtime:
+### B. Voter Registration & Identification Architecture (Phase 04: Persistent Simulation Registry)
+In Phase 04, voter registration and identification operate strictly via the persistent backend registry with server-generated simulation IDs:
+* **Backend-Generated Simulation IDs**: Simulation voter IDs are generated exclusively on the server using Node.js cryptographic APIs (format: `BBV-SIM-<token>`, e.g. `BBV-SIM-7K9M2X4W`). Client-chosen identifiers are strictly ignored.
+* **Distinct from Real EPIC Formats**: The system distinguishes simulation tokens from official Indian Election Commission voter IDs (`^[A-Z]{3}[0-9]{7}$`) and forbids assigning real-EPIC-shaped identifiers.
+* **Operational Officer Roles & RBAC (Phase 03/04)**:
+  - **Voter Registration Officer (`VRO-SIM-001`)**: Enrolls electors, updates demographic records, and manages lifecycle deactivations within assigned constituency scope (`CONST-04-ND`).
+  - **Election Officer (`EO-SIM-001`)**: Manages elections and candidates; denied voter-create, edit, or deactivation access.
+  - **Platform Administrator (`demo.admin@blockballot.local`)**: Retains system management privileges for local evaluation.
+  - Officers are provisioned via `npm run officers:seed`.
 * **Fail-Closed Verification**: Identification strictly queries the backend registry (`POST /api/voter/verify`). Searching local client arrays or falling back to hardcoded electors is completely disabled.
-* **Legacy Identifiers Retired**: Legacy demo IDs (such as `IND-DL-982341`, `IND-DL-339210`, etc.) are retired and will be rejected with `404 Not Found` unless explicitly enrolled in the registry.
-* **Future Voter Registry (Phase 04)**: Simulation voter enrollment through a backend-generated registry will be introduced in Phase 04.
-* **Demo Administrator Preserved**: The demo administrator account (`demo.admin@blockballot.local`) remains active and configured via `npm run admin:seed`.
-* **Safe Cleanup Script**: A migration script is provided to identify and remove legacy seeded demo records from Firestore:
-  ```powershell
-  # Safe dry-run inspection (default mode, no records modified)
-  npm run voters:cleanup -- --dry-run
-
-  # Execute removal against dev/emulator target (refuses production)
-  npm run voters:cleanup -- --execute --confirm
-  ```
-* **Scope Notice**: BlockBallot is an academic prototype. This phase does not implement face recognition, fingerprint scanning, real ECI integrations, or production election readiness.
+* **Safe Soft-Deactivation**: Deactivating an elector marks them as `DE_REGISTERED` and `ARCHIVED`, stopping new voting sessions while permanently protecting cast ballots, receipts, and audit history.
+* **Biometric Metadata Stubs**: Face and fingerprint enrollment states default to `NOT_STARTED`. Biometric capture hardware and device drivers are deferred to Phase 05.
+* **Scope Notice**: BlockBallot is an academic prototype. Generated identifiers are simulation tokens and not official ECI voter ID cards.
 
 ### C. Live Voting Window Enforcement
 Voting is permitted **only** when an election satisfies:

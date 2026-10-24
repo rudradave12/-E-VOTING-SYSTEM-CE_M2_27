@@ -62,7 +62,15 @@ export function isValidEpicFormat(epicId: string, isProduction: boolean = SERVER
   // 2. Synthetic prefixed demo identities permitted ONLY when NOT in production
   if (!isProduction) {
     const syntheticDemoRegex = /^IND-[A-Z0-9-]+$/;
-    return syntheticDemoRegex.test(trimmed);
+    if (syntheticDemoRegex.test(trimmed)) {
+      return true;
+    }
+  }
+
+  // 3. Backend-generated simulation voter ID format (BBV-SIM-...)
+  const simulationIdRegex = /^BBV-SIM-[A-Z0-9-]+$/;
+  if (simulationIdRegex.test(trimmed)) {
+    return true;
   }
 
   return false;

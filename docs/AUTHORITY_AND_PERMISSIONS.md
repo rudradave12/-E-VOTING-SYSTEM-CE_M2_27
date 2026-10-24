@@ -264,16 +264,16 @@ serverStore.recordAuditEvent({
 
 ---
 
-## 7. Deferred Functionality (Phases 04 – 06)
+## 7. Operational Workflow Roadmap (Phases 04 – 07)
 
-To preserve phase boundaries, Phase 03 **only** implements role definitions and authorization gates. The following workflows are explicitly registered in the permission catalogue but deferred:
+Phase 03 established role definitions and authorization gates. Subsequent phases activate specific operational workflows:
 
-| Workflow | Target Phase | Status in Phase 03 |
+| Workflow | Target Phase | Status |
 | :--- | :---: | :--- |
-| **Backend Voter Registry & Roll Maintenance** | Phase 04 | Permissions registered (`VOTER_CREATE`, `VOTER_UPDATE`, `VOTER_DEACTIVATE`). APIs deferred. |
-| **Hardware Biometric Enrollment & Device Drivers** | Phase 05 | Permission registered (`BIOMETRIC_ENROLLMENT_START`). UI shows "Available in Phase 05" banner. |
-| **Manual Verification Exceptions Workflow** | Phase 06 | Permissions registered (`VOTER_EXCEPTION_REQUEST`, `VOTER_EXCEPTION_APPROVE`). Business logic deferred. |
-| **Automated Election Lifecycle Timers** | Phase 07 | Real-time cron/timer transitions deferred. |
+| **Backend Voter Registry & Roll Maintenance** | Phase 04 | **Implemented**: Simulation ID generation (`BBV-SIM-...`), VRO enrollment, updates, deactivation, and scope enforcement. See [docs/VOTER_REGISTRY.md](file:///docs/VOTER_REGISTRY.md). |
+| **Hardware Biometric Enrollment & Device Drivers** | Phase 05 | Permission registered (`BIOMETRIC_ENROLLMENT_START`). Metadata stubs initialized as `NOT_STARTED`. Capture deferred to Phase 05. |
+| **Manual Verification Exceptions Workflow** | Phase 06 | Permissions registered (`VOTER_EXCEPTION_REQUEST`, `VOTER_EXCEPTION_APPROVE`). Business logic deferred to Phase 06. |
+| **Automated Election Lifecycle Timers** | Phase 07 | Real-time cron/timer transitions deferred to Phase 07. |
 
 ---
 

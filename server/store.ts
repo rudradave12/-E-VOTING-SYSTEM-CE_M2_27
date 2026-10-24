@@ -32,6 +32,7 @@ import {
 } from './firestore';
 import { isFirebaseConfigured } from './firebaseAdmin';
 import { createVoterJwt, verifyVoterJwt } from './crypto';
+import { getDataRepositories } from './repositories';
 
 export interface OtpChallengeRecord {
   epicId: string;
@@ -181,6 +182,43 @@ class ServerStore {
     } catch (err: any) {
       console.warn('[ServerStore] Notice querying Firestore for voter:', err.message);
     }
+
+    // Query Phase 04 persistent VoterProfile repository (by simulation ID or legacy EPIC)
+    try {
+      const repos = getDataRepositories();
+      const profile =
+        (await repos.voterProfiles.findBySimulationId(epicId)) ||
+        (await repos.voterProfiles.findByLegacyEpic(epicId));
+
+      if (profile) {
+        const isEligible =
+          profile.registrationStatus === 'REGISTERED' &&
+          profile.eligibilityStatus === 'ELIGIBLE' &&
+          profile.lifecycleStatus === 'ACTIVE';
+
+        const dob = new Date(profile.dateOfBirth);
+        const age = isNaN(dob.getTime()) ? 25 : Math.max(18, new Date().getFullYear() - dob.getFullYear());
+
+        const record: VoterRecord = {
+          id: profile.id,
+          epicId: profile.simulationVoterId,
+          name: profile.fullName,
+          gender: profile.gender,
+          age,
+          constituencyId: profile.constituencyId,
+          pollingStation: profile.pollingStation,
+          maskedMobile: profile.maskedMobile || '+91 ••••• •1122',
+          isEligible,
+          status: profile.lifecycleStatus === 'LOCKED' ? 'AUTHORIZED' : 'ELIGIBLE',
+        };
+
+        this.voters.set(record.epicId.toUpperCase(), record);
+        return record;
+      }
+    } catch (err: any) {
+      console.warn('[ServerStore] Notice querying VoterProfile repository:', err.message);
+    }
+
     return undefined;
   }
 
@@ -238,6 +276,14 @@ class ServerStore {
 
   public getAllVoters(): VoterRecord[] {
     return Array.from(this.voters.values());
+  }
+
+  public setVoterRecord(voter: VoterRecord): void {
+    this.voters.set(voter.epicId.toUpperCase(), voter);
+  }
+
+  public findVoterById(id: string): VoterRecord | undefined {
+    return Array.from(this.voters.values()).find((v) => v.id === id);
   }
 
   public setVoterEligibility(voterId: string, isEligible: boolean): boolean {

@@ -559,6 +559,7 @@ export function AppInner() {
           <AdminVotersScreen
             voters={voters}
             constituencies={constituencies}
+            adminUser={adminUser}
             onToggleEligibility={handleToggleEligibility}
             onResetVoterStatus={handleResetVoterStatus}
             onAddVoter={(voter) => setVoters((prev) => [...prev, voter])}
