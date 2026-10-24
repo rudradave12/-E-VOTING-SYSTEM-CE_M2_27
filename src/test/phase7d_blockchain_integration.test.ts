@@ -11,6 +11,7 @@ import { deployContract } from '../../scripts/deploy';
 import { voterRouter } from '../../server/routes/voter';
 import { adminRouter } from '../../server/routes/admin';
 import { serverStore } from '../../server/store';
+import { TEST_VOTERS } from './fixtures/voterFixtures';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -32,6 +33,7 @@ test('BlockBallot — Phase 7D: Local Blockchain & Smart Contract Integration', 
 
   // Spin up an isolated in-process server with fresh mock voter state
   serverStore.resetVoters();
+  serverStore.seedVotersForTesting(TEST_VOTERS);
   const app = express();
   app.use(express.json());
   app.use('/api/voter', voterRouter);

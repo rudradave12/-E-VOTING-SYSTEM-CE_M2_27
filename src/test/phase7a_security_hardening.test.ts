@@ -14,6 +14,7 @@ import { serverStore } from '../../server/store';
 import { verifyAdminIdToken, setAdminTokenVerifierForTesting } from '../../server/firebaseAdmin';
 import { deriveServerNullifier, computeOtpHmac } from '../../server/crypto';
 import * as clientCrypto from '../utils/crypto';
+import { TEST_VOTERS } from './fixtures/voterFixtures';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,6 +24,7 @@ test('BlockBallot — Phase 7A: Critical Security Hardening Test Suite', async (
   let baseUrl: string;
 
   t.before(async () => {
+    serverStore.seedVotersForTesting(TEST_VOTERS);
     const app = express();
     app.use(express.json());
 

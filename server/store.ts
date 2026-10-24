@@ -13,7 +13,6 @@ import {
   INITIAL_ELECTIONS,
   INITIAL_CONSTITUENCIES,
   INITIAL_CANDIDATES,
-  SYNTHETIC_VOTERS,
 } from '../src/data/mockData';
 import {
   saveOtpChallengeToFirestore,
@@ -83,10 +82,10 @@ class ServerStore {
   }
 
   public resetVoters(): void {
+    // Phase 01: Preloaded demo voter identities removed from runtime operation.
+    // In-memory voter roll starts empty. Voter enrollment is handled via backend
+    // voter registry in Phase 04.
     this.voters.clear();
-    for (const v of SYNTHETIC_VOTERS) {
-      this.voters.set(v.epicId.toUpperCase(), { ...v });
-    }
 
     this.elections.clear();
     for (const e of INITIAL_ELECTIONS) {
@@ -105,6 +104,17 @@ class ServerStore {
 
     this.auditEvents = [];
     this.spentNullifiersOnChain.clear();
+  }
+
+  /**
+   * Explicit test fixture seeding helper.
+   * Only to be invoked by isolated automated tests or test runners.
+   * Normal application startup and resetVoters() never populate preloaded voters.
+   */
+  public seedVotersForTesting(fixtures: VoterRecord[] = []): void {
+    for (const v of fixtures) {
+      this.voters.set(v.epicId.toUpperCase(), { ...v });
+    }
   }
 
   public async syncFromFirestore(): Promise<void> {

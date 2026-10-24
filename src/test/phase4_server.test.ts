@@ -11,6 +11,7 @@ import {
 } from '../../server/crypto';
 import { serverStore } from '../../server/store';
 import { SERVER_CONFIG, validateServerConfig } from '../../server/config';
+import { TEST_VOTERS } from './fixtures/voterFixtures';
 
 // Ensure hermetic test signer key is configured for the isolated unit test
 if (!SERVER_CONFIG.AUTHORIZATION_SIGNER_PRIVATE_KEY) {
@@ -19,6 +20,7 @@ if (!SERVER_CONFIG.AUTHORIZATION_SIGNER_PRIVATE_KEY) {
 
 test('1. Valid, invalid, and ineligible synthetic voter records lookup', () => {
   serverStore.resetVoters();
+  serverStore.seedVotersForTesting(TEST_VOTERS);
 
   // Valid and eligible
   const validVoter = serverStore.findVoterByEpic('IND-DL-982341');
@@ -90,6 +92,7 @@ test('2. HMAC-SHA-256 OTP challenge generation, single-use, attempt lockout and 
 test('3. Concurrency-safe voter lifecycle transitions and double-voting prevention', () => {
   const epicId = 'IND-DL-339210';
   serverStore.resetVoters();
+  serverStore.seedVotersForTesting(TEST_VOTERS);
 
   const voter = serverStore.findVoterByEpic(epicId);
   assert.ok(voter);
@@ -116,6 +119,7 @@ test('3. Concurrency-safe voter lifecycle transitions and double-voting preventi
 });
 
 test('4. On-chain reconciliation: Interrupted and duplicate transaction protection', () => {
+  serverStore.seedVotersForTesting(TEST_VOTERS);
   const epicId = 'IND-UP-441209';
   const electionId = 18;
   const nullifier = deriveServerNullifier(epicId, electionId);

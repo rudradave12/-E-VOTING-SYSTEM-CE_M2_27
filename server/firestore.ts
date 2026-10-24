@@ -9,7 +9,6 @@ import {
   INITIAL_ELECTIONS,
   INITIAL_CONSTITUENCIES,
   INITIAL_CANDIDATES,
-  SYNTHETIC_VOTERS,
 } from '../src/data/mockData';
 import {
   HISTORICAL_CONSTITUENCIES_2024,
@@ -682,14 +681,10 @@ export async function seedInitialFirestoreData(): Promise<void> {
       }
     }
 
-    // 4. Synthetic Voters
-    const voters = await getAllVotersFromFirestore();
-    if (voters.length === 0) {
-      console.log('[Firestore] Seeding synthetic electoral rolls...');
-      for (const v of SYNTHETIC_VOTERS) {
-        await saveVoterRecordToFirestore(v);
-      }
-    }
+    // 4. Voter Roll Initialization
+    // Phase 01: Preloaded demo voters removed. Firestore /voters collection
+    // starts empty and is not populated with legacy records. Real/simulated
+    // voter registration is handled via backend generation in Phase 04.
 
     // 5. Official Historical 2024 Records & Parties
     await importOfficialHistorical2024Data();

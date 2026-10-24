@@ -19,7 +19,6 @@ import {
   INITIAL_ELECTIONS,
   INITIAL_CONSTITUENCIES,
   INITIAL_CANDIDATES,
-  SYNTHETIC_VOTERS,
 } from './data/mockData';
 import {
   setAuthorizationSignerAddress,
@@ -30,7 +29,6 @@ import { LanguageProvider, useLanguage } from './context/LanguageContext';
 
 // Components
 import { Navbar } from './components/Navbar';
-import { PersonaQuickBar } from './components/PersonaQuickBar';
 import { VotingStepper } from './components/VotingStepper';
 
 // Screens
@@ -67,7 +65,7 @@ export function AppInner() {
   const [activeElectionId, setActiveElectionId] = useState<string>('GE-2024');
   const [constituencies, setConstituencies] = useState<Constituency[]>(INITIAL_CONSTITUENCIES);
   const [candidates, setCandidates] = useState<Candidate[]>(INITIAL_CANDIDATES);
-  const [voters, setVoters] = useState<VoterRecord[]>(SYNTHETIC_VOTERS);
+  const [voters, setVoters] = useState<VoterRecord[]>([]);
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
 
   const [currentVoter, setCurrentVoter] = useState<VoterRecord | null>(null);
@@ -86,11 +84,6 @@ export function AppInner() {
   );
 
   const [activeTestCode, setActiveTestCode] = useState<string>('481920');
-
-  const handleSelectPersona = (persona: VoterRecord) => {
-    setCurrentVoter(persona);
-    setCurrentScreen('identify');
-  };
 
   const handleVoterIdentified = (voter: VoterRecord, testCode?: string) => {
     setCurrentVoter(voter);
@@ -360,13 +353,6 @@ export function AppInner() {
         onResetVoterSession={handleResetSession}
       />
 
-      {isVoterFlow && (
-        <PersonaQuickBar
-          activeEpicId={currentVoter?.epicId}
-          onSelectPersona={handleSelectPersona}
-        />
-      )}
-
       {isVoterFlow && <VotingStepper currentScreen={currentScreen} />}
 
       <main className="flex-1 pb-16">
@@ -432,10 +418,7 @@ export function AppInner() {
         {currentScreen === 'practice-voting' && (
           <PracticeVotingScreen
             currentVoter={currentVoter}
-            onSelectPersonaAndStart={(persona) => {
-              setCurrentVoter(persona);
-              setCurrentScreen('identify');
-            }}
+            onStartIdentification={() => setCurrentScreen('identify')}
             onResetPractice={handleResetSession}
             onResumePractice={() => setCurrentScreen('identify')}
             isVotingInProgress={Boolean(currentVoter)}

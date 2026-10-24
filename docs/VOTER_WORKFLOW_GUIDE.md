@@ -19,14 +19,16 @@
 ## 2. Step-by-Step Walkthrough
 
 ### Step 1: Elector Identification (`IdentifyScreen.tsx`)
-* **Voter Input**: Citizen inputs their synthetic Electoral Photo Identity Card (EPIC) number.
-* **Synthetic Test IDs Available**:
-  * `IND-DL-982341`: Rajesh Kumar Sharma (New Delhi, Age 38, Room 4 Govt Boys Sec School)
-  * `IND-DL-339210`: Priya Ananthakrishnan (New Delhi, Age 29, Lodhi Estate Community Centre)
-  * `IND-UP-441209`: Amit Vikram Singh (Varanasi, Age 45, Dashashwamedh Civic School)
-  * `IND-KL-772183`: Anjali Mary Thomas (Wayanad, Age 32, St. Joseph HSS, Kalpetta)
-  * `IND-KA-550912`: Karthik S. Murthy (Bangalore South, Age 27, Jayanagar 4th Block)
-  * `IND-DL-999000`: Sunita Devi (Negative Test Case: Ineligible voter, age 17)
+* **Voter Input**: Citizen inputs their registered Electoral Photo Identity Card (EPIC) number.
+* **Phase 01 Status — Demo Voter Accounts Retired**:
+  * Preloaded demo voter accounts (`IND-DL-982341`, `IND-DL-339210`, `IND-UP-441209`, `IND-KL-772183`, `IND-KA-550912`, `IND-DL-999000`) have been removed from normal runtime operation.
+  * Identification operates strictly fail-closed: client-side array lookups and hardcoded demo shortcuts have been removed.
+  * The identification request must be validated by the server-side API (`POST /api/voter/verify`).
+  * Retired legacy demo IDs are rejected with `404 Not Found` unless enrolled in the registry.
+  * Simulation voter registry generation and enrollment will be introduced in Phase 04.
+  * Safe cleanup of existing Firestore records is supported via `npm run voters:cleanup -- --dry-run` (default mode).
+  * Demo administrator access remains supported via `npm run admin:seed`.
+  * *Notice*: This phase does not implement biometric capture (fingerprint/facial), ECI portal connections, or live production election readiness.
 * **Backend Validation**:
   * Calls `POST /api/voter/verify`.
   * Verifies elector roll enrollment and checks that `status !== 'VOTED'`.

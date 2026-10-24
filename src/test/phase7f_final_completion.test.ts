@@ -14,6 +14,7 @@ import { pollRouter } from '../../server/routes/poll';
 import { serverStore } from '../../server/store';
 import { verifyAdminIdToken, setAdminFirestoreForTesting, createInMemoryFirestoreMock } from '../../server/firebaseAdmin';
 import { HISTORICAL_CONSTITUENCIES_2024 } from '../../src/data/historical2024';
+import { TEST_VOTERS } from './fixtures/voterFixtures';
 
 // Setup hermetic express app for testing router endpoints
 function createTestApp() {
@@ -137,6 +138,7 @@ test('BlockBallot — Phase 7F: Final Verification & Acceptance Test Suite', asy
   // --------------------------------------------------------------------------
   await t.test('3. Voting deadline boundaries: exact start, before start, before closing, at closing, after closing, paused, and concluded', async () => {
     serverStore.resetDefaults();
+    serverStore.seedVotersForTesting(TEST_VOTERS);
 
     const voter = serverStore.findVoterByEpic('IND-DL-982341')!;
     assert.ok(voter, 'Synthetic voter must exist');
@@ -353,6 +355,7 @@ test('BlockBallot — Phase 7F: Final Verification & Acceptance Test Suite', asy
   // --------------------------------------------------------------------------
   await t.test('4. Constituency eligibility and duplicate-vote prevention are strictly enforced', async () => {
     serverStore.resetDefaults();
+    serverStore.seedVotersForTesting(TEST_VOTERS);
 
     const voterND = serverStore.findVoterByEpic('IND-DL-982341')!; // New Delhi (CONST-04-ND)
     assert.equal(voterND.constituencyId, 'CONST-04-ND');
@@ -466,6 +469,7 @@ test('BlockBallot — Phase 7F: Final Verification & Acceptance Test Suite', asy
   // --------------------------------------------------------------------------
   await t.test('5. Previous election DEMO-PREV-2023 is strictly read-only and terminal', async () => {
     serverStore.resetDefaults();
+    serverStore.seedVotersForTesting(TEST_VOTERS);
 
     const prevElec = serverStore.getElectionById('DEMO-PREV-2023');
     assert.ok(prevElec, 'Concluded demo trial election must exist in store');
@@ -532,6 +536,7 @@ test('BlockBallot — Phase 7F: Final Verification & Acceptance Test Suite', asy
     const originalWinnerVotes = ndRecord.candidates[0].votesCounted;
 
     // Create session for poll submission
+    serverStore.seedVotersForTesting(TEST_VOTERS);
     const voter = serverStore.findVoterByEpic('IND-DL-982341')!;
     voter.status = 'ELIGIBLE';
     const session = serverStore.createSession(voter, 4);
@@ -617,6 +622,7 @@ test('BlockBallot — Phase 7F: Final Verification & Acceptance Test Suite', asy
       assert.equal(candRes.success, true, 'Candidate registration must succeed');
 
       // 3. Mark a voter as VOTED in persistence
+      serverStore.seedVotersForTesting(TEST_VOTERS);
       await serverStore.updateVoterStatusAsync('IND-DL-982341', 'VOTED');
 
       // 4. SIMULATE APPLICATION SERVER RESTART

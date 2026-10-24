@@ -21,6 +21,7 @@ export interface VerifyVoterResponse {
   status?: string;
   testDeliveryCode?: string;
   cooldownRemaining?: number;
+  voter?: VoterRecord;
 }
 
 export interface VerifyOtpResponse {

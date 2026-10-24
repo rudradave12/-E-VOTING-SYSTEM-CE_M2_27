@@ -11,7 +11,7 @@ import {
   RECOGNIZED_PARTIES,
   BATCH_IMPORT_SPECIFICATION,
 } from '../data/historical2024';
-import { SYNTHETIC_VOTERS } from '../data/mockData';
+import { TEST_VOTERS } from './fixtures/voterFixtures';
 
 describe('BlockBallot — Phase 7: Real Historical 2024 Lok Sabha Data & Civic Navigation', () => {
   it('1. Historical ECI Provenance & Non-Endorsement Disclaimers', () => {
@@ -91,8 +91,8 @@ describe('BlockBallot — Phase 7: Real Historical 2024 Lok Sabha Data & Civic N
   });
 
   it('5. Civic Separation: Synthetic Practice IDs vs Historical Archive', () => {
-    // Check that synthetic voters are clearly distinct from any historical candidate IDs
-    const syntheticEpicIds = SYNTHETIC_VOTERS.map((v) => v.epicId);
+    // Check that isolated test fixtures are clearly distinct from any historical candidate IDs
+    const syntheticEpicIds = TEST_VOTERS.map((v) => v.epicId);
     assert.ok(syntheticEpicIds.length >= 3);
 
     for (const epic of syntheticEpicIds) {

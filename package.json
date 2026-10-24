@@ -13,6 +13,7 @@
     "test:integration": "tsx scripts/run-blockchain-integration.ts",
     "benchmark": "tsx scripts/benchmark-performance.ts",
     "admin:seed": "tsx scripts/seed-demo-admin.ts",
+    "voters:cleanup": "tsx scripts/cleanup-legacy-demo-voters.ts",
     "node:start": "hardhat --config hardhat.config.cjs node --hostname 127.0.0.1 --port 8545",
     "contract:deploy": "tsx scripts/deploy.ts",
     "emulator:start": "firebase emulators:start --only firestore",

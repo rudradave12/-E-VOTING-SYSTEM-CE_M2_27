@@ -10,7 +10,8 @@ import express from 'express';
 import { voterRouter } from '../../server/routes/voter';
 import { adminRouter, createAdminSessionForTesting } from '../../server/routes/admin';
 import { serverStore } from '../../server/store';
-import { INITIAL_ELECTIONS, INITIAL_CONSTITUENCIES, INITIAL_CANDIDATES, SYNTHETIC_VOTERS } from '../data/mockData';
+import { INITIAL_ELECTIONS, INITIAL_CONSTITUENCIES, INITIAL_CANDIDATES } from '../data/mockData';
+import { TEST_VOTERS } from './fixtures/voterFixtures';
 import { HISTORICAL_CONSTITUENCIES_2024 } from '../data/historical2024';
 import { ElectionStatus } from '../types';
 
@@ -21,6 +22,7 @@ describe('BlockBallot — Core E-Voting UX Redesign & Architecture Verification'
 
   before(async () => {
     serverStore.resetVoters();
+    serverStore.seedVotersForTesting(TEST_VOTERS);
     app = express();
     app.use(express.json());
     app.use('/api/voter', voterRouter);
@@ -192,6 +194,7 @@ describe('BlockBallot — Core E-Voting UX Redesign & Architecture Verification'
   it('6. Backend lifecycle and deadline enforcement on voting authorization', async () => {
     // 1. Create a voter session
     serverStore.resetVoters();
+    serverStore.seedVotersForTesting(TEST_VOTERS);
     const voter = serverStore.findVoterByEpic('IND-DL-982341')!;
     const voterSession = serverStore.createSession(voter, 4);
 

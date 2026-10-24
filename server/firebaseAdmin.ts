@@ -159,6 +159,9 @@ export function createInMemoryFirestoreMock(): any {
         const current = store.get(docPath);
         store.set(docPath, { ...current, ...JSON.parse(JSON.stringify(data)) });
       },
+      async delete() {
+        store.delete(docPath);
+      },
       collection(subName: string) {
         return createColRef(`${docPath}/${subName}`);
       },
@@ -228,6 +231,7 @@ export function createInMemoryFirestoreMock(): any {
       size: sliced.length,
       docs: sliced.map((d) => ({
         id: d.id,
+        ref: createDocRef(`${colPath}/${d.id}`),
         exists: true,
         data: () => JSON.parse(JSON.stringify(d.data)),
       })),

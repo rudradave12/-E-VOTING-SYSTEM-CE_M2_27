@@ -52,7 +52,7 @@ BlockBallot strictly isolates its four electoral data categories:
 ## 3. The Core Workflows
 
 ### Voter Journey: Login → Available Election → Select Candidate → Review → Confirm Vote → Receipt
-1. **Voter Login**: Citizen enters synthetic EPIC Voter ID (e.g., `IND-DL-982341`).
+1. **Voter Login**: Citizen enters enrolled EPIC Voter ID. Voter identification operates strictly fail-closed against persisted backend roll records (preloaded demo accounts retired in Phase 01).
 2. **2FA Challenge**: Backend issues an HMAC-SHA256 protected OTP challenge with 60s cooldown and 3-attempt lockout.
 3. **Authenticated Session**: Successful OTP verification issues a time-bound session token (15-minute TTL).
 4. **Election Availability Check**:
@@ -122,18 +122,21 @@ Open your browser to: [http://127.0.0.1:3000](http://127.0.0.1:3000)
 3. Click **Sign In**.
 4. You are granted full Returning Officer privileges to create elections, configure deadlines, pause/resume voting, and inspect audit logs.
 
-### B. Authenticating a Synthetic Demo Voter
-Use one of the pre-configured academic test electors:
-| Synthetic EPIC ID | Constituency | Name |
-| :--- | :--- | :--- |
-| `IND-DL-982341` | New Delhi | Rajesh Sharma |
-| `IND-UP-561289` | Varanasi | Amit Kumar |
-| `IND-KL-341908` | Wayanad | Priya Nair |
-| `IND-KA-782345` | Bangalore South | Suresh Rao |
+### B. Voter Authentication Architecture (Phase 01: Preloaded Demo Voters Removed)
+As of Phase 01, all preloaded sample voter accounts have been retired from runtime:
+* **Fail-Closed Verification**: Identification strictly queries the backend registry (`POST /api/voter/verify`). Searching local client arrays or falling back to hardcoded electors is completely disabled.
+* **Legacy Identifiers Retired**: Legacy demo IDs (such as `IND-DL-982341`, `IND-DL-339210`, etc.) are retired and will be rejected with `404 Not Found` unless explicitly enrolled in the registry.
+* **Future Voter Registry (Phase 04)**: Simulation voter enrollment through a backend-generated registry will be introduced in Phase 04.
+* **Demo Administrator Preserved**: The demo administrator account (`demo.admin@blockballot.local`) remains active and configured via `npm run admin:seed`.
+* **Safe Cleanup Script**: A migration script is provided to identify and remove legacy seeded demo records from Firestore:
+  ```powershell
+  # Safe dry-run inspection (default mode, no records modified)
+  npm run voters:cleanup -- --dry-run
 
-1. On the Voter Portal, enter the synthetic EPIC ID.
-2. In academic demo mode, the 6-digit OTP is displayed on screen / console for demonstration convenience.
-3. Enter the OTP to receive a 15-minute authenticated voter session.
+  # Execute removal against dev/emulator target (refuses production)
+  npm run voters:cleanup -- --execute --confirm
+  ```
+* **Scope Notice**: BlockBallot is an academic prototype. This phase does not implement face recognition, fingerprint scanning, real ECI integrations, or production election readiness.
 
 ### C. Live Voting Window Enforcement
 Voting is permitted **only** when an election satisfies:

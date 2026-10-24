@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { serverStore } from '../../server/store';
 import { SERVER_CONFIG } from '../../server/config';
+import { TEST_VOTERS } from './fixtures/voterFixtures';
 import {
   saveOtpChallengeToFirestore,
   getOtpChallengeFromFirestore,
@@ -160,6 +161,7 @@ test('BlockBallot — Phase 5: Election Management & Voting Logic Test Suite', a
   });
 
   await t.test('4. Voter participation state lifecycle and duplicate voting prevention', () => {
+    serverStore.seedVotersForTesting(TEST_VOTERS);
     const epic = 'IND-DL-982341';
     const voter = serverStore.findVoterByEpic(epic);
     assert.ok(voter);

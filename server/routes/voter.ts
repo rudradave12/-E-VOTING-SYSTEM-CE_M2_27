@@ -96,16 +96,24 @@ const handleVoterVerify = async (req: Request, res: Response): Promise<void> => 
     return;
   }
 
-  const voter = serverStore.findVoterByEpic(formattedEpic);
+  const voter = await serverStore.findVoterByEpicAsync(formattedEpic);
 
-  // Generic response pattern to prevent elector roll enumeration attacks
-  if (!voter || !voter.isEligible) {
-    serverStore.logSecure('Voter verification request failed eligibility check or not found', { epicId: formattedEpic });
-    res.status(200).json({
-      success: true,
-      message: 'If the provided synthetic identity is enrolled and eligible, a verification challenge has been initiated.',
-      maskedMobile: '+91 ••••• •••••',
-      status: 'CHALLENGE_ISSUED',
+  if (!voter) {
+    serverStore.logSecure('Voter verification request failed: elector not found in roll', { epicId: formattedEpic });
+    res.status(404).json({
+      success: false,
+      message: `Elector record "${formattedEpic}" not found in registered electoral roll.`,
+      status: 'NOT_FOUND',
+    });
+    return;
+  }
+
+  if (!voter.isEligible) {
+    serverStore.logSecure('Voter verification request failed: voter marked ineligible', { epicId: formattedEpic });
+    res.status(403).json({
+      success: false,
+      message: `Electoral Ineligibility Notice: Elector ${voter.name} is marked as ineligible to vote in this election.`,
+      status: 'INELIGIBLE',
     });
     return;
   }
@@ -146,6 +154,18 @@ const handleVoterVerify = async (req: Request, res: Response): Promise<void> => 
     name: voter.name,
     maskedMobile: voter.maskedMobile,
     status: 'CHALLENGE_ISSUED',
+    voter: {
+      id: voter.id,
+      epicId: voter.epicId,
+      name: voter.name,
+      gender: voter.gender,
+      age: voter.age,
+      constituencyId: voter.constituencyId,
+      pollingStation: voter.pollingStation,
+      maskedMobile: voter.maskedMobile,
+      isEligible: voter.isEligible,
+      status: voter.status,
+    },
     // In academic demo/development mode, provide the synthetic test delivery code
     // Strictly omitted in production configurations
     ...(SERVER_CONFIG.NODE_ENV !== 'production' && {
