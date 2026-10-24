@@ -241,41 +241,48 @@ export function AppInner() {
   };
 
   const handleUpdateElectionStatus = async (newStatus: ElectionStatus) => {
-    setElections((prev) =>
-      prev.map((e) => (e.id === activeElection.id ? { ...e, status: newStatus } : e))
-    );
-    evmSimulator.setElectionStatus(newStatus);
-    setAuditEvents(evmSimulator.getAuditEvents());
     try {
-      await voterApi.adminUpdateElectionStatus(activeElection.id, newStatus);
-    } catch {
-      // Local state is preserved
+      const res = await voterApi.adminUpdateElectionStatus(activeElection.id, newStatus);
+      if (res.success) {
+        setElections((prev) =>
+          prev.map((e) => (e.id === activeElection.id ? { ...e, status: newStatus } : e))
+        );
+        evmSimulator.setElectionStatus(newStatus);
+        setAuditEvents(evmSimulator.getAuditEvents());
+      } else {
+        alert(res.message || 'Failed to update election status on server.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Network error updating election status.');
     }
   };
 
   const handleCreateElection = async (
     newElection: Omit<Election, 'totalVotesCast' | 'totalVotersRegistered'>
   ) => {
-    const created: Election = {
-      ...newElection,
-      totalVotesCast: 0,
-      totalVotersRegistered: 10000,
-    };
-    setElections((prev) => [created, ...prev]);
-    setActiveElectionId(created.id);
     try {
-      await voterApi.adminCreateElection(newElection);
-    } catch {
-      // Local state is preserved
+      const res = await voterApi.adminCreateElection(newElection);
+      if (res.success && res.election) {
+        setElections((prev) => [res.election!, ...prev]);
+        setActiveElectionId(res.election!.id);
+      } else {
+        alert(res.message || 'Failed to create election on server.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Network error creating election.');
     }
   };
 
   const handleAddCandidate = async (newCand: Candidate) => {
-    setCandidates((prev) => [...prev, newCand]);
     try {
-      await voterApi.adminAddCandidate(newCand);
-    } catch {
-      // Local state is preserved
+      const res = await voterApi.adminAddCandidate(newCand);
+      if (res.success) {
+        setCandidates((prev) => [...prev, newCand]);
+      } else {
+        alert(res.message || 'Failed to register candidate on server.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Network error adding candidate.');
     }
   };
 
@@ -283,24 +290,49 @@ export function AppInner() {
     const voter = voters.find((v) => v.id === voterId);
     if (!voter) return;
     const nextEligible = !voter.isEligible;
-    setVoters((prev) =>
-      prev.map((v) => (v.id === voterId ? { ...v, isEligible: nextEligible } : v))
-    );
     try {
-      await voterApi.adminToggleVoterEligibility(voterId, nextEligible);
+      const ok = await voterApi.adminToggleVoterEligibility(voterId, nextEligible);
+      if (ok) {
+        setVoters((prev) =>
+          prev.map((v) => (v.id === voterId ? { ...v, isEligible: nextEligible } : v))
+        );
+      } else {
+        alert('Failed to update voter eligibility on server.');
+      }
     } catch {
-      // Local state is preserved
+      alert('Network error updating voter eligibility.');
     }
   };
 
   const handleResetVoterStatus = async (voterId: string) => {
-    setVoters((prev) =>
-      prev.map((v) => (v.id === voterId ? { ...v, status: 'ELIGIBLE', votedAt: undefined } : v))
-    );
     try {
-      await voterApi.adminResetVoter(voterId);
+      const ok = await voterApi.adminResetVoter(voterId);
+      if (ok) {
+        setVoters((prev) =>
+          prev.map((v) => (v.id === voterId ? { ...v, status: 'ELIGIBLE', votedAt: undefined } : v))
+        );
+      } else {
+        alert('Failed to reset voter authorization on server.');
+      }
     } catch {
-      // Local state is preserved
+      alert('Network error resetting voter authorization.');
+    }
+  };
+
+  const handleAdminLoginSuccess = async () => {
+    setIsAdminAuthenticated(true);
+    setCurrentScreen('admin-dashboard');
+    try {
+      const [freshElections, freshVoters, freshAudit] = await Promise.all([
+        voterApi.getElections(),
+        voterApi.adminGetVoters(),
+        voterApi.getAuditEvents(),
+      ]);
+      if (freshElections && freshElections.length > 0) setElections(freshElections);
+      if (freshVoters && freshVoters.length > 0) setVoters(freshVoters);
+      if (freshAudit && freshAudit.length > 0) setAuditEvents(freshAudit);
+    } catch {
+      // Local state is preserved if offline
     }
   };
 
@@ -413,6 +445,7 @@ export function AppInner() {
         {currentScreen === 'identify' && (
           <IdentifyScreen
             activeEpicId={currentVoter?.epicId}
+            voters={voters}
             onVoterIdentified={handleVoterIdentified}
             onCancel={() => setCurrentScreen('practice-voting')}
           />
@@ -490,10 +523,7 @@ export function AppInner() {
 
         {currentScreen === 'admin-login' && (
           <AdminLoginScreen
-            onLoginSuccess={() => {
-              setIsAdminAuthenticated(true);
-              setCurrentScreen('admin-dashboard');
-            }}
+            onLoginSuccess={handleAdminLoginSuccess}
             onCancel={() => setCurrentScreen('welcome')}
           />
         )}

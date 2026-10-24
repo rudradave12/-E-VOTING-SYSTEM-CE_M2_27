@@ -453,7 +453,7 @@ voterRouter.get('/session', (req: Request, res: Response): void => {
  * Finalizes participation state from AUTHORIZED to VOTED after verified blockchain transaction.
  * PRIVACY INVARIANT: Candidate choice is NEVER received or stored with the voter identity.
  */
-voterRouter.post('/record-vote', (req: Request, res: Response): void => {
+voterRouter.post('/record-vote', async (req: Request, res: Response): Promise<void> => {
   const authHeader = req.headers.authorization;
   const token = authHeader?.startsWith('Bearer ')
     ? authHeader.substring(7)
@@ -534,7 +534,7 @@ voterRouter.post('/record-vote', (req: Request, res: Response): void => {
   }
 
   // Finalize voter status to VOTED
-  serverStore.updateVoterStatus(verifiedEpic, 'VOTED');
+  await serverStore.updateVoterStatusAsync(verifiedEpic, 'VOTED');
   serverStore.markNullifierSpentOnChain(nullifier);
 
   // Increment constituency turnout

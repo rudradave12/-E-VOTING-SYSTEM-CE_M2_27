@@ -12,7 +12,7 @@ import { adminRouter, clearAdminSessionsForTesting, createAdminSessionForTesting
 import { voterRouter } from '../../server/routes/voter';
 import { pollRouter } from '../../server/routes/poll';
 import { serverStore } from '../../server/store';
-import { verifyAdminIdToken } from '../../server/firebaseAdmin';
+import { verifyAdminIdToken, setAdminFirestoreForTesting, createInMemoryFirestoreMock } from '../../server/firebaseAdmin';
 import { HISTORICAL_CONSTITUENCIES_2024 } from '../../src/data/historical2024';
 
 // Setup hermetic express app for testing router endpoints
@@ -565,6 +565,87 @@ test('BlockBallot — Phase 7F: Final Verification & Acceptance Test Suite', asy
       assert.equal(prevElec.totalVotesCast, 0, 'Previous election votes must remain unchanged');
     } finally {
       server.close();
+    }
+  });
+
+  // --------------------------------------------------------------------------
+  // PART 6: PERSISTENCE SURVIVES SERVER RESTART
+  // --------------------------------------------------------------------------
+  await t.test('7. Firestore persistence survives application server restart and re-synchronizes electoral state', async () => {
+    const mockDb = createInMemoryFirestoreMock();
+    setAdminFirestoreForTesting(mockDb);
+
+    try {
+      const geElection = serverStore.getElectionById('GE-2024');
+      if (geElection) geElection.status = 'draft';
+
+      // 1. Create an admin election via serverStore.createElectionAsync
+      await serverStore.createElectionAsync({
+        id: 'ELEC-PERSIST-RESTART',
+        numericId: 999,
+        title: 'Server Restart Persistence Verification Election',
+        description: 'Verifies that election data survives server restart and restores into fresh memory.',
+        status: 'draft',
+        startTime: Math.floor(Date.now() / 1000) + 3600,
+        endTime: Math.floor(Date.now() / 1000) + 86400 * 7,
+        contractAddress: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
+        constituencyIds: ['CONST-04-ND'],
+        electionType: 'State Legislative Assembly',
+        isDemoElection: false,
+      });
+
+      // 2. Add candidate via serverStore.addCandidateAsync
+      const candRes = await serverStore.addCandidateAsync({
+        id: 'CAND-ND-RESTART',
+        numericId: 991,
+        constituencyId: 'CONST-04-ND',
+        name: 'Persistent Test Candidate',
+        partyName: 'Persistent Integrity Party',
+        partyAbbreviation: 'PIP',
+        symbol: 'Lotus',
+        symbolKey: 'LOTUS',
+        symbolDescription: 'Lotus flower',
+        symbolSource: 'ECI Notification',
+        symbolVerificationStatus: 'VERIFIED_ECI',
+        symbolColor: '#16A34A',
+        education: 'Postgraduate',
+        age: 48,
+        criminalCases: 0,
+        assets: '₹5 Cr',
+        voteCount: 0,
+      });
+      assert.equal(candRes.success, true, 'Candidate registration must succeed');
+
+      // 3. Mark a voter as VOTED in persistence
+      await serverStore.updateVoterStatusAsync('IND-DL-982341', 'VOTED');
+
+      // 4. SIMULATE APPLICATION SERVER RESTART
+      // Reset in-memory defaults to simulate fresh process startup
+      serverStore.resetDefaults();
+
+      // Before sync, the newly created election does not exist in fresh default memory
+      assert.equal(serverStore.getElectionById('ELEC-PERSIST-RESTART'), undefined);
+
+      // 5. Call syncFromFirestore (which runs on server boot)
+      await serverStore.syncFromFirestore();
+
+      // 6. Verify election is restored from database
+      const restoredElec = serverStore.getElectionById('ELEC-PERSIST-RESTART');
+      assert.ok(restoredElec, 'Persisted election must be restored after server restart sync');
+      assert.equal(restoredElec.title, 'Server Restart Persistence Verification Election');
+      assert.equal(restoredElec.numericId, 999);
+
+      // 7. Verify candidate is restored
+      const candidates = serverStore.getCandidatesByConstituency('CONST-04-ND');
+      const restoredCand = candidates.find((c) => c.id === 'CAND-ND-RESTART');
+      assert.ok(restoredCand, 'Candidate must be restored after server restart sync');
+      assert.equal(restoredCand.name, 'Persistent Test Candidate');
+
+      // 8. Verify voter status survives restart
+      const restoredVoter = serverStore.findVoterByEpic('IND-DL-982341')!;
+      assert.equal(restoredVoter.status, 'VOTED', 'Voter status must survive server restart');
+    } finally {
+      setAdminFirestoreForTesting(null);
     }
   });
 });

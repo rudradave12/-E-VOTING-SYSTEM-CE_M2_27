@@ -114,10 +114,12 @@ async function startServer() {
   app.use('/api/admin', adminRouter);
   app.use('/api', adminRouter);
 
-  // Asynchronously seed Firestore initial data if uninitialized
-  seedInitialFirestoreData().catch((err) => {
-    console.warn('[BlockBallot] Initial Firestore seed notice:', err.message);
-  });
+  // Asynchronously seed Firestore initial data and sync in-memory store from persistence
+  seedInitialFirestoreData()
+    .then(() => serverStore.syncFromFirestore())
+    .catch((err) => {
+      console.warn('[BlockBallot] Initial Firestore seed/sync notice:', err.message);
+    });
 
   // Vite development integration or static serving
   const distDir = path.resolve(__dirname, 'dist');

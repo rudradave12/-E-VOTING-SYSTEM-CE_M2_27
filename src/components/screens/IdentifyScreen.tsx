@@ -8,12 +8,14 @@ interface IdentifyScreenProps {
   onVoterIdentified: (voter: VoterRecord, testDeliveryCode?: string) => void;
   onCancel: () => void;
   activeEpicId?: string;
+  voters?: VoterRecord[];
 }
 
 export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
   onVoterIdentified,
   onCancel,
   activeEpicId,
+  voters,
 }) => {
   const [epicInput, setEpicInput] = useState<string>(activeEpicId || '');
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +32,8 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
       return;
     }
 
-    const voter = SYNTHETIC_VOTERS.find((v) => v.epicId.toUpperCase() === formatted);
+    const roster = voters && voters.length > 0 ? voters : SYNTHETIC_VOTERS;
+    const voter = roster.find((v) => v.epicId.toUpperCase() === formatted);
 
     if (!voter) {
       setError(

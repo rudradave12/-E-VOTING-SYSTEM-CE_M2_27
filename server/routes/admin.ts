@@ -189,7 +189,7 @@ adminRouter.get('/elections', (req: Request, res: Response): void => {
  * POST /api/admin/elections
  * Creates a new election with timeframe and numericId validation.
  */
-adminRouter.post('/elections', (req: Request, res: Response): void => {
+adminRouter.post('/elections', async (req: Request, res: Response): Promise<void> => {
   if (!verifyAdminAuth(req)) {
     res.status(403).json({ success: false, message: 'Unauthorized. Officer authentication required.' });
     return;
@@ -214,7 +214,7 @@ adminRouter.post('/elections', (req: Request, res: Response): void => {
   const numId = Number(numericId) || Math.floor(Math.random() * 900) + 100;
   const initialStatus: ElectionStatus = status === 'scheduled' ? 'scheduled' : 'draft';
 
-  const created = serverStore.createElection({
+  const created = await serverStore.createElectionAsync({
     id,
     numericId: numId,
     title: title.trim(),
@@ -243,7 +243,7 @@ adminRouter.post('/elections', (req: Request, res: Response): void => {
  * PATCH /api/admin/elections/:id/status
  * Manages election lifecycle transitions (draft -> scheduled -> active -> paused -> concluded).
  */
-adminRouter.patch('/elections/:id/status', (req: Request, res: Response): void => {
+adminRouter.patch('/elections/:id/status', async (req: Request, res: Response): Promise<void> => {
   if (!verifyAdminAuth(req)) {
     res.status(403).json({ success: false, message: 'Unauthorized. Officer authentication required.' });
     return;
@@ -260,7 +260,7 @@ adminRouter.patch('/elections/:id/status', (req: Request, res: Response): void =
     return;
   }
 
-  const result = serverStore.updateElectionStatus(id, status as ElectionStatus);
+  const result = await serverStore.updateElectionStatusAsync(id, status as ElectionStatus);
   if (!result.success) {
     res.status(400).json({ success: false, message: result.message });
     return;
@@ -292,7 +292,7 @@ adminRouter.get('/candidates', (req: Request, res: Response): void => {
  * POST /api/admin/candidates
  * Registers a nominated candidate before an election becomes active.
  */
-adminRouter.post('/candidates', (req: Request, res: Response): void => {
+adminRouter.post('/candidates', async (req: Request, res: Response): Promise<void> => {
   if (!verifyAdminAuth(req)) {
     res.status(403).json({ success: false, message: 'Unauthorized. Officer authentication required.' });
     return;
@@ -380,7 +380,7 @@ adminRouter.post('/candidates', (req: Request, res: Response): void => {
     voteCount: 0,
   };
 
-  const result = serverStore.addCandidate(cand);
+  const result = await serverStore.addCandidateAsync(cand);
   if (!result.success) {
     res.status(400).json({ success: false, message: result.message });
     return;
@@ -404,7 +404,7 @@ adminRouter.get('/voters', (req: Request, res: Response): void => {
 /**
  * PATCH /api/admin/voters/:id/eligibility
  */
-adminRouter.patch('/voters/:id/eligibility', (req: Request, res: Response): void => {
+adminRouter.patch('/voters/:id/eligibility', async (req: Request, res: Response): Promise<void> => {
   if (!verifyAdminAuth(req)) {
     res.status(403).json({ success: false, message: 'Unauthorized. Officer authentication required.' });
     return;
@@ -413,7 +413,7 @@ adminRouter.patch('/voters/:id/eligibility', (req: Request, res: Response): void
   const { id } = req.params;
   const { isEligible } = req.body;
 
-  const success = serverStore.setVoterEligibility(id, !!isEligible);
+  const success = await serverStore.setVoterEligibilityAsync(id, !!isEligible);
   if (!success) {
     res.status(400).json({
       success: false,
@@ -428,14 +428,14 @@ adminRouter.patch('/voters/:id/eligibility', (req: Request, res: Response): void
 /**
  * POST /api/admin/voters/:id/reset
  */
-adminRouter.post('/voters/:id/reset', (req: Request, res: Response): void => {
+adminRouter.post('/voters/:id/reset', async (req: Request, res: Response): Promise<void> => {
   if (!verifyAdminAuth(req)) {
     res.status(403).json({ success: false, message: 'Unauthorized. Officer authentication required.' });
     return;
   }
 
   const { id } = req.params;
-  const success = serverStore.resetVoterAuthorization(id);
+  const success = await serverStore.resetVoterAuthorizationAsync(id);
   if (!success) {
     res.status(400).json({
       success: false,

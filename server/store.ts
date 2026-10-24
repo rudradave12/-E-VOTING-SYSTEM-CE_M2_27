@@ -20,6 +20,7 @@ import {
   getOtpChallengeFromFirestore,
   saveVoterRecordToFirestore,
   getVoterRecordByEpicFromFirestore,
+  getAllVotersFromFirestore,
   saveElectionToFirestore,
   getAllElectionsFromFirestore,
   getElectionByIdFromFirestore,
@@ -30,6 +31,7 @@ import {
   appendAuditEventToFirestore,
   getAllAuditEventsFromFirestore,
 } from './firestore';
+import { isFirebaseConfigured } from './firebaseAdmin';
 
 export interface OtpChallengeRecord {
   epicId: string;
@@ -101,6 +103,52 @@ class ServerStore {
     this.spentNullifiersOnChain.clear();
   }
 
+  public async syncFromFirestore(): Promise<void> {
+    if (!isFirebaseConfigured()) return;
+
+    try {
+      // 1. Synchronize Elections
+      const elections = await getAllElectionsFromFirestore();
+      if (elections && elections.length > 0) {
+        for (const e of elections) {
+          this.elections.set(e.id, { ...e });
+        }
+      }
+
+      // 2. Synchronize Constituencies
+      const constituencies = await getAllConstituenciesFromFirestore();
+      if (constituencies && constituencies.length > 0) {
+        for (const c of constituencies) {
+          this.constituencies.set(c.id, { ...c });
+        }
+      }
+
+      // 3. Synchronize Candidates
+      const candidates = await getAllCandidatesFromFirestore();
+      if (candidates && candidates.length > 0) {
+        for (const cand of candidates) {
+          this.candidates.set(cand.id, { ...cand });
+        }
+      }
+
+      // 4. Synchronize Voters
+      const voters = await getAllVotersFromFirestore();
+      if (voters && voters.length > 0) {
+        for (const v of voters) {
+          this.voters.set(v.epicId.toUpperCase(), { ...v });
+        }
+      }
+
+      // 5. Synchronize Audit Events
+      const audit = await getAllAuditEventsFromFirestore();
+      if (audit && audit.length > 0) {
+        this.auditEvents = [...audit];
+      }
+    } catch (err: any) {
+      console.warn('[ServerStore] Notice syncing from Firestore:', err.message);
+    }
+  }
+
   // --- Voter Lifecycle & Roll Operations ---
   public findVoterByEpic(epicId: string): VoterRecord | undefined {
     return this.voters.get(epicId.trim().toUpperCase());
@@ -149,6 +197,31 @@ class ServerStore {
     return true;
   }
 
+  public async updateVoterStatusAsync(
+    epicId: string,
+    status: VoterLifecycleStatus,
+    metadata?: { authorizedWallet?: string; activeNullifier?: string; ticketExpiry?: number }
+  ): Promise<boolean> {
+    const voter = this.findVoterByEpic(epicId);
+    if (!voter) return false;
+
+    if (voter.status === 'VOTED' && status !== 'VOTED') {
+      return false;
+    }
+
+    voter.status = status;
+    if (metadata?.authorizedWallet) voter.authorizedWallet = metadata.authorizedWallet;
+    if (metadata?.activeNullifier) voter.activeNullifier = metadata.activeNullifier;
+    if (metadata?.ticketExpiry) voter.ticketExpiry = metadata.ticketExpiry;
+    if (status === 'VOTED') voter.votedAt = Date.now();
+
+    if (isFirebaseConfigured()) {
+      await saveVoterRecordToFirestore(voter);
+    }
+
+    return true;
+  }
+
   public getAllVoters(): VoterRecord[] {
     return Array.from(this.voters.values());
   }
@@ -168,6 +241,20 @@ class ServerStore {
     return false;
   }
 
+  public async setVoterEligibilityAsync(voterId: string, isEligible: boolean): Promise<boolean> {
+    for (const v of this.voters.values()) {
+      if (v.id === voterId) {
+        if (v.status === 'VOTED') return false;
+        v.isEligible = isEligible;
+        if (isFirebaseConfigured()) {
+          await saveVoterRecordToFirestore(v);
+        }
+        return true;
+      }
+    }
+    return false;
+  }
+
   public resetVoterAuthorization(voterId: string): boolean {
     for (const v of this.voters.values()) {
       if (v.id === voterId) {
@@ -180,6 +267,23 @@ class ServerStore {
         saveVoterRecordToFirestore(v).catch((err) =>
           console.warn('[ServerStore] Notice resetting voter authorization in Firestore:', err.message)
         );
+        return true;
+      }
+    }
+    return false;
+  }
+
+  public async resetVoterAuthorizationAsync(voterId: string): Promise<boolean> {
+    for (const v of this.voters.values()) {
+      if (v.id === voterId) {
+        if (v.status === 'VOTED') return false;
+        v.status = 'ELIGIBLE';
+        v.activeNullifier = undefined;
+        v.authorizedWallet = undefined;
+        v.ticketExpiry = undefined;
+        if (isFirebaseConfigured()) {
+          await saveVoterRecordToFirestore(v);
+        }
         return true;
       }
     }
@@ -292,6 +396,19 @@ class ServerStore {
     return newElection;
   }
 
+  public async createElectionAsync(data: Omit<Election, 'totalVotesCast' | 'totalVotersRegistered'>): Promise<Election> {
+    const newElection: Election = {
+      ...data,
+      totalVotesCast: 0,
+      totalVotersRegistered: 10000,
+    };
+    if (isFirebaseConfigured()) {
+      await saveElectionToFirestore(newElection);
+    }
+    this.elections.set(newElection.id, newElection);
+    return newElection;
+  }
+
   public updateElectionStatus(electionId: string, newStatus: ElectionStatus): { success: boolean; message: string } {
     const election = this.elections.get(electionId);
     if (!election) {
@@ -335,6 +452,54 @@ class ServerStore {
     saveElectionToFirestore(election).catch((err) =>
       console.warn('[ServerStore] Notice updating election status in Firestore:', err.message)
     );
+
+    this.recordAuditEvent({
+      id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: Date.now(),
+      type: 'ELECTION_STATE',
+      description: `Election ${election.title} status updated from ${current.toUpperCase()} to ${newStatus.toUpperCase()}`,
+      electionId: election.numericId,
+    });
+
+    return { success: true, message: `Election state transitioned to ${newStatus}.` };
+  }
+
+  public async updateElectionStatusAsync(electionId: string, newStatus: ElectionStatus): Promise<{ success: boolean; message: string }> {
+    const election = this.elections.get(electionId);
+    if (!election) {
+      return { success: false, message: 'Election record not found.' };
+    }
+
+    const current = election.status;
+    const nowSec = Math.floor(Date.now() / 1000);
+
+    if (current === 'concluded') {
+      return { success: false, message: 'Concluded election is terminal and cannot transition.' };
+    }
+
+    if (newStatus === 'scheduled') {
+      if (election.endTime <= election.startTime) {
+        return { success: false, message: 'Election closing deadline must be strictly after the start time.' };
+      }
+    }
+
+    if (newStatus === 'active') {
+      if (nowSec > election.endTime) {
+        return { success: false, message: 'Cannot activate election past its scheduled end time.' };
+      }
+      const electionCandidates = this.getAllCandidates().filter((c) =>
+        election.constituencyIds ? election.constituencyIds.includes(c.constituencyId) : true
+      );
+      if (electionCandidates.length === 0) {
+        return { success: false, message: 'Cannot activate election without nominated candidates.' };
+      }
+    }
+
+    const updated = { ...election, status: newStatus };
+    if (isFirebaseConfigured()) {
+      await saveElectionToFirestore(updated);
+    }
+    election.status = newStatus;
 
     this.recordAuditEvent({
       id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -408,6 +573,48 @@ class ServerStore {
     saveCandidateToFirestore(candidate).catch((err) =>
       console.warn('[ServerStore] Notice saving candidate to Firestore:', err.message)
     );
+
+    this.recordAuditEvent({
+      id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: Date.now(),
+      type: 'CANDIDATE_REGISTERED',
+      description: `Candidate nomination registered: ${candidate.name} (${candidate.partyName}) for ${candidate.constituencyId}`,
+      electionId: 1,
+    });
+
+    return { success: true, message: 'Candidate registered successfully.' };
+  }
+
+  public async addCandidateAsync(candidate: Candidate): Promise<{ success: boolean; message: string }> {
+    const activeElections = Array.from(this.elections.values()).filter(
+      (e) => e.status === 'active'
+    );
+    for (const e of activeElections) {
+      if (e.constituencyIds && e.constituencyIds.includes(candidate.constituencyId)) {
+        return {
+          success: false,
+          message: 'Nominations are locked: cannot add candidates while an associated election is active.',
+        };
+      }
+    }
+
+    const exists = Array.from(this.candidates.values()).some(
+      (c) =>
+        c.constituencyId === candidate.constituencyId &&
+        c.name.trim().toLowerCase() === candidate.name.trim().toLowerCase()
+    );
+    if (exists) {
+      return { success: false, message: 'A candidate with this name already exists in this constituency.' };
+    }
+
+    if (!this.constituencies.has(candidate.constituencyId)) {
+      return { success: false, message: 'Target constituency does not exist in the electoral registry.' };
+    }
+
+    if (isFirebaseConfigured()) {
+      await saveCandidateToFirestore(candidate);
+    }
+    this.candidates.set(candidate.id, candidate);
 
     this.recordAuditEvent({
       id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
