@@ -30,6 +30,8 @@ interface AdminVotersScreenProps {
   onResetVoterStatus: (voterId: string) => void;
   onAddVoter: (voter: VoterRecord) => void;
   onBack: () => void;
+  onNavigateToFaceEnrollment?: (voter: VoterProfile) => void;
+  onNavigateToFingerprintEnrollment?: (voter: VoterProfile) => void;
 }
 
 export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
@@ -40,6 +42,8 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
   onResetVoterStatus,
   onAddVoter,
   onBack,
+  onNavigateToFaceEnrollment,
+  onNavigateToFingerprintEnrollment,
 }) => {
   // RBAC permissions check
   const officerRole = adminUser?.role || 'PLATFORM_ADMIN';
@@ -55,9 +59,16 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
     officerRole === 'VOTER_REGISTRATION_OFFICER' ||
     officerRole === 'PLATFORM_ADMIN' ||
     adminUser?.permissions?.includes('VOTER_DEACTIVATE');
+  const canEnrollBiometrics =
+    officerRole === 'VOTER_REGISTRATION_OFFICER' ||
+    officerRole === 'PLATFORM_ADMIN' ||
+    adminUser?.permissions?.includes('BIOMETRIC_ENROLLMENT_START');
 
   // Local state for persisted profiles
   const [profiles, setProfiles] = useState<VoterProfile[]>([]);
+  const [voterBiometricsMap, setVoterBiometricsMap] = useState<
+    Record<string, { faceStatus: string; fingerprintStatus: string }>
+  >({});
   const [loading, setLoading] = useState<boolean>(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
@@ -130,6 +141,27 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
 
       if (res.success && Array.isArray(res.voters)) {
         setProfiles(res.voters);
+
+        // Fetch biometric metadata summaries for active roll
+        Promise.all(
+          res.voters.slice(0, 50).map(async (v) => {
+            try {
+              const bio = await voterApi.adminGetVoter(v.id);
+              if (bio.success && bio.biometrics) {
+                return [v.id, bio.biometrics] as const;
+              }
+            } catch {
+              // Ignore network glitches for non-critical summaries
+            }
+            return [v.id, { faceStatus: 'NOT_STARTED', fingerprintStatus: 'NOT_STARTED' }] as const;
+          })
+        ).then((entries) => {
+          const map: Record<string, { faceStatus: string; fingerprintStatus: string }> = {};
+          for (const [id, meta] of entries) {
+            map[id] = meta;
+          }
+          setVoterBiometricsMap(map);
+        });
       } else {
         // Fallback to legacy prop voters if API endpoint gave empty or unauthenticated response
         if (propVoters.length > 0) {
@@ -535,15 +567,23 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
                       </td>
 
                       <td className="py-3 px-4">
-                        <div className="flex flex-col gap-1 text-[10px]">
-                          <span className="inline-flex items-center gap-1 text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded w-fit">
-                            <Camera className="w-3 h-3 text-slate-400" />
-                            <span>Face: NOT_STARTED</span>
-                          </span>
-                          <span className="inline-flex items-center gap-1 text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded w-fit">
-                            <Fingerprint className="w-3 h-3 text-slate-400" />
-                            <span>Fingerprint: NOT_STARTED</span>
-                          </span>
+                        <div className="flex flex-col gap-1.5 text-[10px]">
+                          <button
+                            onClick={() => onNavigateToFaceEnrollment?.(voter)}
+                            title="Enroll Face or View Live Guidance"
+                            className="inline-flex items-center gap-1.5 text-slate-700 bg-slate-50 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 border border-slate-200 px-2 py-1 rounded w-fit transition-colors cursor-pointer font-medium"
+                          >
+                            <Camera className="w-3.5 h-3.5 text-blue-600" />
+                            <span>Face: {voterBiometricsMap[voter.id]?.faceStatus || 'NOT_STARTED'}</span>
+                          </button>
+                          <button
+                            onClick={() => onNavigateToFingerprintEnrollment?.(voter)}
+                            title="Enroll Fingerprint or View Scanner Status"
+                            className="inline-flex items-center gap-1.5 text-slate-700 bg-slate-50 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 border border-slate-200 px-2 py-1 rounded w-fit transition-colors cursor-pointer font-medium"
+                          >
+                            <Fingerprint className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Fingerprint: {voterBiometricsMap[voter.id]?.fingerprintStatus || 'NOT_STARTED'}</span>
+                          </button>
                         </div>
                       </td>
 
@@ -916,21 +956,50 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
                 </div>
               </div>
 
-              {/* Biometric Status Summary */}
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1">
+              {/* Biometric Status Summary & Actions */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-2">
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">
-                  Biometric Enrollment Status (Read-Only)
+                  Biometric Enrollment Status & Workflows
                 </span>
-                <div className="flex items-center gap-4 text-slate-600 pt-1">
+                <div className="flex items-center gap-4 text-slate-700 pt-0.5">
                   <span className="flex items-center gap-1.5 font-medium">
-                    <Camera className="w-3.5 h-3.5 text-slate-400" />
+                    <Camera className="w-3.5 h-3.5 text-blue-600" />
                     <span>Face: {editBiometrics?.faceStatus || 'NOT_STARTED'}</span>
                   </span>
                   <span className="flex items-center gap-1.5 font-medium">
-                    <Fingerprint className="w-3.5 h-3.5 text-slate-400" />
+                    <Fingerprint className="w-3.5 h-3.5 text-emerald-600" />
                     <span>Fingerprint: {editBiometrics?.fingerprintStatus || 'NOT_STARTED'}</span>
                   </span>
                 </div>
+
+                {canEnrollBiometrics && (
+                  <div className="flex items-center gap-2 pt-2 border-t border-slate-200/60">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = editTarget;
+                        setEditTarget(null);
+                        onNavigateToFaceEnrollment?.(target);
+                      }}
+                      className="flex-1 py-1.5 px-2 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Camera className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Enroll Face</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = editTarget;
+                        setEditTarget(null);
+                        onNavigateToFingerprintEnrollment?.(target);
+                      }}
+                      className="flex-1 py-1.5 px-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Fingerprint className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Enroll Fingerprint</span>
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div>

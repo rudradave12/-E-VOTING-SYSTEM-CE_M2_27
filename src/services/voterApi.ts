@@ -11,7 +11,13 @@ import {
   PollResponseRecord,
 } from '../types';
 import { RecognizedPartyRecord } from '../data/historical2024';
-import { VoterProfile } from '../types/dataModel';
+import {
+  VoterProfile,
+  BiometricEnrollmentMetadata,
+  BiometricModality,
+  BiometricEnrollmentStatus,
+  BiometricQualityCheckStatus,
+} from '../types/dataModel';
 
 export interface VerifyVoterResponse {
   success: boolean;
@@ -498,6 +504,57 @@ export class VoterApiClient {
       return await res.json();
     } catch (err: any) {
       return { success: false, message: err.message || 'Network error retrieving voter profile.' };
+    }
+  }
+
+  public async adminGetVoterBiometrics(id: string): Promise<{
+    success: boolean;
+    voterId?: string;
+    simulationVoterId?: string;
+    biometrics?: BiometricEnrollmentMetadata[];
+    face?: BiometricEnrollmentMetadata | null;
+    fingerprint?: BiometricEnrollmentMetadata | null;
+    message?: string;
+  }> {
+    try {
+      const res = await fetch(`/api/admin/voters/${encodeURIComponent(id)}/biometrics`, {
+        headers: {
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error fetching biometric metadata.' };
+    }
+  }
+
+  public async adminUpdateBiometricMetadata(
+    id: string,
+    payload: {
+      modality: BiometricModality;
+      status?: BiometricEnrollmentStatus;
+      qualityCheckStatus?: BiometricQualityCheckStatus;
+      deviceType?: string;
+      deviceProvider?: string;
+      qualityScore?: number;
+    }
+  ): Promise<{
+    success: boolean;
+    message?: string;
+    biometrics?: BiometricEnrollmentMetadata;
+  }> {
+    try {
+      const res = await fetch(`/api/admin/voters/${encodeURIComponent(id)}/biometrics`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+        body: JSON.stringify(payload),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error updating biometric metadata.' };
     }
   }
 

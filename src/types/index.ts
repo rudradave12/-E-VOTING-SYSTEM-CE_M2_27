@@ -159,7 +159,9 @@ export type NavigationScreen =
   | 'admin-elections'
   | 'admin-candidates'
   | 'admin-voters'
-  | 'admin-audit';
+  | 'admin-audit'
+  | 'face-enrollment'
+  | 'fingerprint-enrollment';
 
 export interface PreferencePollConfig {
   id: string;

@@ -55,9 +55,13 @@ import { AdminElectionsScreen } from './components/screens/AdminElectionsScreen'
 import { AdminCandidatesScreen } from './components/screens/AdminCandidatesScreen';
 import { AdminVotersScreen } from './components/screens/AdminVotersScreen';
 import { AdminAuditScreen } from './components/screens/AdminAuditScreen';
+import { FaceEnrollmentScreen } from './components/screens/FaceEnrollmentScreen';
+import { FingerprintEnrollmentScreen } from './components/screens/FingerprintEnrollmentScreen';
+import { VoterProfile } from './types/dataModel';
 
 export function AppInner() {
   const [currentScreen, setCurrentScreen] = useState<NavigationScreen>('welcome');
+  const [selectedEnrollmentVoter, setSelectedEnrollmentVoter] = useState<VoterProfile | null>(null);
   const [isSimulatedEVM, setIsSimulatedEVM] = useState<boolean>(true);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(false);
   const [adminUser, setAdminUser] = useState<any>(null);
@@ -564,6 +568,30 @@ export function AppInner() {
             onResetVoterStatus={handleResetVoterStatus}
             onAddVoter={(voter) => setVoters((prev) => [...prev, voter])}
             onBack={() => setCurrentScreen('admin-dashboard')}
+            onNavigateToFaceEnrollment={(voter) => {
+              setSelectedEnrollmentVoter(voter);
+              setCurrentScreen('face-enrollment');
+            }}
+            onNavigateToFingerprintEnrollment={(voter) => {
+              setSelectedEnrollmentVoter(voter);
+              setCurrentScreen('fingerprint-enrollment');
+            }}
+          />
+        )}
+
+        {currentScreen === 'face-enrollment' && (
+          <FaceEnrollmentScreen
+            voter={selectedEnrollmentVoter}
+            adminUser={adminUser}
+            onBack={() => setCurrentScreen('admin-voters')}
+          />
+        )}
+
+        {currentScreen === 'fingerprint-enrollment' && (
+          <FingerprintEnrollmentScreen
+            voter={selectedEnrollmentVoter}
+            adminUser={adminUser}
+            onBack={() => setCurrentScreen('admin-voters')}
           />
         )}
 

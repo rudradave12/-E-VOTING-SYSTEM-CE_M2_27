@@ -1018,6 +1018,192 @@ adminRouter.get('/voters/:id', requirePermission('VOTER_READ'), async (req: Requ
 });
 
 /**
+ * GET /api/admin/voters/:id/biometrics
+ * Retrieves detailed biometric enrollment metadata records for a voter.
+ * Requires VOTER_READ or BIOMETRIC_ENROLLMENT_START permission and scope check.
+ */
+adminRouter.get('/voters/:id/biometrics', requirePermission('VOTER_READ'), async (req: Request, res: Response): Promise<void> => {
+  const session = (req as any).officer as OfficerSession;
+  const repos = getDataRepositories();
+  const { id } = req.params;
+
+  const profile =
+    (await repos.voterProfiles.findById(id)) ||
+    (await repos.voterProfiles.findBySimulationId(id)) ||
+    (await repos.voterProfiles.findByLegacyEpic(id));
+
+  if (!profile) {
+    res.status(404).json({ success: false, message: `Voter record '${id}' not found.` });
+    return;
+  }
+
+  // Scope check
+  if (session && !isConstituencyInScope(session.assignmentScope, profile.constituencyId)) {
+    res.status(403).json({
+      success: false,
+      message: `Scope violation: Access to voter in constituency '${profile.constituencyId}' is outside officer's authorized assignment scope.`,
+    });
+    return;
+  }
+
+  const bioList = await repos.biometrics.listByVoter(profile.id);
+  const face = bioList.find((b) => b.modality === 'FACE') || null;
+  const fingerprint = bioList.find((b) => b.modality === 'FINGERPRINT') || null;
+
+  res.status(200).json({
+    success: true,
+    voterId: profile.id,
+    simulationVoterId: profile.simulationVoterId,
+    biometrics: bioList,
+    face,
+    fingerprint,
+  });
+});
+
+/**
+ * PATCH /api/admin/voters/:id/biometrics
+ * Updates biometric enrollment metadata (e.g. transition to PENDING, DEVICE_UNAVAILABLE).
+ * Strictly prohibits raw biometric payloads (images, minutiae, templates).
+ * Prohibits falsely claiming ENROLLED without verified hardware/template engine.
+ * Requires BIOMETRIC_ENROLLMENT_START permission and scope check.
+ */
+adminRouter.patch('/voters/:id/biometrics', requirePermission('BIOMETRIC_ENROLLMENT_START'), async (req: Request, res: Response): Promise<void> => {
+  const session = (req as any).officer as OfficerSession;
+  const repos = getDataRepositories();
+  const { id } = req.params;
+
+  // 1. Invariant: Strict raw biometric data rejection
+  for (const forbiddenKey of FORBIDDEN_BIOMETRIC_REGISTRATION_KEYS) {
+    if (forbiddenKey in req.body && req.body[forbiddenKey] !== undefined) {
+      serverStore.recordAuditEvent({
+        id: `audit-bio-reject-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        timestamp: Date.now(),
+        type: 'ADMIN_ACTION',
+        description: `Rejected biometric update: Prohibited raw biometric field '${forbiddenKey}' submitted by '${session?.accountId}'`,
+        electionId: 1,
+      });
+
+      res.status(400).json({
+        success: false,
+        message: `Security violation: Raw biometric field '${forbiddenKey}' is strictly prohibited.`,
+      });
+      return;
+    }
+  }
+
+  const { modality, status, qualityCheckStatus, deviceType, deviceProvider, qualityScore } = req.body;
+
+  if (!modality || !['FACE', 'FINGERPRINT'].includes(modality)) {
+    res.status(400).json({
+      success: false,
+      message: "Invalid modality: Must be 'FACE' or 'FINGERPRINT'.",
+    });
+    return;
+  }
+
+  // 2. Resolve voter profile
+  const profile =
+    (await repos.voterProfiles.findById(id)) ||
+    (await repos.voterProfiles.findBySimulationId(id)) ||
+    (await repos.voterProfiles.findByLegacyEpic(id));
+
+  if (!profile) {
+    res.status(404).json({ success: false, message: `Voter record '${id}' not found.` });
+    return;
+  }
+
+  // 3. Scope check
+  if (session && !isConstituencyInScope(session.assignmentScope, profile.constituencyId)) {
+    serverStore.recordAuditEvent({
+      id: `audit-bio-scope-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: Date.now(),
+      type: 'ADMIN_ACTION',
+      description: `Scope violation: Account '${session.accountId}' attempted biometric update for out-of-scope voter in '${profile.constituencyId}'`,
+      electionId: 1,
+    });
+
+    res.status(403).json({
+      success: false,
+      message: `Scope violation: Access to voter in constituency '${profile.constituencyId}' is outside officer's authorized assignment scope.`,
+    });
+    return;
+  }
+
+  // 4. Strict integrity check: ENROLLED and MANUALLY_APPROVED cannot be set via simple UI click
+  if (status === 'ENROLLED') {
+    res.status(400).json({
+      success: false,
+      message: 'Integrity rule: Status cannot be set to ENROLLED in Phase 05. A verified biometric matching engine and compatible hardware SDK are required.',
+    });
+    return;
+  }
+
+  if (status === 'MANUALLY_APPROVED') {
+    res.status(400).json({
+      success: false,
+      message: 'Integrity rule: MANUALLY_APPROVED status requires the Phase 06 physical ID exception approval workflow.',
+    });
+    return;
+  }
+
+  const allowedStatuses = ['NOT_STARTED', 'PENDING', 'DEVICE_UNAVAILABLE', 'REQUIRES_REENROLLMENT'];
+  if (status && !allowedStatuses.includes(status)) {
+    res.status(400).json({
+      success: false,
+      message: `Invalid status: '${status}'. Allowed values in Phase 05 are: ${allowedStatuses.join(', ')}`,
+    });
+    return;
+  }
+
+  // 5. Retrieve existing or create new stub metadata
+  let existingMeta = await repos.biometrics.getMetadata(profile.id, modality as any);
+  const now = Date.now();
+
+  if (!existingMeta) {
+    existingMeta = {
+      id: `bio_${profile.id}_${modality.toLowerCase()}`,
+      voterId: profile.id,
+      modality: modality as any,
+      status: 'NOT_STARTED',
+      biometricReferenceId: 'unassigned',
+      qualityCheckStatus: 'PENDING',
+      isManualException: false,
+      createdAt: now,
+      updatedAt: now,
+      schemaVersion: SCHEMA_VERSION_CURRENT,
+    };
+  }
+
+  const updatedMeta: BiometricEnrollmentMetadata = {
+    ...existingMeta,
+    status: status || existingMeta.status,
+    qualityCheckStatus: qualityCheckStatus || existingMeta.qualityCheckStatus,
+    deviceType: deviceType !== undefined ? String(deviceType) : existingMeta.deviceType,
+    deviceProvider: deviceProvider !== undefined ? String(deviceProvider) : existingMeta.deviceProvider,
+    qualityScore: typeof qualityScore === 'number' ? qualityScore : existingMeta.qualityScore,
+    enrollingOfficerId: session?.accountId || 'VRO-SIM-001',
+    updatedAt: now,
+  };
+
+  await repos.biometrics.saveMetadata(updatedMeta);
+
+  // 6. Record structured audit event
+  serverStore.recordAuditEvent({
+    id: `audit-bio-update-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    timestamp: Date.now(),
+    type: 'ADMIN_ACTION',
+    description: `Biometric metadata updated for voter '${profile.simulationVoterId}' (${modality} -> ${updatedMeta.status}) by officer '${session?.accountId}'`,
+    electionId: 1,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: `Biometric ${modality.toLowerCase()} enrollment metadata updated successfully.`,
+    biometrics: updatedMeta,
+  });
+});
+
+/**
  * PATCH /api/admin/voters/:id
  * Edits permitted registration fields (fullName, dateOfBirth, gender, state, district, constituencyId, pollingStation, maskedMobile, isEligible).
  * Rejects immutable/server-owned identifiers.
