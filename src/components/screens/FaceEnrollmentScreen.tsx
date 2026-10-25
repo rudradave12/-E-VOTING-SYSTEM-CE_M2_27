@@ -26,7 +26,7 @@ import {
   FileCheck,
 } from 'lucide-react';
 import { VoterProfile, BiometricEnrollmentStatus, ExceptionReasonCode } from '../../types/dataModel';
-import { isConstituencyInScope } from '../../../server/auth/rbac';
+import { isConstituencyInScope } from '../../types/permissions';
 import { cameraService } from '../../services/biometricService';
 import { voterApi } from '../../services/voterApi';
 

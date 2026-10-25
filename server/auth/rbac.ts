@@ -367,22 +367,4 @@ export function requirePermission(permission: Permission) {
   }
 }
 
-/**
- * Scope validation helper: Verifies if a constituency is within an officer's assigned jurisdiction
- */
-export function isConstituencyInScope(scope: AuthorityAssignmentScope | undefined, constituencyId: string): boolean {
-  if (!scope || !scope.constituencyIds || scope.constituencyIds.length === 0) {
-    return true; // Unrestricted simulation scope (e.g. Platform Administrator)
-  }
-  return scope.constituencyIds.includes(constituencyId);
-}
-
-/**
- * Scope validation helper: Verifies if an election is within an officer's assigned jurisdiction
- */
-export function isElectionInScope(scope: AuthorityAssignmentScope | undefined, electionId: string): boolean {
-  if (!scope || !scope.electionIds || scope.electionIds.length === 0) {
-    return true; // Unrestricted simulation scope
-  }
-  return scope.electionIds.includes(electionId);
-}
+export { isConstituencyInScope, isElectionInScope } from '../../src/types/permissions';

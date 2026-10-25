@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AuthorityRole } from './dataModel';
-export type { AuthorityRole };
+import type { AuthorityRole, AuthorityAssignmentScope } from './dataModel';
+export type { AuthorityRole, AuthorityAssignmentScope };
 
 /**
  * BlockBallot — Centralized Permission Registry & RBAC Policy
@@ -138,3 +138,30 @@ export const DEMO_OFFICER_IDENTIFIERS = {
   VOTER_REGISTRATION_OFFICER: 'VRO-SIM-001',
   PLATFORM_ADMIN: 'demo-admin-uid',
 } as const;
+
+/**
+ * Scope validation helper: Verifies if a constituency is within an officer's assigned jurisdiction.
+ */
+export function isConstituencyInScope(
+  scope: AuthorityAssignmentScope | undefined,
+  constituencyId: string
+): boolean {
+  if (!scope || !scope.constituencyIds || scope.constituencyIds.length === 0) {
+    return true; // Unrestricted simulation scope (e.g. Platform Administrator)
+  }
+  return scope.constituencyIds.includes(constituencyId);
+}
+
+/**
+ * Scope validation helper: Verifies if an election is within an officer's assigned jurisdiction.
+ */
+export function isElectionInScope(
+  scope: AuthorityAssignmentScope | undefined,
+  electionId: string
+): boolean {
+  if (!scope || !scope.electionIds || scope.electionIds.length === 0) {
+    return true; // Unrestricted simulation scope
+  }
+  return scope.electionIds.includes(electionId);
+}
+

@@ -24,7 +24,7 @@ import {
   FileCheck,
 } from 'lucide-react';
 import { VoterProfile, BiometricEnrollmentStatus, ExceptionReasonCode } from '../../types/dataModel';
-import { isConstituencyInScope } from '../../../server/auth/rbac';
+import { isConstituencyInScope } from '../../types/permissions';
 import {
   getFingerprintScannerAdapter,
   ScannerDeviceStatus,
