@@ -151,9 +151,9 @@ service cloud.firestore {
       allow read, write: if false; // Authoritative backend only
     }
 
-    // 4e. Anonymous Ballots (Phase 02): Public receipt verification; write locked from client SDK.
+    // 4e. Anonymous Ballots (Phase 02): Confidential ballot receipts; direct write locked from client SDK.
     match /ballots/{ballotId} {
-      allow read: if isValidId(ballotId);
+      allow read: if isValidId(ballotId) && (isAdmin() || isSignedIn());
       allow list: if isAdmin();
       allow write: if false; // Authoritative backend atomic recording only
     }
@@ -163,6 +163,16 @@ service cloud.firestore {
       allow read: if isSignedIn() && (request.auth.uid == accountId || isAdmin());
       allow list: if isAdmin();
       allow write: if false; // Server-only provisioning
+    }
+
+    // 4g. Manual Physical-ID Exceptions (Phase 06): Strictly confidential exception records.
+    match /manual_id_exceptions/{exceptionId} {
+      allow read, write: if false; // Authoritative backend only
+    }
+
+    // 4h. Voting Sessions (Phase 08): Server-authoritative session records.
+    match /voting_sessions/{sessionId} {
+      allow read, write: if false; // Authoritative backend only
     }
 
     // 5. OTP Challenges: Strictly server-side HMAC challenges; client direct read/write prohibited.
@@ -220,6 +230,15 @@ service cloud.firestore {
         allow list: if true;
         allow write: if false;
       }
+    }
+
+    // 11. Protected Server-Only Collections: Strictly denied to client SDK
+    match /manual_id_exceptions/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /voting_sessions/{document=**} {
+      allow read, write: if false;
     }
   }
 }

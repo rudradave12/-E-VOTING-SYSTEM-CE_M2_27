@@ -323,3 +323,7 @@ export function verifyVoterJwt(
   }
 }
 
+// Re-export Phase 09 Key Provider, Field-Level Encryption & Data Minimization
+export * from './security';
+
+

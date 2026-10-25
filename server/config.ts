@@ -68,6 +68,18 @@ export const SERVER_CONFIG = {
     return process.env.SERVER_COMMITMENT_SALT || DEFAULT_FALLBACK_COMMITMENT_SALT;
   },
 
+  // High-entropy 256-bit encryption key for field-level AES-256-GCM data encryption at rest
+  get APP_ENCRYPTION_KEY(): string {
+    if (process.env.NODE_ENV === 'production') {
+      return process.env.APP_ENCRYPTION_KEY || process.env.DATA_ENCRYPTION_KEY || '';
+    }
+    return (
+      process.env.APP_ENCRYPTION_KEY ||
+      process.env.DATA_ENCRYPTION_KEY ||
+      '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+    );
+  },
+
   // Target Firestore Database ID
   get FIRESTORE_DATABASE_ID(): string {
     return process.env.FIRESTORE_DATABASE_ID || '(default)';
@@ -185,7 +197,24 @@ export function validateServerConfig(customEnv?: NodeJS.ProcessEnv): ServerConfi
       );
     }
 
-    // 4. Production Cloud Credentials Advisory
+    // 4. Production Application Encryption Key Validation
+    const rawEncKey = env.APP_ENCRYPTION_KEY || env.DATA_ENCRYPTION_KEY;
+    if (!rawEncKey) {
+      errors.push('CRITICAL: APP_ENCRYPTION_KEY (or DATA_ENCRYPTION_KEY) must be explicitly configured in production.');
+    } else {
+      const trimmedEnc = rawEncKey.trim().toLowerCase();
+      if (
+        trimmedEnc === '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' ||
+        trimmedEnc === '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' ||
+        trimmedEnc === '0x0000000000000000000000000000000000000000000000000000000000000000'
+      ) {
+        errors.push('CRITICAL: Production cannot start with an insecure demo/test key or deterministic development encryption key.');
+      } else if (rawEncKey.trim().length < 32) {
+        errors.push('CRITICAL: APP_ENCRYPTION_KEY in production must be a high-entropy 256-bit key (at least 32 characters or 64-hex).');
+      }
+    }
+
+    // 5. Production Cloud Credentials Advisory
     if (!env.FIREBASE_SERVICE_ACCOUNT_KEY && !env.GOOGLE_APPLICATION_CREDENTIALS && !env.FIRESTORE_EMULATOR_HOST) {
       warnings.push(
         'Neither FIREBASE_SERVICE_ACCOUNT_KEY nor GOOGLE_APPLICATION_CREDENTIALS is set. Firestore writes will fail unless using GCP Application Default Credentials.'
@@ -198,6 +227,9 @@ export function validateServerConfig(customEnv?: NodeJS.ProcessEnv): ServerConfi
     }
     if (!rawSignerKey) {
       warnings.push('SERVER_AUTHORIZATION_SIGNER_KEY not set in environment; using dedicated demo signing key.');
+    }
+    if (!env.APP_ENCRYPTION_KEY && !env.DATA_ENCRYPTION_KEY) {
+      warnings.push('APP_ENCRYPTION_KEY not set in environment; using dedicated demo encryption key for academic demo.');
     }
   }
 

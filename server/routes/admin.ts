@@ -46,6 +46,7 @@ import {
   calculateAgeFromDob,
   isValidSimulationVoterId,
 } from '../utils/voterId';
+import { validateNoProhibitedFields, sanitizeLogData, maskMobile } from '../security';
 
 export const adminRouter = Router();
 
@@ -942,6 +943,15 @@ adminRouter.post('/voters', requirePermission('VOTER_CREATE'), async (req: Reque
     }
   }
 
+  const prohibitedCheck = validateNoProhibitedFields(req.body);
+  if (!prohibitedCheck.isValid) {
+    res.status(400).json({
+      success: false,
+      message: `Prohibited sensitive field(s) rejected: ${prohibitedCheck.forbiddenFound.join(', ')}`,
+    });
+    return;
+  }
+
   const {
     fullName,
     dateOfBirth,
@@ -1218,7 +1228,7 @@ adminRouter.get('/voters', requirePermission('VOTER_READ'), async (req: Request,
       district: 'New Delhi',
       constituencyId: sv.constituencyId,
       pollingStation: sv.pollingStation,
-      maskedMobile: sv.maskedMobile,
+      maskedMobile: maskMobile(sv.maskedMobile),
       registrationStatus: 'REGISTERED',
       eligibilityStatus: sv.isEligible ? 'ELIGIBLE' : 'INELIGIBLE_DISQUALIFIED',
       lifecycleStatus: 'ACTIVE',
@@ -1888,7 +1898,7 @@ adminRouter.get('/results', (req: Request, res: Response): void => {
  * Public summary or administrative audit stream.
  */
 adminRouter.get('/audit-events', (req: Request, res: Response): void => {
-  const auditEvents = serverStore.getAllAuditEvents();
+  const auditEvents = serverStore.getAllAuditEvents().map((e) => sanitizeLogData(e));
   res.status(200).json({ success: true, auditEvents });
 });
 
@@ -1900,7 +1910,7 @@ adminRouter.get(
   ['/audit', '/admin/audit', '/audit-events-protected'],
   requirePermission('AUDIT_READ'),
   (req: Request, res: Response): void => {
-    const auditEvents = serverStore.getAllAuditEvents();
+    const auditEvents = serverStore.getAllAuditEvents().map((e) => sanitizeLogData(e));
     res.status(200).json({ success: true, auditEvents });
   }
 );

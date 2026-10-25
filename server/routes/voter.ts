@@ -14,6 +14,7 @@ import { INITIAL_CONSTITUENCIES } from '../../src/data/mockData';
 import { getDataRepositories } from '../repositories';
 import { SCHEMA_VERSION_CURRENT } from '../../src/types/dataModel';
 import { normalizeElectionStatus } from '../../src/types';
+import { validateNoProhibitedFields, maskMobile } from '../security';
 
 export const voterRouter = Router();
 
@@ -91,6 +92,15 @@ export function isValidEpicFormat(epicId: string, isProduction: boolean = SERVER
  * Initiates synthetic voter verification and issues an HMAC-SHA256 protected OTP challenge.
  */
 const handleVoterVerify = async (req: Request, res: Response): Promise<void> => {
+  const prohibitedCheck = validateNoProhibitedFields(req.body);
+  if (!prohibitedCheck.isValid) {
+    res.status(400).json({
+      success: false,
+      message: `Prohibited sensitive field(s) rejected: ${prohibitedCheck.forbiddenFound.join(', ')}`,
+    });
+    return;
+  }
+
   const { epicId } = req.body;
 
   if (!epicId || typeof epicId !== 'string' || !isValidEpicFormat(epicId)) {
@@ -160,7 +170,7 @@ const handleVoterVerify = async (req: Request, res: Response): Promise<void> => 
     message: 'Verification challenge initiated. Check registered destination for your 6-digit OTP.',
     epicId: formattedEpic,
     name: voter.name,
-    maskedMobile: voter.maskedMobile,
+    maskedMobile: maskMobile(voter.maskedMobile),
     status: 'CHALLENGE_ISSUED',
     voter: {
       id: voter.id,
@@ -170,7 +180,7 @@ const handleVoterVerify = async (req: Request, res: Response): Promise<void> => 
       age: voter.age,
       constituencyId: voter.constituencyId,
       pollingStation: voter.pollingStation,
-      maskedMobile: voter.maskedMobile,
+      maskedMobile: maskMobile(voter.maskedMobile),
       isEligible: voter.isEligible,
       status: voter.status,
     },
@@ -192,6 +202,15 @@ voterRouter.post('/identify', handleVoterVerify);
  * Verifies the submitted 6-digit OTP against the persistent HMAC challenge.
  */
 voterRouter.post('/verify-otp', async (req: Request, res: Response): Promise<void> => {
+  const prohibitedCheck = validateNoProhibitedFields(req.body);
+  if (!prohibitedCheck.isValid) {
+    res.status(400).json({
+      success: false,
+      message: `Prohibited sensitive field(s) rejected: ${prohibitedCheck.forbiddenFound.join(', ')}`,
+    });
+    return;
+  }
+
   const { epicId, otp } = req.body;
 
   if (!epicId || !otp || typeof otp !== 'string' || otp.trim().length !== 6) {
@@ -379,6 +398,15 @@ voterRouter.post('/verify-otp', async (req: Request, res: Response): Promise<voi
  * Requires authenticated session token.
  */
 voterRouter.post('/authorization', async (req: Request, res: Response): Promise<void> => {
+  const prohibitedCheck = validateNoProhibitedFields(req.body);
+  if (!prohibitedCheck.isValid) {
+    res.status(400).json({
+      success: false,
+      message: `Prohibited sensitive field(s) rejected: ${prohibitedCheck.forbiddenFound.join(', ')}`,
+    });
+    return;
+  }
+
   const authHeader = req.headers.authorization;
   const tokenFromHeader = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
   const sessionToken = tokenFromHeader || req.body.sessionToken;
@@ -597,8 +625,10 @@ voterRouter.post('/authorization', async (req: Request, res: Response): Promise<
     return;
   }
 
+  const numericElectionId = targetElection ? targetElection.numericId : (Number(electionId) || 18);
+
   // Derive pseudonymous nullifier
-  const nullifier = deriveServerNullifier(voter.epicId, Number(electionId));
+  const nullifier = deriveServerNullifier(voter.epicId, numericElectionId);
 
   // Idempotent Reconciliation: Check if this nullifier is already spent on-chain
   if (serverStore.isNullifierSpentOnChain(nullifier)) {
@@ -625,8 +655,9 @@ voterRouter.post('/authorization', async (req: Request, res: Response): Promise<
 
   // Sign EIP-712 ticket
   try {
+    const numericElectionId = targetElection ? targetElection.numericId : (Number(electionId) || 18);
     const ticket = await signEip712VotingAuthorization(
-      Number(electionId),
+      numericElectionId,
       session.constituencyCode,
       voterWallet,
       nullifier,
@@ -799,6 +830,15 @@ voterRouter.post('/session/fullscreen-exit', async (req: Request, res: Response)
  * PRIVACY INVARIANT: Candidate choice is NEVER received or stored with the voter identity.
  */
 voterRouter.post('/record-vote', async (req: Request, res: Response): Promise<void> => {
+  const prohibitedCheck = validateNoProhibitedFields(req.body);
+  if (!prohibitedCheck.isValid) {
+    res.status(400).json({
+      success: false,
+      message: `Prohibited sensitive field(s) rejected: ${prohibitedCheck.forbiddenFound.join(', ')}`,
+    });
+    return;
+  }
+
   const authHeader = req.headers.authorization;
   const token = authHeader?.startsWith('Bearer ')
     ? authHeader.substring(7)
@@ -1152,6 +1192,15 @@ voterRouter.post('/record-vote', async (req: Request, res: Response): Promise<vo
  * Idempotent transaction recovery for aborted, reverted, or network-interrupted ballot submissions.
  */
 voterRouter.post('/recover-transaction', (req: Request, res: Response): void => {
+  const prohibitedCheck = validateNoProhibitedFields(req.body);
+  if (!prohibitedCheck.isValid) {
+    res.status(400).json({
+      success: false,
+      message: `Prohibited sensitive field(s) rejected: ${prohibitedCheck.forbiddenFound.join(', ')}`,
+    });
+    return;
+  }
+
   const authHeader = req.headers.authorization;
   const token = authHeader?.startsWith('Bearer ')
     ? authHeader.substring(7)
@@ -1279,6 +1328,15 @@ voterRouter.get('/exceptions/:id', async (req: Request, res: Response): Promise<
  * 7. Single-use: transitions to CONSUMED.
  */
 voterRouter.post('/consume-exception', async (req: Request, res: Response): Promise<void> => {
+  const prohibitedCheck = validateNoProhibitedFields(req.body);
+  if (!prohibitedCheck.isValid) {
+    res.status(400).json({
+      success: false,
+      message: `Prohibited sensitive field(s) rejected: ${prohibitedCheck.forbiddenFound.join(', ')}`,
+    });
+    return;
+  }
+
   const { exceptionId, voterId, electionId } = req.body;
   const sessionToken = req.body.sessionToken || req.body.votingSessionToken;
 
