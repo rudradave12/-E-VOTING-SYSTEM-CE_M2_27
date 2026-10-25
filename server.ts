@@ -8,6 +8,7 @@ import { voterRouter } from './server/routes/voter';
 import { adminRouter } from './server/routes/admin';
 import { historicalRouter } from './server/routes/historical';
 import { archiveRouter } from './server/routes/archive';
+import { monitorRouter } from './server/routes/monitor';
 import { pollRouter } from './server/routes/poll';
 import { seedInitialFirestoreData } from './server/firestore';
 import { serverStore } from './server/store';
@@ -110,6 +111,9 @@ async function startServer() {
 
   // Mount Phase 10 Historical Election Data Archive routes
   app.use('/api/archive', archiveRouter);
+
+  // Mount Phase 11 Public Election Monitor routes
+  app.use('/api/monitor', monitorRouter);
 
   // Mount Independent Party-Preference Poll routes
   app.use('/api/poll', pollRouter);

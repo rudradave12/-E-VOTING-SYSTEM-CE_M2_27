@@ -14,6 +14,12 @@ import {
   HistoricalConstituencyResult,
   HistoricalSourceProvenance,
   ArchiveImportSummary,
+  PublicElectionSummary,
+  PublicElectionDetail,
+  PublicParticipationMetrics,
+  PublicPublishedResults,
+  PublicMonitorOverview,
+  PublicMonitorFilter,
 } from '../types';
 import { RecognizedPartyRecord } from '../data/historical2024';
 import {
@@ -1297,6 +1303,113 @@ export class VoterApiClient {
       return { success: false, message: err.message || 'Network error executing archive import.' };
     }
   }
+
+  // =========================================================================
+  // Phase 11: Public Election Monitor Dashboard Client API
+  // =========================================================================
+
+  /**
+   * GET /api/monitor/overview
+   * Retrieve high-level metrics across all public elections.
+   */
+  public async getMonitorOverview(): Promise<{
+    success: boolean;
+    overview?: PublicMonitorOverview;
+    message?: string;
+  }> {
+    try {
+      const res = await fetch('/api/monitor/overview');
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error fetching monitor overview.' };
+    }
+  }
+
+  /**
+   * GET /api/monitor/elections
+   * Search and filter public elections.
+   */
+  public async getPublicElections(params?: PublicMonitorFilter): Promise<{
+    success: boolean;
+    elections?: PublicElectionSummary[];
+    total?: number;
+    page?: number;
+    limit?: number;
+    totalPages?: number;
+    serverTimeSec?: number;
+    disclaimer?: string;
+    message?: string;
+  }> {
+    try {
+      const sp = new URLSearchParams();
+      if (params?.status) sp.set('status', params.status);
+      if (params?.state) sp.set('state', params.state);
+      if (params?.type) sp.set('type', params.type);
+      if (params?.q) sp.set('q', params.q);
+      if (params?.page) sp.set('page', String(params.page));
+      if (params?.limit) sp.set('limit', String(params.limit));
+
+      const qs = sp.toString();
+      const res = await fetch(`/api/monitor/elections${qs ? `?${qs}` : ''}`);
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error fetching public elections.' };
+    }
+  }
+
+  /**
+   * GET /api/monitor/elections/:id
+   * Retrieve single public election detail.
+   */
+  public async getPublicElectionDetail(id: string): Promise<{
+    success: boolean;
+    election?: PublicElectionDetail;
+    message?: string;
+  }> {
+    try {
+      const res = await fetch(`/api/monitor/elections/${encodeURIComponent(id)}`);
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error fetching election details.' };
+    }
+  }
+
+  /**
+   * GET /api/monitor/elections/:id/participation
+   * Retrieve privacy-safe aggregate participation metrics.
+   */
+  public async getPublicParticipationMetrics(id: string): Promise<{
+    success: boolean;
+    metrics?: PublicParticipationMetrics;
+    message?: string;
+  }> {
+    try {
+      const res = await fetch(`/api/monitor/elections/${encodeURIComponent(id)}/participation`);
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error fetching participation metrics.' };
+    }
+  }
+
+  /**
+   * GET /api/monitor/elections/:id/results
+   * Retrieve published candidate results for closed elections (sealed if active).
+   */
+  public async getPublicElectionResults(id: string): Promise<{
+    success: boolean;
+    resultsAvailable?: boolean;
+    results?: PublicPublishedResults;
+    reason?: string;
+    message?: string;
+  }> {
+    try {
+      const res = await fetch(`/api/monitor/elections/${encodeURIComponent(id)}/results`);
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error fetching published results.' };
+    }
+  }
 }
 
 export const voterApi = VoterApiClient.getInstance();
+

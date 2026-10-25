@@ -261,7 +261,8 @@ export type NavigationScreen =
   | 'admin-exceptions'
   | 'face-enrollment'
   | 'fingerprint-enrollment'
-  | 'historical-archive';
+  | 'historical-archive'
+  | 'election-monitor';
 
 export interface PreferencePollConfig {
   id: string;
@@ -300,4 +301,7 @@ export * from './permissions';
 
 // Phase 10 Historical Archive exports
 export * from './archive';
+
+// Phase 11 Public Election Monitor exports
+export * from './monitor';
 

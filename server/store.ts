@@ -1335,6 +1335,10 @@ class ServerStore {
     return this.constituencies.get(id);
   }
 
+  public saveConstituency(c: Constituency): void {
+    this.constituencies.set(c.id, c);
+  }
+
   public incrementTurnout(constituencyId: string): void {
     const c = this.constituencies.get(constituencyId);
     if (c) {

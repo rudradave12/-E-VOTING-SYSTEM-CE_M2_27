@@ -213,6 +213,13 @@ service cloud.firestore {
       }
     }
 
+    // 8b. Public Election Monitor Projections (Phase 11): Strictly READ-ONLY from client SDK
+    match /public_election_summaries/{summaryId} {
+      allow read: if isValidId(summaryId);
+      allow list: if true;
+      allow write: if false; // Mutated strictly by server-side schedule reconciler
+    }
+
     // 9. Political Parties Directory: Strictly READ-ONLY from client SDK
     match /political_parties/{partyCode} {
       allow read: if isValidId(partyCode);
