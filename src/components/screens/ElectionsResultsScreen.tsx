@@ -34,7 +34,12 @@ import {
   Clock,
   AlertCircle,
   Sparkles,
+  FileText,
 } from 'lucide-react';
+import {
+  CandidateAffidavitModal,
+  CandidateAffidavitData,
+} from '../common/CandidateAffidavitModal';
 
 interface ElectionsResultsScreenProps {
   elections?: Election[];
@@ -54,6 +59,7 @@ export const ElectionsResultsScreen: React.FC<ElectionsResultsScreenProps> = ({
   const { t, language } = useLanguage();
 
   const [mainTab, setMainTab] = useState<'previous-elections' | 'official-2024'>(initialTab);
+  const [affidavitCandidate, setAffidavitCandidate] = useState<CandidateAffidavitData | null>(null);
 
   // Previous Elections Tab State
   const defaultSelectedElecId =
@@ -420,15 +426,15 @@ export const ElectionsResultsScreen: React.FC<ElectionsResultsScreenProps> = ({
                   <span>{showImportSpec ? 'Hide Import Specs' : 'ECI Data Import Guide'}</span>
                 </button>
 
-                <a
-                  href={HISTORICAL_PROVENANCE.generalElectionUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold transition-colors"
+                <button
+                  type="button"
+                  onClick={() => onNavigateToArchive?.()}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold transition-colors cursor-pointer"
+                  title="Open internal Historical Election Archive"
                 >
-                  <span>ECI Official Portal</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
+                  <Database className="w-3.5 h-3.5" />
+                  <span>View in Historical Archive</span>
+                </button>
               </div>
             </div>
 
@@ -446,14 +452,9 @@ export const ElectionsResultsScreen: React.FC<ElectionsResultsScreenProps> = ({
                     </p>
                     <div className="bg-white/80 rounded-lg p-3 border border-blue-200 font-mono text-xs space-y-1">
                       <div className="font-bold text-slate-800">Official Data Catalogue Source:</div>
-                      <a
-                        href={BATCH_IMPORT_SPECIFICATION.officialDataCatalogueUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:underline break-all"
-                      >
+                      <div className="text-blue-900 font-mono text-xs break-all">
                         {BATCH_IMPORT_SPECIFICATION.officialDataCatalogueUrl}
-                      </a>
+                      </div>
                     </div>
                     <div className="space-y-1">
                       <div className="font-semibold text-blue-900">How to import remaining 533 constituencies:</div>
@@ -696,15 +697,33 @@ export const ElectionsResultsScreen: React.FC<ElectionsResultsScreenProps> = ({
                                     {cand.votePercentage}% of votes
                                   </div>
                                   {cand.affidavitUrl && cand.partyAbbreviation !== 'NOTA' && (
-                                    <a
-                                      href={cand.affidavitUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:underline mt-1 font-medium"
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setAffidavitCandidate({
+                                          name: cand.name,
+                                          nameHi: cand.nameHi,
+                                          partyName: cand.partyName,
+                                          partyAbbreviation: cand.partyAbbreviation,
+                                          symbol: cand.symbol,
+                                          symbolKey: cand.symbolKey,
+                                          education: cand.education,
+                                          age: cand.age,
+                                          criminalCases: cand.criminalCases,
+                                          assets: cand.assets,
+                                          affidavitUrl: cand.affidavitUrl,
+                                          votesCounted: cand.votesCounted,
+                                          votePercentage: cand.votePercentage,
+                                          isWinner: cand.isWinner,
+                                          rank: cand.rank,
+                                        })
+                                      }
+                                      className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:underline mt-1 font-medium cursor-pointer"
+                                      title="Inspect candidate affidavit locally"
                                     >
+                                      <FileText className="w-3 h-3" />
                                       <span>{t.candidateAffidavit}</span>
-                                      <ExternalLink className="w-3 h-3" />
-                                    </a>
+                                    </button>
                                   )}
                                 </div>
                               </div>
@@ -741,6 +760,13 @@ export const ElectionsResultsScreen: React.FC<ElectionsResultsScreenProps> = ({
           </div>
         </div>
       )}
+
+      {/* Internal Candidate Affidavit Modal */}
+      <CandidateAffidavitModal
+        isOpen={!!affidavitCandidate}
+        onClose={() => setAffidavitCandidate(null)}
+        candidate={affidavitCandidate}
+      />
     </div>
   );
 };

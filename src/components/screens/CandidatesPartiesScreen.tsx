@@ -23,7 +23,12 @@ import {
   Building,
   CheckCircle2,
   FileText,
+  Layers,
 } from 'lucide-react';
+import {
+  CandidateAffidavitModal,
+  CandidateAffidavitData,
+} from '../common/CandidateAffidavitModal';
 
 export const CandidatesPartiesScreen: React.FC = () => {
   const { t, language } = useLanguage();
@@ -31,6 +36,7 @@ export const CandidatesPartiesScreen: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'PARTIES' | 'CANDIDATES'>('PARTIES');
   const [partyTypeFilter, setPartyTypeFilter] = useState<'ALL' | 'NATIONAL' | 'STATE'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [affidavitCandidate, setAffidavitCandidate] = useState<CandidateAffidavitData | null>(null);
 
   // Collect all unique candidates from historical constituencies
   const allCandidates = useMemo(() => {
@@ -97,15 +103,18 @@ export const CandidatesPartiesScreen: React.FC = () => {
             </p>
           </div>
 
-          <a
-            href={HISTORICAL_PROVENANCE.politicalPartiesUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-semibold transition-colors self-start sm:self-auto"
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('PARTIES');
+              setSearchQuery('');
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-semibold transition-colors self-start sm:self-auto cursor-pointer"
+            title="Inspect recognized political parties directory locally"
           >
-            <span>ECI Party Directory</span>
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
+            <Layers className="w-3.5 h-3.5" />
+            <span>Recognized Parties Directory</span>
+          </button>
         </div>
 
         {/* Tab switcher */}
@@ -311,15 +320,33 @@ export const CandidatesPartiesScreen: React.FC = () => {
                   </span>
 
                   {cand.affidavitUrl && cand.partyAbbreviation !== 'NOTA' && (
-                    <a
-                      href={cand.affidavitUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-blue-600 hover:underline font-semibold"
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setAffidavitCandidate({
+                          name: cand.name,
+                          nameHi: cand.nameHi,
+                          partyName: cand.partyName,
+                          partyAbbreviation: cand.partyAbbreviation,
+                          symbol: cand.symbol,
+                          symbolKey: cand.symbolKey,
+                          education: cand.education,
+                          age: cand.age,
+                          criminalCases: cand.criminalCases,
+                          assets: cand.assets,
+                          affidavitUrl: cand.affidavitUrl,
+                          votesCounted: cand.votesCounted,
+                          votePercentage: cand.votePercentage,
+                          isWinner: cand.isWinner,
+                          rank: cand.rank,
+                        })
+                      }
+                      className="inline-flex items-center gap-1 text-blue-600 hover:underline font-semibold cursor-pointer text-xs"
+                      title="Inspect candidate affidavit locally"
                     >
                       <FileText className="w-3.5 h-3.5" />
                       <span>ECI Affidavit</span>
-                    </a>
+                    </button>
                   )}
                 </div>
               </div>
@@ -327,6 +354,13 @@ export const CandidatesPartiesScreen: React.FC = () => {
           })}
         </div>
       )}
+
+      {/* Internal Candidate Affidavit Modal */}
+      <CandidateAffidavitModal
+        isOpen={!!affidavitCandidate}
+        onClose={() => setAffidavitCandidate(null)}
+        candidate={affidavitCandidate}
+      />
     </div>
   );
 };

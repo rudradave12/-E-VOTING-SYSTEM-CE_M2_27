@@ -44,10 +44,16 @@ import {
   MapPin,
   RefreshCw,
   FileText,
+  FileCheck,
   User,
   X,
   Building,
 } from 'lucide-react';
+import {
+  CandidateAffidavitModal,
+  CandidateAffidavitData,
+} from '../common/CandidateAffidavitModal';
+import { GazetteResultModal } from '../common/GazetteResultModal';
 
 interface HistoricalArchiveScreenProps {
   onBackToLive?: () => void;
@@ -57,6 +63,10 @@ export const HistoricalArchiveScreen: React.FC<HistoricalArchiveScreenProps> = (
   onBackToLive,
 }) => {
   const { language } = useLanguage();
+
+  // Internal modal states for local document viewing without external redirects
+  const [affidavitModalCandidate, setAffidavitModalCandidate] = useState<CandidateAffidavitData | null>(null);
+  const [isGazetteModalOpen, setIsGazetteModalOpen] = useState<boolean>(false);
 
   // Archive elections list state
   const [elections, setElections] = useState<any[]>([]);
@@ -469,16 +479,11 @@ export const HistoricalArchiveScreen: React.FC<HistoricalArchiveScreenProps> = (
                       <span className="text-slate-800">{electionDetail.provenance.retrievalDate}</span>
                     </div>
                     {electionDetail.provenance.sourceUrl && (
-                      <div className="pt-1">
-                        <a
-                          href={electionDetail.provenance.sourceUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-orange-600 hover:text-orange-700 font-semibold inline-flex items-center gap-1 transition-colors"
-                        >
-                          View Official ECI Publication Source
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
+                      <div className="pt-1.5">
+                        <div className="font-mono text-[11px] text-slate-700 bg-slate-100 p-2 rounded-lg border border-slate-200 break-all">
+                          <span className="font-bold text-slate-900">Official Gazette Source: </span>
+                          <span>{electionDetail.provenance.sourceUrl}</span>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -607,15 +612,15 @@ export const HistoricalArchiveScreen: React.FC<HistoricalArchiveScreenProps> = (
                       </div>
 
                       {selectedConstituency.eciResultPdfUrl && (
-                        <a
-                          href={selectedConstituency.eciResultPdfUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 inline-flex items-center gap-1.5 shadow-2xs transition-colors self-start md:self-auto"
+                        <button
+                          type="button"
+                          onClick={() => setIsGazetteModalOpen(true)}
+                          className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 inline-flex items-center gap-1.5 shadow-2xs transition-colors self-start md:self-auto cursor-pointer"
+                          title="Inspect official Form 20 Gazette declaration locally"
                         >
-                          Official Form 20 Gazette
-                          <ExternalLink className="w-3 h-3 text-slate-400" />
-                        </a>
+                          <FileCheck className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Official Form 20 Gazette</span>
+                        </button>
                       )}
                     </div>
 
@@ -654,15 +659,33 @@ export const HistoricalArchiveScreen: React.FC<HistoricalArchiveScreenProps> = (
                                   {cand.partyName} ({cand.partyAbbreviation})
                                 </div>
                                 {cand.affidavitUrl && (
-                                  <a
-                                    href={cand.affidavitUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-[11px] text-orange-600 hover:text-orange-700 inline-flex items-center gap-1 mt-0.5"
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setAffidavitModalCandidate({
+                                        name: cand.candidateName,
+                                        nameHi: cand.candidateNameHi,
+                                        partyName: cand.partyName,
+                                        partyAbbreviation: cand.partyAbbreviation,
+                                        symbol: cand.symbol,
+                                        symbolKey: cand.symbolKey,
+                                        education: cand.education,
+                                        age: cand.age,
+                                        criminalCases: cand.criminalCases,
+                                        assets: cand.assets,
+                                        affidavitUrl: cand.affidavitUrl,
+                                        votesCounted: cand.votesReceived,
+                                        votePercentage: cand.voteSharePercentage,
+                                        isWinner: cand.isWinner,
+                                        rank: cand.rank,
+                                      })
+                                    }
+                                    className="text-[11px] text-orange-600 hover:text-orange-700 inline-flex items-center gap-1 mt-0.5 font-medium cursor-pointer"
+                                    title="View candidate affidavit and financial declarations"
                                   >
-                                    ECI Candidate Affidavit
-                                    <ExternalLink className="w-2.5 h-2.5" />
-                                  </a>
+                                    <FileText className="w-2.5 h-2.5" />
+                                    <span>ECI Candidate Affidavit</span>
+                                  </button>
                                 )}
                               </td>
                               <td className="py-3.5 px-4">
@@ -717,6 +740,51 @@ export const HistoricalArchiveScreen: React.FC<HistoricalArchiveScreenProps> = (
           ) : null}
         </div>
       )}
+
+      {/* Internal Modals for local inspection without external redirects */}
+      <CandidateAffidavitModal
+        isOpen={!!affidavitModalCandidate}
+        onClose={() => setAffidavitModalCandidate(null)}
+        candidate={affidavitModalCandidate}
+      />
+
+      <GazetteResultModal
+        isOpen={isGazetteModalOpen}
+        onClose={() => setIsGazetteModalOpen(false)}
+        constituency={
+          selectedConstituency
+            ? {
+                constituencyName: selectedConstituency.constituencyName,
+                constituencyCode: selectedConstituency.constituencyCode,
+                state: selectedConstituency.state,
+                totalElectors: selectedConstituency.totalElectors,
+                votesCounted: selectedConstituency.votesCounted,
+                turnoutPercentage: selectedConstituency.turnoutPercentage,
+                winnerName: selectedConstituency.winnerName || '',
+                winnerParty: selectedConstituency.winnerParty || '',
+                winningMargin: selectedConstituency.winningMargin,
+                winningMarginPercentage: selectedConstituency.winningMarginPercentage,
+                notaVotes: selectedConstituency.notaVotes,
+                notaPercentage: selectedConstituency.notaPercentage,
+                pollingStationsCount: selectedConstituency.pollingStationsCount,
+                eciResultPdfUrl: selectedConstituency.eciResultPdfUrl,
+                candidates: selectedConstituency.candidates.map((c) => ({
+                  name: c.candidateName,
+                  candidateName: c.candidateName,
+                  candidateNameHi: c.candidateNameHi,
+                  partyName: c.partyName,
+                  partyAbbreviation: c.partyAbbreviation,
+                  symbolKey: c.symbolKey,
+                  votesReceived: c.votesReceived,
+                  votesCounted: c.votesReceived,
+                  votePercentage: c.voteSharePercentage,
+                  isWinner: c.isWinner,
+                  rank: c.rank,
+                })),
+              }
+            : null
+        }
+      />
     </div>
   );
 };

@@ -4,14 +4,16 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { HISTORICAL_CONSTITUENCIES_2024 } from '../../data/historical2024';
+import { HISTORICAL_CONSTITUENCIES_2024, HistoricalConstituencyRecord } from '../../data/historical2024';
 import { useLanguage } from '../../context/LanguageContext';
-import { Search, MapPin, Users, Vote, ExternalLink, ChevronRight, Award } from 'lucide-react';
+import { Search, MapPin, Users, Vote, ExternalLink, ChevronRight, Award, FileCheck } from 'lucide-react';
+import { GazetteResultModal, GazetteConstituencyData } from '../common/GazetteResultModal';
 
 export const ConstituencyInfoScreen: React.FC = () => {
   const { t, language } = useLanguage();
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedState, setSelectedState] = useState<string>('ALL');
+  const [selectedGazette, setSelectedGazette] = useState<GazetteConstituencyData | null>(null);
 
   const states = useMemo(() => {
     return ['ALL', ...Array.from(new Set(HISTORICAL_CONSTITUENCIES_2024.map((c) => c.state)))];
@@ -139,20 +141,56 @@ export const ConstituencyInfoScreen: React.FC = () => {
 
               <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
                 <span className="text-slate-400">{c.candidates.length} Contesting Candidates</span>
-                <a
-                  href={c.eciResultPdfUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-blue-600 hover:underline font-semibold"
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSelectedGazette({
+                      constituencyName: c.name,
+                      constituencyCode: c.code,
+                      state: c.state,
+                      totalElectors: c.totalElectors,
+                      votesCounted: c.votesCounted,
+                      turnoutPercentage: c.turnoutPercentage,
+                      winnerName: c.winnerName,
+                      winnerParty: c.winnerParty,
+                      winningMargin: c.winningMargin,
+                      winningMarginPercentage: c.winningMarginPercentage,
+                      notaVotes: c.notaVotes,
+                      notaPercentage: c.notaPercentage,
+                      pollingStationsCount: c.pollingStationsCount,
+                      eciResultPdfUrl: c.eciResultPdfUrl,
+                      candidates: c.candidates.map((cand) => ({
+                        name: cand.name,
+                        candidateName: cand.name,
+                        candidateNameHi: cand.nameHi,
+                        partyName: cand.partyName,
+                        partyAbbreviation: cand.partyAbbreviation,
+                        symbolKey: cand.symbolKey,
+                        votesReceived: cand.votesCounted,
+                        votesCounted: cand.votesCounted,
+                        votePercentage: cand.votePercentage,
+                        isWinner: cand.isWinner,
+                        rank: cand.rank,
+                      })),
+                    })
+                  }
+                  className="inline-flex items-center gap-1 text-emerald-700 hover:text-emerald-800 font-semibold cursor-pointer transition-colors"
                 >
-                  <span>ECI Gazette PDF</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
+                  <FileCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>View Gazette Record</span>
+                </button>
               </div>
             </div>
           );
         })}
       </div>
+
+      {/* Local Gazette Inspection Modal */}
+      <GazetteResultModal
+        isOpen={!!selectedGazette}
+        onClose={() => setSelectedGazette(null)}
+        constituency={selectedGazette}
+      />
     </div>
   );
 };
