@@ -1048,6 +1048,91 @@ export class VoterApiClient {
       return { success: false, message: err.message || 'Network error polling exception status.' };
     }
   }
+
+  /**
+   * POST /api/voter/session/fullscreen-exit
+   * Reports an unexpected fullscreen exit event to the server.
+   * If threshold (3) is reached, server locks the session into LOCKED_SUPERVISED_RECOVERY.
+   */
+  public async recordFullscreenExit(reason?: string): Promise<{
+    success: boolean;
+    locked: boolean;
+    exitCount: number;
+    message: string;
+    sessionStatus?: string;
+  }> {
+    try {
+      const res = await fetch('/api/voter/session/fullscreen-exit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.currentSessionToken && { Authorization: `Bearer ${this.currentSessionToken}` }),
+        },
+        body: JSON.stringify({ reason }),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return {
+        success: false,
+        locked: false,
+        exitCount: 0,
+        message: err.message || 'Network error reporting fullscreen exit.',
+      };
+    }
+  }
+
+  /**
+   * GET /api/voter/session
+   * Retrieves authoritative server-side session status, remaining seconds, and lockout details.
+   */
+  public async getSessionStatus(): Promise<{
+    success: boolean;
+    status?: string;
+    remainingSeconds?: number;
+    fullscreenExitCount?: number;
+    lockedReason?: string;
+    message?: string;
+    session?: any;
+  }> {
+    try {
+      const res = await fetch('/api/voter/session', {
+        headers: {
+          ...(this.currentSessionToken && { Authorization: `Bearer ${this.currentSessionToken}` }),
+        },
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error retrieving session status.' };
+    }
+  }
+
+  /**
+   * POST /api/admin/sessions/unlock
+   * Supervised recovery: Election Officer unlocks a session locked due to fullscreen exits.
+   */
+  public async adminUnlockSession(data: {
+    sessionId?: string;
+    sessionToken?: string;
+    reason: string;
+  }): Promise<{
+    success: boolean;
+    message: string;
+    session?: any;
+  }> {
+    try {
+      const res = await fetch('/api/admin/sessions/unlock', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+        body: JSON.stringify(data),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error unlocking session.' };
+    }
+  }
 }
 
 export const voterApi = VoterApiClient.getInstance();

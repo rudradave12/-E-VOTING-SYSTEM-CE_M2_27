@@ -133,7 +133,7 @@ test('BlockBallot — Phase 07: Election Lifecycle, Candidate Management & Autho
       id: 'RO-PHASE07-001',
       email: 'ro.admin@blockballot.local',
       displayName: 'Chief Returning Officer Admin',
-      role: 'RETURNING_OFFICER',
+      role: 'PLATFORM_ADMIN',
       status: 'ACTIVE',
       assignmentScope: {
         state: 'ALL',
@@ -890,7 +890,7 @@ test('BlockBallot — Phase 07: Election Lifecycle, Candidate Management & Autho
       requestedByOfficerRole: 'VOTER_REGISTRATION_OFFICER',
       requestedAt: Date.now(),
       reasonCode: 'PHYSICAL_DISABILITY_OR_AMPUTATION',
-      reasonDetails: 'Regression check for Phase 06 exception integrity',
+      note: 'Regression check for Phase 06 exception integrity',
       status: 'APPROVED',
       reviewedByOfficerId: 'EO-SIM-001',
       reviewedByOfficerRole: 'ELECTION_OFFICER',

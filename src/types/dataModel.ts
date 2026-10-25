@@ -177,6 +177,7 @@ export interface ParticipationAuthorizationMetadata {
   activeNullifier?: string;
   ticketExpiry?: number;
   authorizedAt?: number;
+  txHash?: string;
 }
 
 export interface VoterElectionParticipation {
@@ -186,6 +187,7 @@ export interface VoterElectionParticipation {
   status: ParticipationStatus;
   authorizationMetadata?: ParticipationAuthorizationMetadata;
   votedAt?: number;
+  txHash?: string;
   createdAt: number;
   updatedAt: number;
   schemaVersion: typeof SCHEMA_VERSION_CURRENT;
@@ -890,4 +892,170 @@ export function validateManualIdException(record: any): { isValid: boolean; erro
 
   return { isValid: errors.length === 0, errors };
 }
+
+// ============================================================================
+// 8. PHASE 08: VOTING SESSION & BALLOT AUTHORIZATION
+// ============================================================================
+
+export type VotingSessionStatus =
+  | 'CREATED'
+  | 'IDENTITY_VERIFICATION_PENDING'
+  | 'AUTHORIZED'
+  | 'SUBMISSION_IN_PROGRESS'
+  | 'SUBMISSION_CONFIRMED'
+  | 'EXPIRED'
+  | 'LOCKED_SUPERVISED_RECOVERY'
+  | 'REVOKED';
+
+export type IdentityVerificationOutcome =
+  | 'BIOMETRIC_FACE'
+  | 'BIOMETRIC_FINGERPRINT'
+  | 'MANUAL_PHYSICAL_ID_APPROVED'
+  | 'OTP_DEMO'
+  | 'NONE';
+
+export interface VotingSessionRecord {
+  id: string; // High-entropy session record ID: e.g. vses_...
+  sessionTokenHash: string; // SHA-256 hash of high-entropy opaque token
+  voterId: string; // Reference to VoterProfile.id
+  simulationVoterId: string; // e.g. BBV-SIM-...
+  epicId: string; // Legacy or lookup identity
+  electionId: string; // Bound election identifier (e.g. GE-2024 or numeric string)
+  numericElectionId: number; // Numeric EVM election ID
+  constituencyId: string;
+  constituencyCode: number;
+  status: VotingSessionStatus;
+  verificationOutcome: IdentityVerificationOutcome;
+  manualExceptionId?: string; // If authorized via Phase 06 manual physical ID exception
+  authNonce: string; // Cryptographic nonce preventing replay
+  voterWallet?: string;
+  nullifier?: string;
+  txHash?: string;
+  fullscreenExitCount: number;
+  lockedReason?: string;
+  lockedAt?: number;
+  recoveredAt?: number;
+  recoveredByOfficerId?: string;
+  createdAt: number;
+  updatedAt: number;
+  expiresAt: number;
+  version: number;
+  schemaVersion: typeof SCHEMA_VERSION_CURRENT;
+}
+
+export const LEGAL_VOTING_SESSION_TRANSITIONS: Record<
+  VotingSessionStatus,
+  readonly VotingSessionStatus[]
+> = {
+  CREATED: ['IDENTITY_VERIFICATION_PENDING', 'AUTHORIZED', 'REVOKED', 'EXPIRED'],
+  IDENTITY_VERIFICATION_PENDING: ['AUTHORIZED', 'REVOKED', 'EXPIRED', 'LOCKED_SUPERVISED_RECOVERY'],
+  AUTHORIZED: ['SUBMISSION_IN_PROGRESS', 'LOCKED_SUPERVISED_RECOVERY', 'REVOKED', 'EXPIRED'],
+  SUBMISSION_IN_PROGRESS: ['SUBMISSION_CONFIRMED', 'AUTHORIZED', 'LOCKED_SUPERVISED_RECOVERY', 'REVOKED', 'EXPIRED'],
+  SUBMISSION_CONFIRMED: [], // Terminal
+  LOCKED_SUPERVISED_RECOVERY: ['AUTHORIZED', 'REVOKED', 'EXPIRED'],
+  EXPIRED: [], // Terminal
+  REVOKED: [], // Terminal
+} as const;
+
+export function isValidVotingSessionTransition(
+  from: VotingSessionStatus,
+  to: VotingSessionStatus
+): boolean {
+  if (from === to) return true; // Idempotent same-state update
+  const legalNext = LEGAL_VOTING_SESSION_TRANSITIONS[from];
+  return legalNext ? legalNext.includes(to) : false;
+}
+
+const FORBIDDEN_VOTING_SESSION_KEYS = [
+  'selectedCandidate',
+  'candidateChoice',
+  'voteChoice',
+  'rawBiometric',
+  'faceImage',
+  'fingerprintImage',
+  'fingerprintTemplate',
+  'minutiae',
+  'documentScan',
+  'aadhaarNumber',
+];
+
+export function validateVotingSessionRecord(record: any): { isValid: boolean; errors: string[] } {
+  const errors: string[] = [];
+
+  if (!record || typeof record !== 'object') {
+    return { isValid: false, errors: ['Voting session record must be a non-null object'] };
+  }
+
+  if (record.schemaVersion !== SCHEMA_VERSION_CURRENT) {
+    errors.push(`Invalid schemaVersion: expected '${SCHEMA_VERSION_CURRENT}', got '${record.schemaVersion}'`);
+  }
+
+  if (!record.id || typeof record.id !== 'string') {
+    errors.push('Missing or invalid id');
+  }
+  if (!record.sessionTokenHash || typeof record.sessionTokenHash !== 'string' || record.sessionTokenHash.length < 32) {
+    errors.push('Missing or invalid sessionTokenHash (must be at least 32 hex characters)');
+  }
+  if (!record.voterId || typeof record.voterId !== 'string') {
+    errors.push('Missing or invalid voterId');
+  }
+  if (!record.electionId || typeof record.electionId !== 'string') {
+    errors.push('Missing or invalid electionId');
+  }
+
+  const validStatuses: VotingSessionStatus[] = [
+    'CREATED',
+    'IDENTITY_VERIFICATION_PENDING',
+    'AUTHORIZED',
+    'SUBMISSION_IN_PROGRESS',
+    'SUBMISSION_CONFIRMED',
+    'EXPIRED',
+    'LOCKED_SUPERVISED_RECOVERY',
+    'REVOKED',
+  ];
+  if (!validStatuses.includes(record.status)) {
+    errors.push(`Invalid session status: '${record.status}'`);
+  }
+
+  const validOutcomes: IdentityVerificationOutcome[] = [
+    'BIOMETRIC_FACE',
+    'BIOMETRIC_FINGERPRINT',
+    'MANUAL_PHYSICAL_ID_APPROVED',
+    'OTP_DEMO',
+    'NONE',
+  ];
+  if (!validOutcomes.includes(record.verificationOutcome)) {
+    errors.push(`Invalid verificationOutcome: '${record.verificationOutcome}'`);
+  }
+
+  if (typeof record.createdAt !== 'number' || record.createdAt <= 0) {
+    errors.push('Missing or invalid createdAt timestamp');
+  }
+  if (typeof record.expiresAt !== 'number' || record.expiresAt <= 0) {
+    errors.push('Missing or invalid expiresAt timestamp');
+  }
+  if (record.expiresAt <= record.createdAt) {
+    errors.push('expiresAt must be strictly greater than createdAt');
+  }
+
+  if (typeof record.fullscreenExitCount !== 'number' || record.fullscreenExitCount < 0) {
+    errors.push('fullscreenExitCount must be a non-negative number');
+  }
+
+  if (record.status === 'LOCKED_SUPERVISED_RECOVERY') {
+    if (!record.lockedReason) {
+      errors.push('lockedReason is required when status is LOCKED_SUPERVISED_RECOVERY');
+    }
+  }
+
+  // Privacy invariant: Session must never store voter candidate choice or raw biometrics
+  for (const forbidden of FORBIDDEN_VOTING_SESSION_KEYS) {
+    if (forbidden in record && record[forbidden] !== undefined) {
+      errors.push(`Privacy violation: voting session must never contain '${forbidden}'`);
+    }
+  }
+
+  return { isValid: errors.length === 0, errors };
+}
+
 

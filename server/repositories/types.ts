@@ -105,6 +105,23 @@ export interface IManualIdExceptionRepository {
   clear(): Promise<void>;
 }
 
+export interface SessionFilter {
+  voterId?: string;
+  electionId?: string;
+  status?: import('../../src/types/dataModel').VotingSessionStatus;
+  limit?: number;
+}
+
+export interface IVotingSessionRepository {
+  createSession(session: import('../../src/types/dataModel').VotingSessionRecord): Promise<void>;
+  findById(id: string): Promise<import('../../src/types/dataModel').VotingSessionRecord | null>;
+  findByTokenHash(hash: string): Promise<import('../../src/types/dataModel').VotingSessionRecord | null>;
+  findActiveByVoterAndElection(voterId: string, electionId: string): Promise<import('../../src/types/dataModel').VotingSessionRecord | null>;
+  update(session: import('../../src/types/dataModel').VotingSessionRecord): Promise<void>;
+  list(filter?: SessionFilter): Promise<import('../../src/types/dataModel').VotingSessionRecord[]>;
+  clear(): Promise<void>;
+}
+
 export interface IDataRepositories {
   voterProfiles: IVoterProfileRepository;
   participations: IVoterParticipationRepository;
@@ -113,4 +130,6 @@ export interface IDataRepositories {
   authorities: IAuthorityAccountRepository;
   auditEvents: IAuditEventRepository;
   exceptions: IManualIdExceptionRepository;
+  sessions?: IVotingSessionRepository;
 }
+

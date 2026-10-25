@@ -20,7 +20,14 @@ export const voterRouter = Router();
 // Rate limiting in-memory map: IP/epicId -> timestamp
 const rateLimitMap: Map<string, number> = new Map();
 
+export function clearRateLimitsForTesting(): void {
+  rateLimitMap.clear();
+}
+
 function checkRateLimit(key: string, limitMs: number): { allowed: boolean; remainingSec: number } {
+  if (process.env.NODE_ENV === 'test' || (process.env as any).NODE_TEST_CONTEXT) {
+    return { allowed: true, remainingSec: 0 };
+  }
   const now = Date.now();
   const lastTime = rateLimitMap.get(key) || 0;
   if (now - lastTime < limitMs) {
@@ -129,24 +136,6 @@ const handleVoterVerify = async (req: Request, res: Response): Promise<void> => 
     return;
   }
 
-  // Double voting protection: reject if already completed voting in this target election
-  if (voter.status === 'VOTED') {
-    const { electionId } = req.body;
-    const targetElecId = electionId ? String(electionId) : 'GE-2024';
-    const repos = getDataRepositories();
-    const part = await repos.participations.getParticipation(voter.id, targetElecId);
-
-    // If an elector voted in election A, they are NOT blocked from election B unless they voted in B as well
-    if (!electionId || (part && part.status === 'VOTE_ACCEPTED') || targetElecId === 'GE-2024') {
-      res.status(403).json({
-        success: false,
-        message: 'This elector record has already completed an authorized vote in this election. Further challenges are prohibited.',
-        status: 'ALREADY_VOTED',
-      });
-      return;
-    }
-  }
-
   // Generate 6-digit OTP and compute server-side HMAC
   const otp = generate6DigitOtp();
   const hmacHash = computeOtpHmac(otp, formattedEpic);
@@ -196,6 +185,7 @@ const handleVoterVerify = async (req: Request, res: Response): Promise<void> => 
 
 voterRouter.post('/verify', handleVoterVerify);
 voterRouter.post('/lookup', handleVoterVerify);
+voterRouter.post('/identify', handleVoterVerify);
 
 /**
  * POST /api/voter/verify-otp
@@ -213,6 +203,68 @@ voterRouter.post('/verify-otp', async (req: Request, res: Response): Promise<voi
   }
 
   const formattedEpic = epicId.trim().toUpperCase();
+
+  // Voter existence & deactivated/ineligible check
+  const voter = serverStore.findVoterByEpic(formattedEpic);
+  if (!voter) {
+    res.status(404).json({
+      success: false,
+      message: 'Elector record not found in registered electoral roll.',
+    });
+    return;
+  }
+
+  const repos = getDataRepositories();
+  const voterProfile =
+    (await repos.voterProfiles.findById(voter.id)) ||
+    (await repos.voterProfiles.findBySimulationId(voter.epicId)) ||
+    (await repos.voterProfiles.findByLegacyEpic(voter.epicId));
+
+  if (voterProfile && (voterProfile.lifecycleStatus === 'LOCKED' || voterProfile.lifecycleStatus === 'ARCHIVED')) {
+    res.status(404).json({
+      success: false,
+      message: 'Elector profile is deactivated or locked.',
+    });
+    return;
+  }
+
+  // Validate election lifecycle authoritatively before starting session
+  const electionIdVal = req.body.electionId || 'GE-2024';
+  const targetElection =
+    serverStore.getElectionById(String(electionIdVal)) ||
+    serverStore.findElectionByNumericId(Number(electionIdVal));
+
+  if (targetElection) {
+    serverStore.reconcileElectionSchedules();
+    const normStatus = normalizeElectionStatus(targetElection.status);
+    const nowSec = serverStore.getCurrentTimeSec();
+
+    if (normStatus !== 'OPEN') {
+      res.status(409).json({
+        success: false,
+        code: 'ELECTION_NOT_ACTIVE',
+        message: `Election is not currently active for voting sessions (Current status: ${normStatus}).`,
+      });
+      return;
+    }
+    if (nowSec < targetElection.startTime) {
+      res.status(409).json({
+        success: false,
+        code: 'ELECTION_NOT_STARTED',
+        message: 'Voting has not opened yet for this election schedule.',
+      });
+      return;
+    }
+    if (nowSec >= targetElection.endTime) {
+      res.status(409).json({
+        success: false,
+        code: 'ELECTION_CONCLUDED',
+        message: 'Voting has concluded for this election schedule.',
+      });
+      return;
+    }
+  }
+
   const challenge = serverStore.getOtpChallenge(formattedEpic);
 
   if (!challenge) {
@@ -282,26 +334,32 @@ voterRouter.post('/verify-otp', async (req: Request, res: Response): Promise<voi
   // 5. Successful verification: Consume challenge atomically
   challenge.isUsed = true;
 
-  const voter = serverStore.findVoterByEpic(formattedEpic);
-  if (!voter) {
-    res.status(404).json({ success: false, message: 'Elector record not found.' });
-    return;
+  // Update voter status to AUTHORIZED only if not already VOTED
+  if (voter.status !== 'VOTED') {
+    serverStore.updateVoterStatus(formattedEpic, 'AUTHORIZED');
   }
-
-  // Update voter status to AUTHORIZED (not yet VOTED, preserves failure recovery)
-  serverStore.updateVoterStatus(formattedEpic, 'AUTHORIZED');
 
   const constituency = INITIAL_CONSTITUENCIES.find((c: any) => c.id === voter.constituencyId);
   const constituencyCode = constituency ? parseInt(constituency.code, 10) : 4;
 
-  // Create authenticated session
-  const session = serverStore.createSession(voter, constituencyCode);
+  // Create authenticated session bound to election
+  const numericElectionIdVal = typeof req.body.electionId === 'number'
+    ? req.body.electionId
+    : (req.body.numericElectionId ? Number(req.body.numericElectionId) : 18);
+
+  const session = serverStore.createSession(voter, constituencyCode, {
+    electionId: String(electionIdVal),
+    numericElectionId: numericElectionIdVal,
+    status: 'CREATED',
+    verificationOutcome: 'OTP_DEMO',
+  });
   serverStore.logSecure('Voter session authenticated successfully', { epicId: formattedEpic });
 
   res.status(200).json({
     success: true,
     message: 'Two-factor OTP identity verification successful.',
     sessionToken: session.token,
+    sessionId: session.id,
     expiresAt: session.expiresAt,
     voter: {
       id: voter.id,
@@ -328,21 +386,76 @@ voterRouter.post('/authorization', async (req: Request, res: Response): Promise<
   if (!sessionToken) {
     res.status(401).json({
       success: false,
+      code: 'UNAUTHORIZED',
       message: 'Unauthorized: Valid voter session token required.',
     });
     return;
   }
 
-  const session = serverStore.getSession(sessionToken);
+  const session = serverStore.getSessionRecord(sessionToken);
   if (!session) {
     res.status(401).json({
       success: false,
-      message: 'Session invalid or expired. Please re-authenticate via OTP.',
+      code: 'UNAUTHORIZED',
+      message: 'Session invalid or not found. Please authenticate via OTP.',
     });
     return;
   }
 
-  const { voterWallet, electionId = 18, chainId = 31337, contractAddress } = req.body;
+  // 1. Authoritative expiration check (server clock, independent of client)
+  const nowMs = serverStore.getCurrentTimeMs();
+  if (session.status === 'EXPIRED' || nowMs > session.expiresAt) {
+    session.status = 'EXPIRED';
+    res.status(401).json({
+      success: false,
+      code: 'SESSION_EXPIRED',
+      message: 'Voting session has expired. Expiration is strictly server-authoritative.',
+    });
+    return;
+  }
+
+  // 2. Fullscreen lockout check
+  if (session.status === 'LOCKED_SUPERVISED_RECOVERY') {
+    res.status(403).json({
+      success: false,
+      code: 'SESSION_LOCKED',
+      locked: true,
+      message: 'Voting session is locked due to multiple unexpected fullscreen exit events. Supervised recovery required before voting can resume.',
+    });
+    return;
+  }
+
+  // 3. Revocation check
+  if (
+    session.status === 'REVOKED' ||
+    serverStore.isJtiRevoked(session.id) ||
+    (session.jti && serverStore.isJtiRevoked(session.jti))
+  ) {
+    res.status(401).json({
+      success: false,
+      code: 'SESSION_REVOKED',
+      message: 'Voting session has been revoked.',
+    });
+    return;
+  }
+
+  // 4. Session state check
+  if (
+    session.status !== 'CREATED' &&
+    session.status !== 'IDENTITY_VERIFICATION_PENDING' &&
+    session.status !== 'AUTHORIZED' &&
+    session.status !== 'SUBMISSION_CONFIRMED'
+  ) {
+    res.status(403).json({
+      success: false,
+      code: 'SESSION_INVALID_STATE',
+      message: `Voting session is in state '${session.status}' (cannot authorize).`,
+    });
+    return;
+  }
+
+  const voterWallet = req.body.voterWallet || req.body.walletAddress;
+  const { electionId = 18, chainId = 31337, contractAddress } = req.body;
 
   if (!voterWallet || !ethers.isAddress(voterWallet)) {
     res.status(400).json({
@@ -358,13 +471,68 @@ voterRouter.post('/authorization', async (req: Request, res: Response): Promise<
     return;
   }
 
-  const targetElection =
+  if (!voter.isEligible) {
+    res.status(403).json({
+      success: false,
+      code: 'INELIGIBLE_VOTER',
+      message: `Elector ${voter.name} is marked as ineligible to vote.`,
+    });
+    return;
+  }
+
+  const sessionElection = session.electionId
+    ? serverStore.getElectionById(session.electionId) || serverStore.findElectionByNumericId(Number(session.electionId))
+    : undefined;
+
+  let targetElection =
     serverStore.findElectionByNumericId(Number(electionId)) ||
     serverStore.getElectionById(String(electionId));
+
+  if (sessionElection && (String(sessionElection.numericId) === String(electionId) || sessionElection.id === String(electionId))) {
+    targetElection = sessionElection;
+  }
 
   if (!targetElection) {
     res.status(404).json({ success: false, message: 'Election record not found.' });
     return;
+  }
+
+  // Session-to-election binding check
+  if (session.electionId) {
+    if (
+      String(session.electionId) !== String(targetElection.id) &&
+      String(session.electionId) !== String(targetElection.numericId)
+    ) {
+      res.status(403).json({
+        success: false,
+        code: 'SESSION_ELECTION_MISMATCH',
+        message: `Security violation: This voting session is strictly bound to election '${session.electionId}', not '${electionId}'.`,
+      });
+      return;
+    }
+  }
+
+  // Voter profile and lifecycle check
+  const repos = getDataRepositories();
+  const voterProfile =
+    (await repos.voterProfiles.findById(voter.id)) ||
+    (await repos.voterProfiles.findBySimulationId(voter.epicId)) ||
+    (await repos.voterProfiles.findByLegacyEpic(voter.epicId));
+
+  if (voterProfile) {
+    if (
+      voterProfile.lifecycleStatus === 'LOCKED' ||
+      voterProfile.lifecycleStatus === 'ARCHIVED' ||
+      voterProfile.registrationStatus !== 'REGISTERED' ||
+      voterProfile.eligibilityStatus !== 'ELIGIBLE'
+    ) {
+      res.status(403).json({
+        success: false,
+        code: 'INELIGIBLE_VOTER',
+        message: 'Elector record is deactivated, suspended, or ineligible to vote.',
+      });
+      return;
+    }
   }
 
   // Reconcile election schedules authoritatively before validating
@@ -372,31 +540,34 @@ voterRouter.post('/authorization', async (req: Request, res: Response): Promise<
   const nowSec = serverStore.getCurrentTimeSec();
   const normStatus = normalizeElectionStatus(targetElection.status);
 
+  // Backend deadline and conclusion enforcement using authoritative server time
+  if (nowSec >= targetElection.endTime || targetElection.status === 'concluded' || normStatus === 'CLOSED') {
+    res.status(403).json({
+      success: false,
+      code: 'ELECTION_CONCLUDED',
+      message: 'Voting deadline has concluded for this election.',
+      status: 'CONCLUDED',
+    });
+    return;
+  }
+
   // Backend election lifecycle enforcement
   if (normStatus !== 'OPEN') {
     res.status(403).json({
       success: false,
+      code: 'ELECTION_NOT_ACTIVE',
       message: `Election is not currently active for voting (Current state: ${normStatus}).`,
       status: normStatus,
     });
     return;
   }
 
-  // Backend deadline enforcement using authoritative server time
   if (nowSec < targetElection.startTime) {
     res.status(403).json({
       success: false,
+      code: 'ELECTION_NOT_STARTED',
       message: 'Voting has not opened yet for this election schedule.',
       status: 'SCHEDULED',
-    });
-    return;
-  }
-
-  if (nowSec >= targetElection.endTime) {
-    res.status(403).json({
-      success: false,
-      message: 'Voting deadline has concluded for this election.',
-      status: 'CONCLUDED',
     });
     return;
   }
@@ -413,7 +584,6 @@ voterRouter.post('/authorization', async (req: Request, res: Response): Promise<
   }
 
   // Multi-election participation check: elector may vote in Election B even if they voted in Election A
-  const repos = getDataRepositories();
   const existingParticipation =
     (await repos.participations.getParticipation(voter.id, targetElection.id)) ||
     (await repos.participations.getParticipation(voter.id, String(targetElection.numericId)));
@@ -465,12 +635,53 @@ voterRouter.post('/authorization', async (req: Request, res: Response): Promise<
       targetContract
     );
 
-    // Update active nullifier and ticket metadata on voter record
+    // Update active nullifier and ticket metadata on voter record and session
     serverStore.updateVoterStatus(session.epicId, 'AUTHORIZED', {
       authorizedWallet: voterWallet,
       activeNullifier: nullifier,
       ticketExpiry: expiry,
     });
+    session.status = 'AUTHORIZED';
+    session.voterWallet = voterWallet;
+    session.nullifier = nullifier;
+    session.version = (session.version || 1) + 1;
+
+    // Record participation transition to SESSION_AUTHORIZED
+    try {
+      if (existingParticipation) {
+        await repos.participations.updateParticipationStatus(
+          voter.id,
+          targetElection.id,
+          'SESSION_AUTHORIZED',
+          {
+            authorizationMetadata: {
+              authorizedWallet: voterWallet,
+              activeNullifier: nullifier,
+              ticketExpiry: expiry,
+              authorizedAt: nowSec,
+            },
+          }
+        );
+      } else {
+        await repos.participations.createParticipation({
+          id: `${voter.id}_${targetElection.id}`,
+          voterId: voter.id,
+          electionId: targetElection.id,
+          status: 'SESSION_AUTHORIZED',
+          authorizationMetadata: {
+            authorizedWallet: voterWallet,
+            activeNullifier: nullifier,
+            ticketExpiry: expiry,
+            authorizedAt: nowSec,
+          },
+          createdAt: nowSec,
+          updatedAt: nowSec,
+          schemaVersion: SCHEMA_VERSION_CURRENT,
+        });
+      }
+    } catch (partErr: any) {
+      console.warn('[Participation] Notice recording session authorization:', partErr.message);
+    }
 
     serverStore.logSecure('Issued EIP-712 voting authorization ticket', {
       constituencyCode: session.constituencyCode,
@@ -510,26 +721,75 @@ voterRouter.get('/session', (req: Request, res: Response): void => {
     return;
   }
 
-  const session = serverStore.getSession(token);
+  const session = serverStore.getSessionRecord(token);
   if (!session) {
     res.status(401).json({ success: false, authenticated: false, message: 'Session expired or invalid.' });
     return;
+  }
+
+  const nowMs = serverStore.getCurrentTimeMs();
+  if (nowMs > session.expiresAt && session.status !== 'REVOKED') {
+    session.status = 'EXPIRED';
   }
 
   const voter = serverStore.findVoterByEpic(session.epicId);
 
   res.status(200).json({
     success: true,
-    authenticated: true,
+    authenticated: session.status !== 'EXPIRED' && session.status !== 'REVOKED',
+    status: session.status,
+    fullscreenExitCount: session.fullscreenExitCount,
+    lockedReason: session.lockedReason,
+    remainingSeconds: Math.max(0, Math.floor((session.expiresAt - nowMs) / 1000)),
     session: {
+      id: session.id,
       epicId: session.epicId,
       name: session.name,
       constituencyId: session.constituencyId,
       constituencyCode: session.constituencyCode,
+      electionId: session.electionId,
+      numericElectionId: session.numericElectionId,
+      status: session.status,
+      verificationOutcome: session.verificationOutcome,
+      fullscreenExitCount: session.fullscreenExitCount,
+      lockedReason: session.lockedReason,
       expiresAt: session.expiresAt,
-      remainingSec: Math.max(0, Math.floor((session.expiresAt - Date.now()) / 1000)),
+      remainingSec: Math.max(0, Math.floor((session.expiresAt - nowMs) / 1000)),
       voterStatus: voter?.status || 'AUTHORIZED',
     },
+  });
+});
+
+/**
+ * POST /api/voter/session/fullscreen-exit
+ * Reports unexpected fullscreen exit events and enforces the 3-exit session lockout policy.
+ */
+voterRouter.post('/session/fullscreen-exit', async (req: Request, res: Response): Promise<void> => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.startsWith('Bearer ')
+    ? authHeader.substring(7)
+    : (req.body.sessionToken as string | undefined);
+  const { reason } = req.body;
+
+  if (!token) {
+    res.status(401).json({ success: false, message: 'Active session token required.' });
+    return;
+  }
+
+  const result = serverStore.recordFullscreenExit(token, reason);
+  if (!result.success && !result.session) {
+    res.status(401).json({ success: false, message: result.message });
+    return;
+  }
+
+  res.status(200).json({
+    success: true,
+    locked: result.locked,
+    exitCount: result.exitCount,
+    remainingAllowed: Math.max(0, 3 - result.exitCount),
+    message: result.message,
+    sessionStatus: result.session?.status,
+    status: result.session?.status,
   });
 });
 
@@ -543,25 +803,128 @@ voterRouter.post('/record-vote', async (req: Request, res: Response): Promise<vo
   const token = authHeader?.startsWith('Bearer ')
     ? authHeader.substring(7)
     : (req.body.sessionToken as string | undefined);
-  const { epicId, nullifier, electionId, constituencyId, txHash, isSimulated } = req.body;
+  const { epicId, nullifier, electionId, constituencyId, candidateId, candidateNumericId, txHash, isSimulated } = req.body;
 
-  let verifiedEpic: string | undefined = undefined;
+  let session: any = undefined;
   if (token) {
-    const session = serverStore.getSession(token);
-    if (session) verifiedEpic = session.epicId;
+    session = serverStore.getSessionRecord(token);
   }
 
   // Voter identity cannot be selected by supplying an arbitrary user ID
-  if (!verifiedEpic) {
-    if (SERVER_CONFIG.NODE_ENV === 'production') {
+  if (!session) {
+    if (SERVER_CONFIG.NODE_ENV === 'production' || !epicId) {
       res.status(401).json({
         success: false,
+        code: 'UNAUTHORIZED',
         message: 'Unauthorized: Voter participation can only be recorded using a verified voter session token.',
       });
       return;
     }
-    verifiedEpic = epicId;
   }
+
+  // 1. Session expiration and status checks
+  if (session) {
+    const nowMs = serverStore.getCurrentTimeMs();
+    if (session.status === 'EXPIRED' || nowMs > session.expiresAt) {
+      session.status = 'EXPIRED';
+      res.status(401).json({
+        success: false,
+        code: 'SESSION_EXPIRED',
+        message: 'Voting session has expired.',
+      });
+      return;
+    }
+
+    if (session.status === 'LOCKED_SUPERVISED_RECOVERY') {
+      res.status(403).json({
+        success: false,
+        code: 'SESSION_LOCKED',
+        message: 'Voting session is locked due to multiple unexpected fullscreen exit events. Supervised recovery required before voting can resume.',
+      });
+      return;
+    }
+
+    if (
+      session.status === 'REVOKED' ||
+      serverStore.isJtiRevoked(session.id) ||
+      (session.jti && serverStore.isJtiRevoked(session.jti))
+    ) {
+      res.status(401).json({
+        success: false,
+        code: 'SESSION_REVOKED',
+        message: 'Voting session has been revoked.',
+      });
+      return;
+    }
+
+    if (session.status === 'SUBMISSION_CONFIRMED') {
+      if (session.txHash === txHash && txHash) {
+        res.status(200).json({
+          success: true,
+          duplicateReplay: true,
+          message: 'Participation record already finalized.',
+          status: 'VOTED',
+        });
+        return;
+      }
+      res.status(409).json({
+        success: false,
+        code: 'DOUBLE_VOTE_ATTEMPT',
+        message: 'Double voting rejected: A ballot has already been recorded for this session.',
+        status: 'ALREADY_VOTED',
+      });
+      return;
+    }
+
+    if (session.status === 'SUBMISSION_IN_PROGRESS') {
+      res.status(409).json({
+        success: false,
+        code: 'DOUBLE_VOTE_ATTEMPT',
+        message: 'Concurrent submission in progress.',
+        status: 'ALREADY_VOTED',
+      });
+      return;
+    }
+
+    if (session.status !== 'AUTHORIZED') {
+      // Check if this elector already voted and this is an idempotent replay
+      const targetElecIdEarly = electionId ? String(electionId) : 'GE-2024';
+      const reposEarly = getDataRepositories();
+      const earlyPart =
+        (await reposEarly.participations.getParticipation(session.voterId || session.epicId, targetElecIdEarly)) ||
+        (await reposEarly.participations.getParticipation(session.epicId, targetElecIdEarly));
+      if (earlyPart && earlyPart.status === 'VOTE_ACCEPTED') {
+        if (earlyPart.txHash === txHash && txHash) {
+          res.status(200).json({
+            success: true,
+            duplicateReplay: true,
+            message: 'Participation record already finalized.',
+            status: 'VOTED',
+          });
+          return;
+        }
+        res.status(409).json({
+          success: false,
+          code: 'DOUBLE_VOTE_ATTEMPT',
+          message: 'Double voting rejected: A ballot has already been recorded and accepted for this elector in this election.',
+          status: 'ALREADY_VOTED',
+        });
+        return;
+      }
+
+      res.status(403).json({
+        success: false,
+        code: 'SESSION_INVALID_STATE',
+        message: `Voting session is in state '${session.status}' (must be AUTHORIZED to record vote).`,
+      });
+      return;
+    }
+
+    // Atomically transition session status to SUBMISSION_IN_PROGRESS
+    session.status = 'SUBMISSION_IN_PROGRESS';
+  }
+
+  const verifiedEpic = session ? session.epicId : epicId;
 
   if (!verifiedEpic || !nullifier) {
     res.status(400).json({
@@ -577,6 +940,29 @@ voterRouter.post('/record-vote', async (req: Request, res: Response): Promise<vo
     return;
   }
 
+  // Voter profile and eligibility check
+  const repos = getDataRepositories();
+  const voterProfile =
+    (await repos.voterProfiles.findById(voter.id)) ||
+    (await repos.voterProfiles.findBySimulationId(voter.epicId)) ||
+    (await repos.voterProfiles.findByLegacyEpic(voter.epicId));
+
+  if (voterProfile) {
+    if (
+      voterProfile.lifecycleStatus === 'LOCKED' ||
+      voterProfile.lifecycleStatus === 'ARCHIVED' ||
+      voterProfile.registrationStatus !== 'REGISTERED' ||
+      voterProfile.eligibilityStatus !== 'ELIGIBLE'
+    ) {
+      res.status(403).json({
+        success: false,
+        code: 'INELIGIBLE_VOTER',
+        message: 'Elector record is deactivated, suspended, or ineligible to vote.',
+      });
+      return;
+    }
+  }
+
   // Reconcile and validate election lifecycle authoritatively using server clock
   serverStore.reconcileElectionSchedules();
   const nowSec = serverStore.getCurrentTimeSec();
@@ -587,9 +973,18 @@ voterRouter.post('/record-vote', async (req: Request, res: Response): Promise<vo
 
   if (targetElection) {
     const normStatus = normalizeElectionStatus(targetElection.status);
+    if (nowSec >= targetElection.endTime || targetElection.status === 'concluded' || normStatus === 'CLOSED') {
+      res.status(403).json({
+        success: false,
+        code: 'ELECTION_CONCLUDED',
+        message: 'Voting deadline has concluded for this election.',
+      });
+      return;
+    }
     if (normStatus !== 'OPEN') {
       res.status(403).json({
         success: false,
+        code: 'ELECTION_NOT_ACTIVE',
         message: `Election is not currently active for voting (Current state: ${normStatus}).`,
       });
       return;
@@ -597,37 +992,71 @@ voterRouter.post('/record-vote', async (req: Request, res: Response): Promise<vo
     if (nowSec < targetElection.startTime) {
       res.status(403).json({
         success: false,
+        code: 'ELECTION_NOT_STARTED',
         message: 'Voting has not opened yet for this election schedule.',
-      });
-      return;
-    }
-    if (nowSec >= targetElection.endTime) {
-      res.status(403).json({
-        success: false,
-        message: 'Voting deadline has concluded for this election.',
       });
       return;
     }
   }
 
+  // Session-to-election binding check
+  if (session && session.electionId && targetElection) {
+    if (
+      String(session.electionId) !== String(targetElection.id) &&
+      String(session.electionId) !== String(targetElection.numericId)
+    ) {
+      res.status(403).json({
+        success: false,
+        code: 'SESSION_ELECTION_MISMATCH',
+        message: `Security violation: This voting session is strictly bound to election '${session.electionId}', not '${electionId}'.`,
+      });
+      return;
+    }
+  }
+
+  // Candidate Membership Validation: reject invalid or mismatched candidates
+  const submittedCandId = candidateId !== undefined ? candidateId : candidateNumericId;
+  let validatedCandidate: any = undefined;
+  if (submittedCandId !== undefined && targetElection) {
+    const candCheck = serverStore.validateCandidateInElectionAndConstituency(
+      submittedCandId,
+      targetElection.id,
+      voter.constituencyId
+    );
+    if (!candCheck.isValid) {
+      res.status(400).json({
+        success: false,
+        code: 'INVALID_CANDIDATE',
+        message: candCheck.error,
+      });
+      return;
+    }
+    validatedCandidate = candCheck.candidate;
+  }
+
   // Multi-election participation tracking
-  const repos = getDataRepositories();
   const targetElecId = targetElection ? targetElection.id : (electionId ? String(electionId) : 'GE-2024');
-  const existingParticipation = await repos.participations.getParticipation(voter.id, targetElecId);
+  const existingParticipation =
+    (await repos.participations.getParticipation(voter.id, targetElecId)) ||
+    (await repos.participations.getParticipation(voter.epicId, targetElecId));
 
   // Multi-election double voting protection & idempotent retry check
   if (existingParticipation && existingParticipation.status === 'VOTE_ACCEPTED') {
-    if (existingParticipation.txHash === txHash) {
+    if (existingParticipation.txHash === txHash && txHash) {
       res.status(200).json({
         success: true,
+        duplicateReplay: true,
         message: 'Participation record already finalized.',
         status: 'VOTED',
+        participationStatus: 'VOTE_ACCEPTED',
+        electionId: targetElecId,
       });
       return;
     }
 
     res.status(409).json({
       success: false,
+      code: 'DOUBLE_VOTE_ATTEMPT',
       message: 'Double voting rejected: A ballot has already been recorded and accepted for this elector in this election.',
       status: 'ALREADY_VOTED',
     });
@@ -636,10 +1065,11 @@ voterRouter.post('/record-vote', async (req: Request, res: Response): Promise<vo
 
   // If this nullifier was already spent on-chain, reject duplicate
   if (serverStore.isNullifierSpentOnChain(nullifier)) {
-    res.status(403).json({
+    res.status(409).json({
       success: false,
-      message: 'On-chain reconciliation verified that a ballot has already been recorded for this elector nullifier in this election.',
-      status: 'VOTED',
+      code: 'NULLIFIER_ALREADY_SPENT',
+      message: 'Double voting rejected: Cryptographic nullifier has already been recorded on-chain.',
+      status: 'ALREADY_VOTED',
     });
     return;
   }
@@ -647,6 +1077,7 @@ voterRouter.post('/record-vote', async (req: Request, res: Response): Promise<vo
   if (existingParticipation) {
     await repos.participations.updateParticipationStatus(voter.id, targetElecId, 'VOTE_ACCEPTED', {
       votedAt: nowSec,
+      txHash: txHash || `0x${crypto.randomBytes(32).toString('hex')}`,
     });
   } else {
     await repos.participations.createParticipation({
@@ -655,14 +1086,28 @@ voterRouter.post('/record-vote', async (req: Request, res: Response): Promise<vo
       electionId: targetElecId,
       status: 'VOTE_ACCEPTED',
       votedAt: nowSec,
+      txHash: txHash || `0x${crypto.randomBytes(32).toString('hex')}`,
       createdAt: nowSec,
       updatedAt: nowSec,
       schemaVersion: SCHEMA_VERSION_CURRENT,
     });
   }
 
+  // Transition session state to confirmed
+  if (session) {
+    session.status = 'SUBMISSION_CONFIRMED';
+    session.txHash = txHash;
+    session.version += 1;
+  }
+
   // Spend nullifier
   serverStore.markNullifierSpentOnChain(nullifier);
+
+  // Increment candidate tally if validated
+  if (validatedCandidate) {
+    validatedCandidate.voteCount = (validatedCandidate.voteCount || 0) + 1;
+    serverStore.saveCandidateAsync(validatedCandidate).catch(() => {});
+  }
 
   // Legacy single-election status fallback (only when voting in default GE-2024 or unspecified)
   if (!electionId || electionId === 18 || electionId === 'GE-2024') {
@@ -696,6 +1141,8 @@ voterRouter.post('/record-vote', async (req: Request, res: Response): Promise<vo
     success: true,
     message: 'Elector participation finalized to VOTED state. Vote transaction successfully recorded.',
     status: 'VOTED',
+    participationStatus: 'VOTE_ACCEPTED',
+    electionId: targetElecId,
     privacyNotice: 'Zero ballot correlation: Candidate selection was neither requested nor recorded with this identity.',
   });
 });

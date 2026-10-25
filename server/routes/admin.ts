@@ -27,6 +27,7 @@ import {
 } from '../../src/types/permissions';
 import {
   AuthorityAccount,
+  AuthorityAssignmentScope,
   VoterProfile,
   BiometricEnrollmentMetadata,
   BiometricModality,
@@ -58,7 +59,8 @@ export function clearAdminSessionsForTesting(): void {
 
 export function createAdminSessionForTesting(
   email = 'officer@blockballot.gov.in',
-  role: string = 'PLATFORM_ADMIN'
+  role: string = 'PLATFORM_ADMIN',
+  scopeOverride?: AuthorityAssignmentScope
 ): { token: string; expiresAt: number } {
   const token = `adm_${crypto.randomBytes(32).toString('hex')}`;
   const expiresAt = Date.now() + 4 * 60 * 60 * 1000;
@@ -74,6 +76,12 @@ export function createAdminSessionForTesting(
   if (upper === 'ELECTION_OFFICER' || upper === 'EO') mappedRole = 'ELECTION_OFFICER';
   else if (upper === 'VOTER_REGISTRATION_OFFICER' || upper === 'VRO') mappedRole = 'VOTER_REGISTRATION_OFFICER';
 
+  const defaultScope: AuthorityAssignmentScope = {
+    state: 'Delhi',
+    district: 'New Delhi',
+    constituencyIds: ['CONST-04-ND', 'CONST-77-VAR'],
+  };
+
   const officerSession: OfficerSession = {
     token,
     accountId: email.startsWith('EO') ? 'EO-SIM-001' : email.startsWith('VRO') ? 'VRO-SIM-001' : 'demo-admin-uid',
@@ -81,12 +89,7 @@ export function createAdminSessionForTesting(
     displayName: email,
     role: mappedRole,
     status: 'ACTIVE',
-    assignmentScope: mappedRole === 'PLATFORM_ADMIN' ? undefined : {
-      state: 'Delhi',
-      district: 'New Delhi',
-      constituencyIds: ['CONST-04-ND', 'CONST-77-VAR'],
-      electionIds: ['GE-2024'],
-    },
+    assignmentScope: mappedRole === 'PLATFORM_ADMIN' ? undefined : (scopeOverride || defaultScope),
     permissions: getPermissionsForRole(mappedRole),
     createdAt: Date.now(),
     expiresAt,
@@ -2672,4 +2675,194 @@ adminRouter.post(
     });
   }
 );
+
+/**
+ * POST /api/admin/sessions/unlock
+ * Supervised recovery endpoint: Unlocks a locked voting session (LOCKED_SUPERVISED_RECOVERY).
+ * Restricted to an authorized Election Officer or Platform Admin with ELECTION_ACTIVATE permission.
+ * Validates officer role, assignment scope, session existence, current status, duplicate voting, and election status.
+ */
+adminRouter.post(
+  '/sessions/unlock',
+  authenticateOfficer,
+  requirePermission('ELECTION_ACTIVATE'),
+  async (req: Request, res: Response): Promise<void> => {
+    const session = (req as any).officer as OfficerSession | undefined;
+    const { sessionId, sessionToken, reason } = req.body;
+    const tokenOrId = sessionId || sessionToken;
+
+    if (!tokenOrId || typeof tokenOrId !== 'string') {
+      res.status(400).json({
+        success: false,
+        message: 'Supervised recovery requires a valid sessionId or sessionToken.',
+      });
+      return;
+    }
+
+    if (!reason || typeof reason !== 'string' || reason.trim().length < 5) {
+      res.status(400).json({
+        success: false,
+        message: 'Supervised recovery requires an explicit, audited reason of at least 5 characters.',
+      });
+      return;
+    }
+
+    // Role check: Only ELECTION_OFFICER or PLATFORM_ADMIN can recover sessions
+    if (session?.role !== 'ELECTION_OFFICER' && session?.role !== 'PLATFORM_ADMIN') {
+      res.status(403).json({
+        success: false,
+        message: `Forbidden: Officer role '${session?.role}' is not authorized to supervise session recovery. Only ELECTION_OFFICER or PLATFORM_ADMIN may recover locked sessions.`,
+      });
+      return;
+    }
+
+    const sessionRecord = serverStore.getSessionRecord(tokenOrId);
+    if (!sessionRecord) {
+      res.status(404).json({
+        success: false,
+        message: 'Target voting session not found.',
+      });
+      return;
+    }
+
+    // Status check
+    if (sessionRecord.status !== 'LOCKED_SUPERVISED_RECOVERY') {
+      res.status(400).json({
+        success: false,
+        message: `Session is in '${sessionRecord.status}' status (must be LOCKED_SUPERVISED_RECOVERY to recover).`,
+        currentStatus: sessionRecord.status,
+      });
+      return;
+    }
+
+    // Scope check: If officer has scope, verify constituency and election
+    if (session?.assignmentScope) {
+      if (sessionRecord.constituencyId && !isConstituencyInScope(session.assignmentScope, sessionRecord.constituencyId)) {
+        res.status(403).json({
+          success: false,
+          message: `Forbidden: Session constituency '${sessionRecord.constituencyId}' is outside your authorized assignment scope.`,
+        });
+        return;
+      }
+      if (sessionRecord.electionId && !isElectionInScope(session.assignmentScope, sessionRecord.electionId)) {
+        res.status(403).json({
+          success: false,
+          message: `Forbidden: Session election '${sessionRecord.electionId}' is outside your authorized assignment scope.`,
+        });
+        return;
+      }
+    }
+
+    // Duplicate vote check: Ensure elector hasn't already voted in this election
+    if (sessionRecord.electionId) {
+      try {
+        const repos = getDataRepositories();
+        const vId = sessionRecord.voterId;
+        const participation =
+          (vId ? await repos.participations.getParticipation(vId, sessionRecord.electionId) : null) ||
+          (sessionRecord.epicId ? await repos.participations.getParticipation(sessionRecord.epicId, sessionRecord.electionId) : null);
+        if (participation && participation.status === 'VOTE_ACCEPTED') {
+          res.status(409).json({
+            success: false,
+            message: 'Cannot recover session: Elector has already cast an accepted ballot in this election.',
+          });
+          return;
+        }
+      } catch (err: any) {
+        console.warn('[Recovery] Notice checking participation:', err.message);
+      }
+    }
+
+    if ((!sessionRecord.electionId || sessionRecord.electionId === 'GE-2024' || sessionRecord.electionId === '18') && sessionRecord.epicId) {
+      const storeVoter = serverStore.findVoterByEpic(sessionRecord.epicId);
+      if (storeVoter && storeVoter.status === 'VOTED') {
+        res.status(409).json({
+          success: false,
+          message: 'Cannot recover session: Elector has already cast an accepted ballot in this election.',
+        });
+        return;
+      }
+    }
+
+    // Election status check: Ensure election is still active/open
+    const nowSec = serverStore.getCurrentTimeSec();
+    let electionOpen = true;
+    if (sessionRecord.electionId) {
+      const election =
+        serverStore.getElectionById(sessionRecord.electionId) ||
+        serverStore.findElectionByNumericId(Number(sessionRecord.electionId));
+      if (election) {
+        const norm = normalizeElectionStatus(election.status);
+        if (norm !== 'OPEN') {
+          electionOpen = false;
+        }
+        if (election.endTime && election.endTime <= nowSec) {
+          electionOpen = false;
+        }
+      }
+    }
+
+    if (!electionOpen) {
+      res.status(409).json({
+        success: false,
+        message: 'Cannot recover session: Target election is closed, paused, or concluded.',
+      });
+      return;
+    }
+
+    const unlockResult = await serverStore.unlockSession(
+      tokenOrId,
+      session?.accountId || 'EO-SIM-001',
+      session?.role || 'ELECTION_OFFICER',
+      reason.trim()
+    );
+
+    if (!unlockResult.success) {
+      res.status(400).json(unlockResult);
+      return;
+    }
+
+    try {
+      const repos = getDataRepositories();
+      await repos.auditEvents.appendEvent({
+        id: `audit-recovery-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        timestamp: Date.now(),
+        type: 'SUPERVISED_SESSION_RECOVERY' as any,
+        actor: {
+          actorId: session?.accountId || 'EO-SIM-001',
+          actorRole: session?.role || 'ELECTION_OFFICER',
+        },
+        action: 'SUPERVISED_SESSION_RECOVERY' as any,
+        target: {
+          category: 'PARTICIPATION',
+          targetReference: sessionRecord.id,
+        },
+        outcome: 'SUCCESS',
+        electionId: sessionRecord.electionId,
+        constituencyId: sessionRecord.constituencyId,
+        metadata: {
+          sessionId: sessionRecord.id,
+          voterId: sessionRecord.voterId,
+          epicId: sessionRecord.epicId,
+          reason: reason.trim(),
+        },
+        schemaVersion: SCHEMA_VERSION_CURRENT,
+      });
+    } catch (auditErr: any) {
+      console.warn('[Audit] Notice recording structured audit event:', auditErr.message);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Voting session successfully unlocked through supervised recovery.',
+      session: {
+        id: sessionRecord.id,
+        status: sessionRecord.status,
+        recoveredAt: sessionRecord.recoveredAt,
+        recoveredByOfficerId: sessionRecord.recoveredByOfficerId,
+      },
+    });
+  }
+);
+
 

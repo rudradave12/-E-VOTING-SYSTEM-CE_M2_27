@@ -59,6 +59,7 @@ import { FaceEnrollmentScreen } from './components/screens/FaceEnrollmentScreen'
 import { FingerprintEnrollmentScreen } from './components/screens/FingerprintEnrollmentScreen';
 import { AdminExceptionsScreen } from './components/screens/AdminExceptionsScreen';
 import { VoterProfile } from './types/dataModel';
+import { ShieldAlert, AlertTriangle, Lock, RefreshCw, Key, Maximize2, X, CheckCircle2 } from 'lucide-react';
 
 export function AppInner() {
   const [currentScreen, setCurrentScreen] = useState<NavigationScreen>('welcome');
@@ -66,6 +67,20 @@ export function AppInner() {
   const [isSimulatedEVM, setIsSimulatedEVM] = useState<boolean>(true);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(false);
   const [adminUser, setAdminUser] = useState<any>(null);
+
+  // Phase 08: Fullscreen exit tracking & supervised session recovery
+  const [fullscreenExitCount, setFullscreenExitCount] = useState<number>(0);
+  const [fullscreenWarning, setFullscreenWarning] = useState<{ exitCount: number; message: string } | null>(null);
+  const [isSessionLocked, setIsSessionLocked] = useState<boolean>(false);
+  const [lockedReason, setLockedReason] = useState<string>('');
+  const [showSupervisorModal, setShowSupervisorModal] = useState<boolean>(false);
+  const [supervisorEmail, setSupervisorEmail] = useState<string>('eo.sim001@blockballot.local');
+  const [supervisorPassword, setSupervisorPassword] = useState<string>('Officer@2024!');
+  const [supervisorReason, setSupervisorReason] = useState<string>('Accidental kiosk focus loss; elector verified in person.');
+  const [supervisorError, setSupervisorError] = useState<string>('');
+  const [supervisorLoading, setSupervisorLoading] = useState<boolean>(false);
+  const lastExitHandledAt = React.useRef<number>(0);
+
 
   const [elections, setElections] = useState<Election[]>(INITIAL_ELECTIONS);
   const [activeElectionId, setActiveElectionId] = useState<string>('GE-2024');
@@ -140,6 +155,11 @@ export function AppInner() {
         });
         setAuditEvents(evmSimulator.getAuditEvents());
 
+        // Phase 08: Request fullscreen upon entering voting workflow
+        if (document.documentElement.requestFullscreen) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        }
+
         setCurrentScreen('constituency');
       } else {
         console.error('Failed to obtain voting authorization ticket from server:', authRes.message);
@@ -148,6 +168,108 @@ export function AppInner() {
       console.error('Network error during voter authorization request:', err);
     }
   };
+
+  // Phase 08: Listen for fullscreen changes during active voting screens
+  React.useEffect(() => {
+    const votingScreens: NavigationScreen[] = ['constituency', 'candidates', 'review', 'metamask'];
+    const isVotingActive = votingScreens.includes(currentScreen) && Boolean(currentVoter);
+
+    if (!isVotingActive) {
+      return;
+    }
+
+    const handleFullscreenChange = async () => {
+      if (!document.fullscreenElement) {
+        const now = Date.now();
+        // Debounce within 1.5 seconds to avoid counting transient window events
+        if (now - lastExitHandledAt.current < 1500) {
+          return;
+        }
+        lastExitHandledAt.current = now;
+
+        try {
+          const res = await voterApi.recordFullscreenExit('UNEXPECTED_FULLSCREEN_EXIT');
+          if (res.locked) {
+            setIsSessionLocked(true);
+            setLockedReason(res.message || 'Voting session locked due to multiple fullscreen exit events.');
+            setFullscreenWarning(null);
+          } else if (res.success) {
+            setFullscreenExitCount(res.exitCount);
+            setFullscreenWarning({
+              exitCount: res.exitCount,
+              message: res.message,
+            });
+          }
+        } catch (err: any) {
+          console.warn('[Session Security] Notice recording fullscreen exit:', err.message);
+        }
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+
+    // Authoritative session check on mount / screen change
+    voterApi.getSessionStatus().then((statusRes) => {
+      if (statusRes.status === 'LOCKED_SUPERVISED_RECOVERY') {
+        setIsSessionLocked(true);
+        setLockedReason(statusRes.lockedReason || 'Voting session locked due to excessive fullscreen exits.');
+      } else if (statusRes.status === 'EXPIRED') {
+        alert('Your voting session has expired. Please re-authenticate.');
+        handleResetSession();
+      }
+    }).catch(() => {});
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, [currentScreen, currentVoter]);
+
+  const handleSupervisorUnlock = async () => {
+    setSupervisorError('');
+    if (!supervisorReason || supervisorReason.trim().length < 5) {
+      setSupervisorError('Supervised recovery requires an administrative justification reason of at least 5 characters.');
+      return;
+    }
+
+    setSupervisorLoading(true);
+    try {
+      let officerToken = voterApi.getAdminToken();
+      if (!officerToken) {
+        const loginRes = await voterApi.adminLogin({
+          email: supervisorEmail.trim(),
+          password: supervisorPassword,
+        });
+        if (!loginRes.success || !loginRes.token) {
+          setSupervisorError(loginRes.message || 'Administrative authentication failed. Check credentials.');
+          setSupervisorLoading(false);
+          return;
+        }
+        officerToken = loginRes.token;
+      }
+
+      const unlockRes = await voterApi.adminUnlockSession({
+        reason: supervisorReason.trim(),
+      });
+
+      if (unlockRes.success) {
+        setIsSessionLocked(false);
+        setLockedReason('');
+        setFullscreenExitCount(0);
+        setFullscreenWarning(null);
+        setShowSupervisorModal(false);
+        if (document.documentElement.requestFullscreen) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        }
+      } else {
+        setSupervisorError(unlockRes.message || 'Failed to unlock voting session.');
+      }
+    } catch (err: any) {
+      setSupervisorError(err.message || 'Network error during session recovery.');
+    } finally {
+      setSupervisorLoading(false);
+    }
+  };
+
 
   // Load persistent election and candidate data on boot
   React.useEffect(() => {
@@ -701,6 +823,190 @@ export function AppInner() {
             adminUser={adminUser}
             onBack={() => setCurrentScreen('admin-dashboard')}
           />
+        )}
+
+        {/* Phase 08: Fullscreen Exit Warning Modal (Warning #1 or #2) */}
+        {fullscreenWarning && !isSessionLocked && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-amber-200 p-6 space-y-4 text-center">
+              <div className="w-14 h-14 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center mx-auto">
+                <AlertTriangle className="w-7 h-7" />
+              </div>
+              <div className="space-y-1">
+                <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 uppercase tracking-wider">
+                  Security Alert · Warning {fullscreenWarning.exitCount} of 2
+                </span>
+                <h3 className="text-lg font-bold text-slate-900">
+                  Unexpected Exit from Fullscreen
+                </h3>
+              </div>
+              <p className="text-sm text-slate-600 leading-relaxed">
+                {fullscreenWarning.message}
+              </p>
+              <div className="bg-amber-50 rounded-xl p-3 text-xs text-amber-900 text-left border border-amber-200">
+                <strong>Electoral Session Protocol:</strong> Voting must take place within the focused fullscreen interface to safeguard voter privacy and session integrity. A third exit will immediately lock this session and require an Election Officer to supervise recovery.
+              </div>
+              <div className="pt-2">
+                <button
+                  onClick={() => {
+                    if (document.documentElement.requestFullscreen) {
+                      document.documentElement.requestFullscreen().catch(() => {});
+                    }
+                    setFullscreenWarning(null);
+                  }}
+                  className="w-full py-3 px-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-semibold shadow-md flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                >
+                  <Maximize2 className="w-4 h-4" />
+                  Resume Voting in Fullscreen
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Phase 08: Session Locked & Supervised Recovery Screen / Overlay */}
+        {isSessionLocked && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/85 backdrop-blur-md p-4 animate-in fade-in duration-300">
+            <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-red-200 p-6 space-y-5 text-center">
+              <div className="w-16 h-16 bg-red-100 text-red-700 rounded-full flex items-center justify-center mx-auto shadow-inner">
+                <ShieldAlert className="w-8 h-8" />
+              </div>
+
+              <div className="space-y-1">
+                <span className="inline-block px-3 py-1 rounded-full text-xs font-bold bg-red-100 text-red-800 uppercase tracking-wider">
+                  Session Locked · Supervised Recovery Required
+                </span>
+                <h2 className="text-xl font-bold text-slate-900">
+                  Voting Session Locked
+                </h2>
+              </div>
+
+              <p className="text-sm text-slate-600 leading-relaxed">
+                {lockedReason || 'This voting terminal has been locked after 3 unexpected fullscreen exit events to prevent unauthorized browser manipulation and protect election integrity.'}
+              </p>
+
+              <div className="bg-red-50 rounded-xl p-4 text-xs text-red-900 text-left space-y-2 border border-red-200">
+                <div className="font-semibold flex items-center gap-1.5">
+                  <Lock className="w-4 h-4 text-red-700" />
+                  Authoritative Server-Enforced Lockout
+                </div>
+                <p>
+                  In accordance with Phase 08 anti-tamper safeguards, reloading the browser or opening another tab cannot bypass this lock. Only an authorized <strong>Election Officer</strong> (EO) or <strong>Platform Administrator</strong> within this jurisdiction can unlock the session with an audited justification.
+                </p>
+                {currentVoter && (
+                  <div className="pt-1 text-[11px] font-mono text-slate-600">
+                    Elector: {currentVoter.name} ({currentVoter.epicId}) · Constituency: {currentVoter.constituencyId}
+                  </div>
+                )}
+              </div>
+
+              {!showSupervisorModal ? (
+                <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                  <button
+                    onClick={() => setShowSupervisorModal(true)}
+                    className="flex-1 py-3 px-4 bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold shadow-md flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                  >
+                    <Key className="w-4 h-4" />
+                    Officer Supervised Recovery
+                  </button>
+                  <button
+                    onClick={handleResetSession}
+                    className="py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-medium transition-colors cursor-pointer text-xs"
+                  >
+                    Abort & Return Home
+                  </button>
+                </div>
+              ) : (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-left space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                    <span className="font-semibold text-xs text-slate-800 flex items-center gap-1.5">
+                      <Key className="w-3.5 h-3.5 text-orange-600" />
+                      Officer Credentials & Justification
+                    </span>
+                    <button
+                      onClick={() => setShowSupervisorModal(false)}
+                      className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {supervisorError && (
+                    <div className="p-2.5 rounded-lg bg-red-100 text-red-800 text-xs font-medium">
+                      {supervisorError}
+                    </div>
+                  )}
+
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-semibold text-slate-700 uppercase">
+                      Supervisor / Officer Email
+                    </label>
+                    <input
+                      type="email"
+                      value={supervisorEmail}
+                      onChange={(e) => setSupervisorEmail(e.target.value)}
+                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 bg-white"
+                      placeholder="eo.sim001@blockballot.local"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-semibold text-slate-700 uppercase">
+                      Officer Password
+                    </label>
+                    <input
+                      type="password"
+                      value={supervisorPassword}
+                      onChange={(e) => setSupervisorPassword(e.target.value)}
+                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 bg-white"
+                      placeholder="••••••••"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-semibold text-slate-700 uppercase">
+                      Audited Justification Reason (min 5 chars)
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={supervisorReason}
+                      onChange={(e) => setSupervisorReason(e.target.value)}
+                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 bg-white"
+                      placeholder="e.g. Accidental kiosk focus loss; elector verified in person."
+                    />
+                  </div>
+
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      disabled={supervisorLoading}
+                      onClick={handleSupervisorUnlock}
+                      className="flex-1 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      {supervisorLoading ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          Unlocking...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Authorize Supervised Unlock
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={supervisorLoading}
+                      onClick={() => setShowSupervisorModal(false)}
+                      className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-medium cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         )}
       </main>
 

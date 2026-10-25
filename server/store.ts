@@ -15,6 +15,12 @@ import {
   AuthoritativeElectionStatus,
 } from '../src/types';
 import {
+  VotingSessionStatus,
+  IdentityVerificationOutcome,
+  validateVotingSessionRecord,
+  isValidVotingSessionTransition,
+} from '../src/types/dataModel';
+import {
   INITIAL_ELECTIONS,
   INITIAL_CONSTITUENCIES,
   INITIAL_CANDIDATES,
@@ -51,14 +57,32 @@ export interface OtpChallengeRecord {
 }
 
 export interface VoterSession {
+  id: string; // High-entropy identifier (e.g. vses_...)
   token: string;
+  sessionTokenHash: string; // SHA-256 hash
   epicId: string;
   voterId: string;
+  simulationVoterId?: string;
   name: string;
   constituencyId: string;
   constituencyCode: number;
+  electionId?: string;
+  numericElectionId?: number;
+  status: VotingSessionStatus;
+  verificationOutcome: IdentityVerificationOutcome;
+  manualExceptionId?: string;
+  authNonce: string;
+  voterWallet?: string;
+  nullifier?: string;
+  txHash?: string;
+  fullscreenExitCount: number;
+  lockedReason?: string;
+  lockedAt?: number;
+  recoveredAt?: number;
+  recoveredByOfficerId?: string;
   createdAt: number;
   expiresAt: number;
+  version: number;
   jti?: string;
   isJwt?: boolean;
 }
@@ -68,6 +92,8 @@ class ServerStore {
   private voters: Map<string, VoterRecord> = new Map();
   private otpChallenges: Map<string, OtpChallengeRecord> = new Map();
   private sessions: Map<string, VoterSession> = new Map();
+  private sessionsById: Map<string, VoterSession> = new Map();
+  private sessionsByHash: Map<string, VoterSession> = new Map();
   private revokedJtis: Set<string> = new Set();
   private elections: Map<string, Election> = new Map();
   private constituencies: Map<string, Constituency> = new Map();
@@ -431,9 +457,19 @@ class ServerStore {
     return undefined;
   }
 
-  // --- Session Management (Signed Expiring JWT Bearer Tokens) ---
-  public createSession(voter: VoterRecord, constituencyCode: number): VoterSession {
-    const { token, jti, expiresAt } = createVoterJwt({
+  // --- Session Management (Signed Expiring JWT Bearer Tokens & High-Entropy Sessions) ---
+  public createSession(
+    voter: VoterRecord,
+    constituencyCode: number,
+    opts?: {
+      electionId?: string | number;
+      numericElectionId?: number;
+      verificationOutcome?: IdentityVerificationOutcome;
+      manualExceptionId?: string;
+      status?: VotingSessionStatus;
+    }
+  ): VoterSession {
+    const { token: jwtToken, jti } = createVoterJwt({
       epicId: voter.epicId,
       voterId: voter.id,
       name: voter.name,
@@ -441,94 +477,400 @@ class ServerStore {
       constituencyCode,
     });
 
+    const highEntropyToken = `bb_vses_${crypto.randomBytes(32).toString('base64url')}`;
+    const sessionId = `vses_${crypto.randomBytes(16).toString('hex')}`;
+    const sessionTokenHash = crypto.createHash('sha256').update(highEntropyToken).digest('hex');
+    const authNonce = crypto.randomBytes(16).toString('hex');
+    const nowMs = this.getCurrentTimeMs();
+    const effectiveExpiresAt = nowMs + SERVER_CONFIG.SESSION_EXPIRY_MS;
+
+    const electionIdStr = opts?.electionId !== undefined ? String(opts.electionId) : undefined;
+    let numElecId: number | undefined = undefined;
+    if (opts?.numericElectionId !== undefined) {
+      numElecId = Number(opts.numericElectionId);
+    } else if (typeof opts?.electionId === 'number') {
+      numElecId = opts.electionId;
+    } else if (opts?.electionId) {
+      const elec = this.getElectionById(String(opts.electionId));
+      if (elec?.numericId !== undefined) {
+        numElecId = elec.numericId;
+      }
+    }
+
     const session: VoterSession = {
-      token,
+      id: sessionId,
+      token: highEntropyToken,
+      sessionTokenHash,
       epicId: voter.epicId,
       voterId: voter.id,
+      simulationVoterId: (voter as any).simulationVoterId || voter.epicId,
       name: voter.name,
       constituencyId: voter.constituencyId,
       constituencyCode,
-      createdAt: Date.now(),
-      expiresAt,
+      electionId: electionIdStr,
+      numericElectionId: numElecId,
+      status: opts?.status || (opts ? 'CREATED' : 'AUTHORIZED'),
+      verificationOutcome: opts?.verificationOutcome || 'OTP_DEMO',
+      manualExceptionId: opts?.manualExceptionId,
+      authNonce,
+      fullscreenExitCount: 0,
+      createdAt: nowMs,
+      expiresAt: effectiveExpiresAt,
+      version: 1,
       jti,
       isJwt: true,
     };
 
-    this.sessions.set(token, session);
+    this.sessions.set(highEntropyToken, session);
+    this.sessions.set(jwtToken, session);
+    this.sessionsById.set(sessionId, session);
+    this.sessionsByHash.set(sessionTokenHash, session);
     return session;
   }
 
   public getSession(token: string): VoterSession | undefined {
     if (!token || typeof token !== 'string') return undefined;
 
-    // 1. If it has 3 dot-separated parts, it is a signed JWT bearer token
-    if (token.split('.').length === 3) {
+    // Check if token is explicitly revoked
+    if (this.revokedJtis.has(token)) return undefined;
+
+    // 1. Check in-memory store by exact token
+    let session = this.sessions.get(token);
+
+    // 2. Fallback check by session ID or token hash
+    if (!session) {
+      session = this.sessionsById.get(token) || this.sessionsByHash.get(token);
+    }
+
+    // 3. Fallback check for JWT signature reconstruction
+    if (!session && token.split('.').length === 3) {
       const jwtResult = verifyVoterJwt(token);
       if (!jwtResult.isValid || !jwtResult.payload) {
         return undefined;
       }
-
-      // Check if jti has been explicitly revoked / logged out
       if (this.revokedJtis.has(jwtResult.payload.jti)) {
         return undefined;
       }
 
-      // If present in active in-memory sessions cache, check memory expiry
-      const inMemory = this.sessions.get(token);
-      if (inMemory) {
-        if (Date.now() > inMemory.expiresAt) {
-          this.sessions.delete(token);
-          return undefined;
-        }
-        return inMemory;
+      const nowMs = this.getCurrentTimeMs();
+      const expMs = jwtResult.payload.exp * 1000;
+      if (nowMs > expMs) {
+        return undefined;
       }
 
-      // Reconstruct verified session from validated cryptographic claims
-      return {
+      const sessionId = `vses_${crypto.createHash('sha256').update(jwtResult.payload.jti).digest('hex').substring(0, 16)}`;
+      const sessionTokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+      session = {
+        id: sessionId,
         token,
+        sessionTokenHash,
         epicId: jwtResult.payload.sub,
         voterId: jwtResult.payload.voterId,
+        simulationVoterId: jwtResult.payload.voterId,
         name: jwtResult.payload.name,
         constituencyId: jwtResult.payload.constituencyId,
         constituencyCode: jwtResult.payload.constituencyCode,
+        electionId: 'GE-2024',
+        numericElectionId: 18,
+        status: 'AUTHORIZED',
+        verificationOutcome: 'OTP_DEMO',
+        authNonce: crypto.randomBytes(16).toString('hex'),
+        fullscreenExitCount: 0,
         createdAt: jwtResult.payload.iat * 1000,
-        expiresAt: jwtResult.payload.exp * 1000,
+        expiresAt: expMs,
+        version: 1,
         jti: jwtResult.payload.jti,
         isJwt: true,
       };
+
+      this.sessions.set(token, session);
+      this.sessionsById.set(session.id, session);
+      this.sessionsByHash.set(sessionTokenHash, session);
     }
 
-    // 2. Fallback for legacy opaque tokens (if present in tests)
-    const session = this.sessions.get(token);
     if (!session) return undefined;
-    if (Date.now() > session.expiresAt) {
-      this.sessions.delete(token);
+
+    // Check revocation
+    if (session.jti && this.revokedJtis.has(session.jti)) {
       return undefined;
     }
+    if (this.revokedJtis.has(session.id) || this.revokedJtis.has(session.token)) {
+      return undefined;
+    }
+
+    // Authoritative server-clock expiration check
+    if (this.getCurrentTimeMs() > session.expiresAt) {
+      session.status = 'EXPIRED';
+      this.sessions.delete(session.token);
+      return undefined;
+    }
+
+    return session;
+  }
+
+  public getSessionRecord(tokenOrIdOrHash: string): VoterSession | undefined {
+    if (!tokenOrIdOrHash || typeof tokenOrIdOrHash !== 'string') return undefined;
+
+    let session =
+      this.sessions.get(tokenOrIdOrHash) ||
+      this.sessionsById.get(tokenOrIdOrHash) ||
+      this.sessionsByHash.get(tokenOrIdOrHash);
+
+    if (!session && tokenOrIdOrHash.split('.').length === 3) {
+      session = this.getSession(tokenOrIdOrHash);
+    }
+
+    if (!session) {
+      for (const s of this.sessions.values()) {
+        if (s.epicId.toUpperCase() === tokenOrIdOrHash.toUpperCase()) {
+          session = s;
+          break;
+        }
+      }
+    }
+
+    if (!session) return undefined;
+
+    if (this.getCurrentTimeMs() > session.expiresAt && session.status !== 'EXPIRED' && session.status !== 'REVOKED') {
+      session.status = 'EXPIRED';
+    }
+
     return session;
   }
 
   public deleteSession(token: string): void {
-    const session = this.sessions.get(token);
-    if (session?.jti) {
-      this.revokedJtis.add(session.jti);
+    const session = this.sessions.get(token) || this.sessionsById.get(token) || this.sessionsByHash.get(token);
+    if (session) {
+      if (session.jti) this.revokedJtis.add(session.jti);
+      this.revokedJtis.add(session.id);
+      this.revokedJtis.add(session.token);
+      this.sessions.delete(session.token);
+      this.sessionsById.delete(session.id);
+      this.sessionsByHash.delete(session.sessionTokenHash);
     } else if (token.split('.').length === 3) {
       const parsed = verifyVoterJwt(token);
       if (parsed.payload?.jti) {
         this.revokedJtis.add(parsed.payload.jti);
       }
+      this.revokedJtis.add(token);
+      this.sessions.delete(token);
     }
-    this.sessions.delete(token);
   }
 
   public revokeSession(tokenOrJti: string): void {
     this.revokedJtis.add(tokenOrJti);
-    this.sessions.delete(tokenOrJti);
+    const session = this.sessions.get(tokenOrJti) || this.sessionsById.get(tokenOrJti) || this.sessionsByHash.get(tokenOrJti);
+    if (session) {
+      session.status = 'REVOKED';
+      this.sessions.delete(session.token);
+      this.sessionsById.delete(session.id);
+      this.sessionsByHash.delete(session.sessionTokenHash);
+    } else {
+      this.sessions.delete(tokenOrJti);
+    }
   }
 
   public isJtiRevoked(jti: string): boolean {
     return this.revokedJtis.has(jti);
   }
+
+  public recordFullscreenExit(
+    tokenOrId: string,
+    reason?: string
+  ): { success: boolean; locked: boolean; exitCount: number; session?: VoterSession; message: string } {
+    const session = this.getSessionRecord(tokenOrId);
+    if (!session) {
+      return { success: false, locked: false, exitCount: 0, message: 'Voting session not found or invalid.' };
+    }
+
+    if (session.status === 'EXPIRED' || this.getCurrentTimeMs() > session.expiresAt) {
+      session.status = 'EXPIRED';
+      return { success: false, locked: false, exitCount: session.fullscreenExitCount, session, message: 'Voting session has expired.' };
+    }
+
+    if (session.status === 'LOCKED_SUPERVISED_RECOVERY') {
+      return {
+        success: true,
+        locked: true,
+        exitCount: session.fullscreenExitCount,
+        session,
+        message: 'Voting session is already locked. Supervised recovery required before voting can resume.',
+      };
+    }
+
+    session.fullscreenExitCount += 1;
+    session.version += 1;
+
+    if (session.fullscreenExitCount >= 3) {
+      session.status = 'LOCKED_SUPERVISED_RECOVERY';
+      session.lockedReason = reason || 'EXCESSIVE_FULLSCREEN_EXITS';
+      session.lockedAt = this.getCurrentTimeSec();
+
+      if (session.voterId && session.electionId) {
+        try {
+          const repos = getDataRepositories();
+          repos.participations.updateParticipationStatus(
+            session.voterId,
+            session.electionId,
+            'SESSION_LOCKED'
+          ).catch((e: any) => console.warn('[Participation] Notice locking participation:', e.message));
+        } catch (e: any) {
+          console.warn('[Participation] Notice getting repos:', e.message);
+        }
+      }
+
+      this.recordAuditEvent({
+        id: `audit-lock-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        timestamp: this.getCurrentTimeMs(),
+        type: 'ADMIN_ACTION',
+        description: `Voting session for elector '${session.epicId}' locked after ${session.fullscreenExitCount} fullscreen exit events. Supervised recovery required.`,
+        electionId: session.numericElectionId || 1,
+      });
+
+      return {
+        success: true,
+        locked: true,
+        exitCount: session.fullscreenExitCount,
+        session,
+        message: 'Voting session locked due to multiple unexpected fullscreen exits. Supervised recovery required before voting can resume.',
+      };
+    }
+
+    const warning = session.fullscreenExitCount === 1
+      ? 'First warning: Unexpected exit from fullscreen mode.'
+      : 'Final warning: Further exit from fullscreen mode will immediately lock your voting session.';
+
+    this.recordAuditEvent({
+      id: `audit-fs-warn-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: this.getCurrentTimeMs(),
+      type: 'ADMIN_ACTION',
+      description: `Fullscreen exit warning #${session.fullscreenExitCount} recorded for elector '${session.epicId}'.`,
+      electionId: session.numericElectionId || 1,
+    });
+
+    return {
+      success: true,
+      locked: false,
+      exitCount: session.fullscreenExitCount,
+      session,
+      message: warning,
+    };
+  }
+
+  public async unlockSession(
+    sessionIdOrToken: string,
+    officerId: string,
+    officerRole: string,
+    reason: string
+  ): Promise<{ success: boolean; message: string; session?: VoterSession }> {
+    if (officerRole !== 'PLATFORM_ADMIN' && officerRole !== 'ELECTION_OFFICER') {
+      return { success: false, message: 'Unauthorized: Only an authorized Election Officer or Platform Admin can recover locked voting sessions.' };
+    }
+
+    if (!reason || typeof reason !== 'string' || reason.trim().length < 5) {
+      return { success: false, message: 'Supervised recovery requires a non-empty administrative justification reason (min 5 characters).' };
+    }
+
+    const session = this.getSessionRecord(sessionIdOrToken);
+    if (!session) {
+      return { success: false, message: 'Voting session not found or invalid.' };
+    }
+
+    if (session.status !== 'LOCKED_SUPERVISED_RECOVERY') {
+      return { success: false, message: `Session is in '${session.status}' status (must be LOCKED_SUPERVISED_RECOVERY to recover).` };
+    }
+
+    // Safety check: ensure elector hasn't already voted
+    if (session.voterId && session.electionId) {
+      try {
+        const repos = getDataRepositories();
+        const existing = await repos.participations.getParticipation(session.voterId, session.electionId);
+        if (existing && existing.status === 'VOTE_ACCEPTED') {
+          return { success: false, message: 'Cannot recover session: Elector has already cast a confirmed ballot in this election.' };
+        }
+      } catch (e: any) {
+        console.warn('[Recovery] Notice checking participation:', e.message);
+      }
+    }
+
+    const nowSec = this.getCurrentTimeSec();
+    session.status = 'AUTHORIZED';
+    session.fullscreenExitCount = 0;
+    session.lockedReason = undefined;
+    session.lockedAt = undefined;
+    session.recoveredAt = nowSec;
+    session.recoveredByOfficerId = officerId;
+    session.version += 1;
+
+    // Restore participation state
+    if (session.voterId && session.electionId) {
+      try {
+        const repos = getDataRepositories();
+        await repos.participations.updateParticipationStatus(
+          session.voterId,
+          session.electionId,
+          'SESSION_AUTHORIZED'
+        );
+      } catch (e: any) {
+        console.warn('[Participation] Notice restoring participation:', e.message);
+      }
+    }
+
+    this.recordAuditEvent({
+      id: `audit-unlock-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: this.getCurrentTimeMs(),
+      type: 'ADMIN_ACTION',
+      description: `Voting session for elector '${session.epicId}' unlocked by officer '${officerId}' (${officerRole}). Reason: ${reason.trim()}`,
+      electionId: session.numericElectionId || 1,
+    });
+
+    return {
+      success: true,
+      message: 'Voting session successfully unlocked. Elector may resume ballot submission.',
+      session,
+    };
+  }
+
+  public validateCandidateInElectionAndConstituency(
+    candidateId: number | string,
+    electionId?: string | number,
+    constituencyId?: string
+  ): { isValid: boolean; candidate?: Candidate; error?: string } {
+    let candidate: Candidate | undefined;
+    const candIdStr = String(candidateId);
+    const candNum = Number(candidateId);
+
+    for (const c of this.candidates.values()) {
+      if (c.id === candIdStr || (!isNaN(candNum) && c.numericId === candNum)) {
+        candidate = c;
+        break;
+      }
+    }
+
+    if (!candidate) {
+      return { isValid: false, error: `Candidate '${candidateId}' not found in registered nominations.` };
+    }
+
+    if (constituencyId && candidate.constituencyId !== constituencyId) {
+      return {
+        isValid: false,
+        candidate,
+        error: `Candidate '${candidate.name}' is registered in constituency '${candidate.constituencyId}', not in elector constituency '${constituencyId}'.`,
+      };
+    }
+
+    if (candidate.status && candidate.status !== 'ACTIVE') {
+      return {
+        isValid: false,
+        candidate,
+        error: `Candidate nomination is inactive (Status: ${candidate.status}). Ballots cannot be cast for withdrawn or disqualified candidates.`,
+      };
+    }
+
+    return { isValid: true, candidate };
+  }
+
 
   // --- Election Management Operations ---
 
@@ -1132,6 +1474,14 @@ class ServerStore {
 
     return { success: true, message: 'Candidate registered successfully.', candidate: candidateToSave };
   }
+
+  public async saveCandidateAsync(candidate: Candidate): Promise<void> {
+    this.candidates.set(candidate.id, candidate);
+    if (isFirebaseConfigured()) {
+      await saveCandidateToFirestore(candidate);
+    }
+  }
+
 
   public updateCandidate(
     candidateId: string,
