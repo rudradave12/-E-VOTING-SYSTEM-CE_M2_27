@@ -40,7 +40,6 @@ import { ConstituencyInfoScreen } from './components/screens/ConstituencyInfoScr
 import { HowItWorksScreen } from './components/screens/HowItWorksScreen';
 import { PreferencePollScreen } from './components/screens/PreferencePollScreen';
 import { PracticeVotingScreen } from './components/screens/PracticeVotingScreen';
-import { WelcomeScreen } from './components/screens/WelcomeScreen';
 import { IdentifyScreen } from './components/screens/IdentifyScreen';
 import { OtpScreen } from './components/screens/OtpScreen';
 import { ConstituencyScreen } from './components/screens/ConstituencyScreen';
@@ -48,7 +47,6 @@ import { CandidatesScreen } from './components/screens/CandidatesScreen';
 import { ReviewScreen } from './components/screens/ReviewScreen';
 import { MetaMaskScreen } from './components/screens/MetaMaskScreen';
 import { ReceiptScreen } from './components/screens/ReceiptScreen';
-import { ResultsScreen } from './components/screens/ResultsScreen';
 import { AdminLoginScreen } from './components/screens/AdminLoginScreen';
 import { AdminDashboardScreen } from './components/screens/AdminDashboardScreen';
 import { AdminElectionsScreen } from './components/screens/AdminElectionsScreen';
