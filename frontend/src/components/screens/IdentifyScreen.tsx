@@ -81,8 +81,8 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
   };
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
-      <div className="bg-white border border-slate-200 rounded-xl p-6 sm:p-8 shadow-xs">
+    <div className="max-w-2xl mx-auto px-3 sm:px-4 py-4 sm:py-8">
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-8 shadow-xs">
         <div className="mb-6">
           <div className="flex items-center gap-2 text-xs font-semibold text-orange-700 uppercase tracking-widest mb-1">
             <span>Step 1 of 6</span>
@@ -92,7 +92,7 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
           <h2 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
             Simulation Voter ID & Electoral Roll Verification
           </h2>
-          <p className="mt-1 text-sm text-slate-600">
+          <p className="mt-1 text-xs sm:text-sm text-slate-600">
             Please enter your server-generated Simulation Voter ID to verify your enrollment in the registered parliamentary electoral roll.
           </p>
         </div>
@@ -144,12 +144,12 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
             </div>
           )}
 
-          <div className="flex items-center justify-between gap-4 pt-4 border-t border-slate-100">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-4 border-t border-slate-100">
             <button
               type="button"
               onClick={onCancel}
               disabled={isVerifying}
-              className="px-4 py-2.5 text-xs font-medium text-slate-600 hover:text-slate-900 transition-colors cursor-pointer disabled:opacity-50"
+              className="w-full sm:w-auto px-4 py-2.5 text-xs font-medium text-slate-600 hover:text-slate-900 border border-slate-200 sm:border-transparent rounded-lg transition-colors cursor-pointer disabled:opacity-50 text-center"
             >
               Return to Portal
             </button>
@@ -157,7 +157,7 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
             <button
               type="submit"
               disabled={isVerifying}
-              className="px-6 py-3 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-lg shadow-sm hover:shadow transition-all flex items-center gap-2 cursor-pointer text-sm disabled:opacity-50"
+              className="w-full sm:w-auto px-6 py-3 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-lg shadow-sm hover:shadow transition-all flex items-center justify-center gap-2 cursor-pointer text-sm disabled:opacity-50"
             >
               {isVerifying ? (
                 <>

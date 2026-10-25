@@ -69,9 +69,9 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
+    <div className="max-w-6xl mx-auto px-3 sm:px-6 py-4 sm:py-8">
       {/* Officer Identity & Role Banner */}
-      <div className="bg-slate-900 text-white rounded-xl p-5 mb-8 shadow-sm border border-slate-800">
+      <div className="bg-slate-900 text-white rounded-2xl p-4 sm:p-5 mb-6 sm:mb-8 shadow-sm border border-slate-800">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-lg bg-orange-500/20 text-orange-400 border border-orange-500/30 flex items-center justify-center shrink-0 mt-0.5">
@@ -90,7 +90,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
                   ID: {adminUser?.id || 'SYS-ADMIN-001'}
                 </span>
               </div>
-              <h2 className="text-lg font-bold text-white mt-1">
+              <h2 className="text-base sm:text-lg font-bold text-white mt-1">
                 {adminUser?.displayName || 'Election Commission Administrative Gateway'}
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -134,20 +134,20 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
       </div>
 
       {/* Top Header & Commission Breadcrumbs */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 pb-6 border-b border-slate-200">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 sm:mb-8 pb-6 border-b border-slate-200">
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 mb-1">
             <span>Commission Portal</span>
             <span aria-hidden="true">/</span>
             <span className="text-slate-900 font-bold">Control Center</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
             Election Commission Administration Console
           </h1>
         </div>
 
         {/* Status Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {canManageElections && election.status === 'active' ? (
             <button
               onClick={() => onUpdateElectionStatus('paused')}
@@ -177,8 +177,8 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
       </div>
 
       {/* KPI Overview Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <div className="bg-white border border-slate-200 p-5 rounded-xl shadow-xs">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-8">
+        <div className="bg-white border border-slate-200 p-4 sm:p-5 rounded-xl shadow-xs">
           <span className="text-xs text-slate-500 block mb-1">Election Status</span>
           <div className="flex items-center gap-2">
             <span
@@ -197,7 +197,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
           <span className="text-[11px] text-slate-400 mt-1 block">EVM State Machine Active</span>
         </div>
 
-        <div className="bg-white border border-slate-200 p-5 rounded-xl shadow-xs">
+        <div className="bg-white border border-slate-200 p-4 sm:p-5 rounded-xl shadow-xs">
           <span className="text-xs text-slate-500 block mb-1">Total Verified Turnout</span>
           <span className="font-mono text-xl font-bold text-slate-900 tabular-nums">
             {totalVotes.toLocaleString('en-IN')}
@@ -207,7 +207,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
           </span>
         </div>
 
-        <div className="bg-white border border-slate-200 p-5 rounded-xl shadow-xs">
+        <div className="bg-white border border-slate-200 p-4 sm:p-5 rounded-xl shadow-xs">
           <span className="text-xs text-slate-500 block mb-1">Contesting Candidates</span>
           <span className="font-mono text-xl font-bold text-slate-900 tabular-nums">
             {candidates.length}
@@ -215,7 +215,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
           <span className="text-[11px] text-slate-400 mt-1 block">Across {constituencies.length} seats</span>
         </div>
 
-        <div className="bg-white border border-slate-200 p-5 rounded-xl shadow-xs">
+        <div className="bg-white border border-slate-200 p-4 sm:p-5 rounded-xl shadow-xs">
           <span className="text-xs text-slate-500 block mb-1">Verified Electors</span>
           <span className="font-mono text-xl font-bold text-slate-900 tabular-nums">
             {voters.length} Sample Profiles
@@ -226,7 +226,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
 
       {/* Primary Administration Modules Grid */}
       <h2 className="text-base font-bold text-slate-900 mb-4">Commission Administrative Modules</h2>
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
         {/* Module 1: Election Lifecycle */}
         <button
           onClick={() => {

@@ -322,7 +322,8 @@ export const AdminCandidatesScreen: React.FC<AdminCandidatesScreenProps> = ({
 
       {/* Candidates List Table */}
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-        <table className="w-full text-left text-xs border-collapse">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse min-w-[720px]">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider text-[10px]">
               <th className="py-3 px-4">#</th>
@@ -432,6 +433,7 @@ export const AdminCandidatesScreen: React.FC<AdminCandidatesScreenProps> = ({
             })}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Add Candidate Modal */}

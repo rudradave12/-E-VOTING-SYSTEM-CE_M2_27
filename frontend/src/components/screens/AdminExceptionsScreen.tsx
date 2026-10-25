@@ -492,7 +492,7 @@ export const AdminExceptionsScreen: React.FC<AdminExceptionsScreenProps> = ({
                     </div>
 
                     {/* Right: Actions */}
-                    <div className="flex sm:flex-col items-center gap-2 shrink-0">
+                    <div className="flex flex-col sm:flex-row lg:flex-col items-stretch sm:items-center gap-2 shrink-0 w-full lg:w-auto">
                       {isPending ? (
                         canApprove ? (
                           isOwnRequest ? (
@@ -505,17 +505,17 @@ export const AdminExceptionsScreen: React.FC<AdminExceptionsScreenProps> = ({
                               </span>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
                               <button
                                 onClick={() => handleOpenDecision(exc, 'APPROVE')}
-                                className="py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                                className="py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
                               >
                                 <Check className="w-3.5 h-3.5" />
                                 <span>Approve Physical ID</span>
                               </button>
                               <button
                                 onClick={() => handleOpenDecision(exc, 'DECLINE')}
-                                className="py-2 px-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                                className="py-2 px-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
                               >
                                 <X className="w-3.5 h-3.5" />
                                 <span>Decline</span>

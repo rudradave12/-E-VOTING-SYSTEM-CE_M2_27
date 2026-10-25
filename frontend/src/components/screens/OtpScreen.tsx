@@ -117,8 +117,8 @@ export const OtpScreen: React.FC<OtpScreenProps> = ({
   };
 
   return (
-    <div className="max-w-xl mx-auto px-4 py-8">
-      <div className="bg-white border border-slate-200 rounded-xl p-6 sm:p-8 shadow-xs">
+    <div className="max-w-xl mx-auto px-3 sm:px-4 py-4 sm:py-8">
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-8 shadow-xs">
         <div className="mb-6">
           <div className="flex items-center gap-2 text-xs font-semibold text-orange-700 uppercase tracking-widest mb-1">
             <span>Step 2 of 6</span>
@@ -128,29 +128,29 @@ export const OtpScreen: React.FC<OtpScreenProps> = ({
           <h2 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
             Enter 6-Digit Verification Code
           </h2>
-          <p className="mt-1 text-sm text-slate-600">
+          <p className="mt-1 text-xs sm:text-sm text-slate-600">
             A time-limited verification code has been dispatched to the mobile number registered with your EPIC.
           </p>
         </div>
 
         {/* Elector Identity Summary Card */}
-        <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1 mb-6">
-          <div className="flex justify-between">
+        <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1.5 mb-6">
+          <div className="flex justify-between items-center">
             <span className="text-slate-500">Elector Name:</span>
             <span className="font-semibold text-slate-900">{voter.name}</span>
           </div>
-          <div className="flex justify-between">
+          <div className="flex justify-between items-center">
             <span className="text-slate-500">EPIC ID:</span>
             <span className="font-mono font-medium text-slate-800">{voter.epicId}</span>
           </div>
-          <div className="flex justify-between">
+          <div className="flex justify-between items-center">
             <span className="text-slate-500">Registered Destination:</span>
             <span className="font-mono text-slate-800">{voter.maskedMobile}</span>
           </div>
         </div>
 
         {/* Demo Helper Box */}
-        <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-lg text-xs text-amber-900 mb-6 flex items-center justify-between">
+        <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-lg text-xs text-amber-900 mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <KeyRound className="w-4 h-4 text-amber-600 shrink-0" />
             <span>
@@ -163,7 +163,7 @@ export const OtpScreen: React.FC<OtpScreenProps> = ({
               setOtp(currentCode);
               setError(null);
             }}
-            className="text-[11px] font-semibold text-amber-800 hover:text-amber-950 underline cursor-pointer"
+            className="text-[11px] font-semibold text-amber-800 hover:text-amber-950 underline cursor-pointer self-end sm:self-auto"
           >
             Auto-fill
           </button>
@@ -196,7 +196,7 @@ export const OtpScreen: React.FC<OtpScreenProps> = ({
               }}
               placeholder="0 0 0 0 0 0"
               disabled={attemptsRemaining <= 0 || timeLeft <= 0}
-              className="w-full text-center px-4 py-3.5 bg-slate-50 border border-slate-300 rounded-lg text-slate-900 font-mono text-2xl tracking-[0.5em] focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white transition-all disabled:opacity-50"
+              className="w-full text-center px-3 sm:px-4 py-3 sm:py-3.5 bg-slate-50 border border-slate-300 rounded-lg text-slate-900 font-mono text-xl sm:text-2xl tracking-[0.25em] sm:tracking-[0.5em] focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white transition-all disabled:opacity-50"
             />
 
             <div className="flex items-center justify-between mt-2 text-xs text-slate-500">
@@ -220,11 +220,11 @@ export const OtpScreen: React.FC<OtpScreenProps> = ({
             </div>
           )}
 
-          <div className="flex items-center justify-between gap-4 pt-4 border-t border-slate-100">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-4 border-t border-slate-100">
             <button
               type="button"
               onClick={onBack}
-              className="px-4 py-2.5 text-xs font-medium text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
+              className="w-full sm:w-auto px-4 py-2.5 text-xs font-medium text-slate-600 hover:text-slate-900 border border-slate-200 sm:border-transparent rounded-lg transition-colors cursor-pointer text-center"
             >
               Back to Identification
             </button>
@@ -232,7 +232,7 @@ export const OtpScreen: React.FC<OtpScreenProps> = ({
             <button
               type="submit"
               disabled={isVerifying || attemptsRemaining <= 0 || timeLeft <= 0 || otp.length !== 6}
-              className="px-6 py-3 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-300 text-white font-semibold rounded-lg shadow-sm transition-all flex items-center gap-2 cursor-pointer disabled:cursor-not-allowed text-sm"
+              className="w-full sm:w-auto px-6 py-3 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-300 text-white font-semibold rounded-lg shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed text-sm"
             >
               <span>{isVerifying ? 'Verifying Challenge...' : 'Authorize Session'}</span>
               <ArrowRight className="w-4 h-4" />

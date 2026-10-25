@@ -124,7 +124,7 @@ export const ElectionsResultsScreen: React.FC<ElectionsResultsScreenProps> = ({
   }, [activeConstituencyId, filteredConstituencies]);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+    <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8">
       {/* Top Navigation Tabs */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
         <div>
@@ -143,10 +143,10 @@ export const ElectionsResultsScreen: React.FC<ElectionsResultsScreenProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold self-start sm:self-auto">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold w-full sm:w-auto">
           <button
             onClick={() => setMainTab('previous-elections')}
-            className={`px-3.5 py-2 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`flex-1 sm:flex-none px-3.5 py-2 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
               mainTab === 'previous-elections'
                 ? 'bg-white text-slate-900 font-bold shadow-2xs'
                 : 'text-slate-600 hover:text-slate-900'
@@ -157,7 +157,7 @@ export const ElectionsResultsScreen: React.FC<ElectionsResultsScreenProps> = ({
           </button>
           <button
             onClick={() => setMainTab('official-2024')}
-            className={`px-3.5 py-2 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`flex-1 sm:flex-none px-3.5 py-2 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
               mainTab === 'official-2024'
                 ? 'bg-white text-emerald-800 font-bold shadow-2xs'
                 : 'text-slate-600 hover:text-slate-900'
@@ -169,7 +169,7 @@ export const ElectionsResultsScreen: React.FC<ElectionsResultsScreenProps> = ({
           {onNavigateToArchive && (
             <button
               onClick={onNavigateToArchive}
-              className="px-3.5 py-2 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 text-orange-600 hover:text-orange-700 bg-orange-50 hover:bg-orange-100 font-semibold border border-orange-200"
+              className="w-full sm:w-auto px-3.5 py-2 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 text-orange-600 hover:text-orange-700 bg-orange-50 hover:bg-orange-100 font-semibold border border-orange-200"
             >
               <Database className="w-3.5 h-3.5 text-orange-600" />
               <span>Full Historical Archive</span>
@@ -658,7 +658,7 @@ export const ElectionsResultsScreen: React.FC<ElectionsResultsScreenProps> = ({
                                   : 'bg-white border-slate-200 hover:border-slate-300'
                               }`}
                             >
-                              <div className="flex items-center justify-between gap-4">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                 <div className="flex items-center gap-3">
                                   {/* Party Symbol with fallback */}
                                   <OfficialPartySymbol

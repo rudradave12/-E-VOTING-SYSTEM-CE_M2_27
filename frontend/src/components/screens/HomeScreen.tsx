@@ -83,29 +83,29 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </p>
 
         {/* Primary Action Buttons */}
-        <div className="flex flex-wrap items-center justify-center gap-3.5 pt-3">
+        <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-3.5 pt-3">
           <button
             onClick={() => onNavigate('available-elections')}
-            className="flex items-center gap-2 px-6 py-3.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-semibold text-sm shadow-md hover:shadow-lg transition-all cursor-pointer"
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-semibold text-sm shadow-md hover:shadow-lg transition-all cursor-pointer"
           >
-            <Vote className="w-4 h-4" />
+            <Vote className="w-4 h-4 shrink-0" />
             <span>{language === 'hi' ? 'उपलब्ध चुनाव देखें एवं मतदान करें' : 'Vote / Available Elections'}</span>
-            <ArrowRight className="w-4 h-4" />
+            <ArrowRight className="w-4 h-4 shrink-0" />
           </button>
 
           <button
             onClick={() => onNavigate('identify')}
-            className="flex items-center gap-2 px-6 py-3.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 font-semibold text-sm shadow-2xs hover:border-slate-400 transition-all cursor-pointer"
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 font-semibold text-sm shadow-2xs hover:border-slate-400 transition-all cursor-pointer"
           >
-            <Users className="w-4 h-4 text-orange-600" />
+            <Users className="w-4 h-4 text-orange-600 shrink-0" />
             <span>{language === 'hi' ? 'मतदाता लॉगिन' : 'Voter Login'}</span>
           </button>
 
           <button
             onClick={() => onNavigate('how-it-works')}
-            className="flex items-center gap-2 px-5 py-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-sm transition-all cursor-pointer"
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-sm transition-all cursor-pointer"
           >
-            <HelpCircle className="w-4 h-4 text-slate-500" />
+            <HelpCircle className="w-4 h-4 text-slate-500 shrink-0" />
             <span>{language === 'hi' ? 'प्रक्रिया समझें' : 'How Voting Works'}</span>
           </button>
         </div>
@@ -272,7 +272,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">
           Secondary Research & Academic Reference Resources
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
           <button
             onClick={() => onNavigate('elections-results')}
             className="p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-left transition-colors cursor-pointer"

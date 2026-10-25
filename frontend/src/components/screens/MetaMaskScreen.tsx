@@ -202,8 +202,8 @@ export const MetaMaskScreen: React.FC<MetaMaskScreenProps> = ({
   const isSubmitting = txState === 'simulating' || txState === 'awaiting_signature' || txState === 'mining';
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
-      <div className="bg-white border border-slate-200 rounded-xl p-6 sm:p-8 shadow-xs">
+    <div className="max-w-2xl mx-auto px-3 sm:px-4 py-4 sm:py-8">
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-8 shadow-xs">
         <div className="mb-6">
           <div className="flex items-center gap-2 text-xs font-semibold text-orange-700 uppercase tracking-widest mb-1">
             <span>Step 6 of 6</span>
@@ -213,7 +213,7 @@ export const MetaMaskScreen: React.FC<MetaMaskScreenProps> = ({
           <h2 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
             Authorize On-Chain Ballot Transaction
           </h2>
-          <p className="mt-1 text-sm text-slate-600">
+          <p className="mt-1 text-xs sm:text-sm text-slate-600">
             Select your authorization wallet method to broadcast your cryptographically verified vote.
           </p>
         </div>
@@ -380,12 +380,12 @@ export const MetaMaskScreen: React.FC<MetaMaskScreenProps> = ({
           </div>
         )}
 
-        <div className="flex items-center justify-between gap-4 pt-4 border-t border-slate-100">
+        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-4 border-t border-slate-100">
           <button
             type="button"
             onClick={onCancel}
             disabled={isSubmitting}
-            className="px-4 py-2.5 text-xs font-medium text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
+            className="w-full sm:w-auto px-4 py-2.5 text-xs font-medium text-slate-600 hover:text-slate-900 border border-slate-200 sm:border-transparent rounded-lg transition-colors cursor-pointer text-center"
           >
             Cancel & Return
           </button>
@@ -394,7 +394,7 @@ export const MetaMaskScreen: React.FC<MetaMaskScreenProps> = ({
             type="button"
             onClick={handleCastVote}
             disabled={isSubmitting}
-            className="px-6 py-3 bg-emerald-700 hover:bg-emerald-800 disabled:bg-slate-300 text-white font-semibold rounded-lg shadow-sm hover:shadow transition-all flex items-center gap-2 cursor-pointer disabled:cursor-not-allowed text-sm"
+            className="w-full sm:w-auto px-6 py-3 bg-emerald-700 hover:bg-emerald-800 disabled:bg-slate-300 text-white font-semibold rounded-lg shadow-sm hover:shadow transition-all flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed text-sm"
           >
             {isSubmitting ? (
               <>

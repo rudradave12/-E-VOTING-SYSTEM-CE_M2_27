@@ -110,7 +110,7 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
       aria-describedby="confirmation-modal-description"
       ref={modalRef}
     >
-      <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden text-left p-6 sm:p-7 space-y-5">
+      <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-y-auto max-h-[90vh] text-left p-5 sm:p-7 space-y-4 sm:space-y-5">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3.5">
             <div
@@ -162,13 +162,13 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
           </div>
         )}
 
-        <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-4 border-t border-slate-100">
           <button
             type="button"
             ref={cancelBtnRef}
             onClick={onClose}
             disabled={isSubmitting}
-            className="px-4 py-2.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer disabled:opacity-50 bb-touch-target"
+            className="w-full sm:w-auto px-4 py-2.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer disabled:opacity-50 bb-touch-target justify-center flex items-center"
           >
             {cancelLabel}
           </button>
@@ -176,7 +176,7 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
             type="button"
             onClick={handleConfirm}
             disabled={isSubmitting}
-            className={`px-5 py-2.5 text-xs font-semibold rounded-lg shadow-xs transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50 bb-touch-target ${styles.confirmBtn}`}
+            className={`w-full sm:w-auto px-5 py-2.5 text-xs font-semibold rounded-lg shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 bb-touch-target ${styles.confirmBtn}`}
           >
             {isSubmitting ? (
               <>

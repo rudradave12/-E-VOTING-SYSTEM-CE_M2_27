@@ -69,9 +69,9 @@ export const CandidatesScreen: React.FC<CandidatesScreenProps> = ({
   const selectedCandidate = candidates.find((c) => c.id === selectedId);
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <div className="max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-8">
       {/* Main Ballot Paper Container */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-xs">
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-8 shadow-xs">
         {/* Step Indicator & Official Constituency Header */}
         <div className="mb-6 border-b border-slate-200 pb-5">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
@@ -87,10 +87,10 @@ export const CandidatesScreen: React.FC<CandidatesScreenProps> = ({
             </span>
           </div>
 
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
             {t.selectYourCandidate} — {constituency.name}
           </h1>
-          <p className="mt-1 text-sm text-slate-600 leading-relaxed">
+          <p className="mt-1 text-xs sm:text-sm text-slate-600 leading-relaxed">
             {t.candidateSelectSubtext}
           </p>
         </div>
@@ -337,11 +337,11 @@ export const CandidatesScreen: React.FC<CandidatesScreenProps> = ({
         )}
 
         {/* Navigation Action Footer */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 pt-5 border-t border-slate-200">
+        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4 pt-5 border-t border-slate-200">
           <button
             type="button"
             onClick={onBack}
-            className="px-5 py-3 text-xs sm:text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+            className="w-full sm:w-auto px-5 py-3 text-xs sm:text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
           >
             <ArrowLeft className="w-4 h-4" />
             <span>{t.backToConstituency}</span>
@@ -351,7 +351,7 @@ export const CandidatesScreen: React.FC<CandidatesScreenProps> = ({
             type="button"
             onClick={onProceed}
             disabled={!selectedId}
-            className="px-7 py-3.5 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold rounded-xl shadow-sm hover:shadow transition-all flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed text-sm sm:text-base focus:outline-none focus-visible:ring-4 focus-visible:ring-orange-300"
+            className="w-full sm:w-auto px-7 py-3.5 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold rounded-xl shadow-sm hover:shadow transition-all flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed text-sm sm:text-base focus:outline-none focus-visible:ring-4 focus-visible:ring-orange-300"
           >
             <span>{t.reviewBallotSelection}</span>
             <ArrowRight className="w-4 h-4" />

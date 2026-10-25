@@ -196,7 +196,7 @@ export const GazetteResultModal: React.FC<GazetteResultModalProps> = ({
               </h3>
 
               <div className="overflow-x-auto rounded-xl border border-slate-200">
-                <table className="w-full text-left text-xs border-collapse">
+                <table className="w-full min-w-[480px] text-left text-xs border-collapse">
                   <thead>
                     <tr className="bg-slate-50 text-slate-600 border-b border-slate-200 font-semibold">
                       <th className="py-2.5 px-3 w-10 text-center">#</th>

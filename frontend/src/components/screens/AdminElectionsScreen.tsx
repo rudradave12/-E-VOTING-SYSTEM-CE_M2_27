@@ -395,7 +395,7 @@ export const AdminElectionsScreen: React.FC<AdminElectionsScreenProps> = ({
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8">
+    <div className="max-w-5xl mx-auto px-3 sm:px-6 py-4 sm:py-8">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
@@ -563,7 +563,7 @@ export const AdminElectionsScreen: React.FC<AdminElectionsScreenProps> = ({
                 </div>
 
                 {/* State Machine Status Transition & Action Buttons */}
-                <div className="flex flex-col sm:flex-row flex-wrap items-center gap-2 shrink-0">
+                <div className="flex flex-wrap items-center gap-2 shrink-0 w-full sm:w-auto pt-2 sm:pt-0">
                   {/* Select Election Button */}
                   {!isActive && (
                     <button

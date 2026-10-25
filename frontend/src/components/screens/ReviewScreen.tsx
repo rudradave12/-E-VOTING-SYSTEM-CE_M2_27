@@ -49,8 +49,8 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
   };
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-xs">
+    <div className="max-w-2xl mx-auto px-3 sm:px-4 py-4 sm:py-8">
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-8 shadow-xs">
         {/* Step Indicator & Header */}
         <div className="mb-6 border-b border-slate-200 pb-5">
           <div className="flex items-center gap-2 text-xs font-bold text-orange-700 uppercase tracking-widest mb-1.5">
@@ -58,16 +58,16 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
             <span aria-hidden="true">·</span>
             <span>{t.preConfirmationReview}</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
             {t.reviewBallotTitle}
           </h1>
-          <p className="mt-1 text-sm text-slate-600 leading-relaxed">
+          <p className="mt-1 text-xs sm:text-sm text-slate-600 leading-relaxed">
             {t.reviewBallotSubtext}
           </p>
         </div>
 
         {/* Selected Candidate Focus Presentation Card */}
-        <div className="p-5 sm:p-6 rounded-2xl border-2 border-orange-300 bg-orange-50/50 mb-6 shadow-2xs">
+        <div className="p-4 sm:p-6 rounded-2xl border-2 border-orange-300 bg-orange-50/50 mb-6 shadow-2xs">
           <div className="flex items-center justify-between gap-2 mb-3">
             <span className="text-xs font-extrabold text-orange-900 uppercase tracking-wider flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4 text-orange-600" />

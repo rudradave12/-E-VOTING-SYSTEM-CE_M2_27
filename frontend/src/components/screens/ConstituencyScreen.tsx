@@ -20,8 +20,8 @@ export const ConstituencyScreen: React.FC<ConstituencyScreenProps> = ({
   onBack,
 }) => {
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8">
-      <div className="bg-white border border-slate-200 rounded-xl p-6 sm:p-8 shadow-xs">
+    <div className="max-w-3xl mx-auto px-3 sm:px-4 py-4 sm:py-8">
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-8 shadow-xs">
         <div className="mb-6">
           <div className="flex items-center gap-2 text-xs font-semibold text-orange-700 uppercase tracking-widest mb-1">
             <span>Step 3 of 6</span>
@@ -31,7 +31,7 @@ export const ConstituencyScreen: React.FC<ConstituencyScreenProps> = ({
           <h2 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
             Verified Constituency & Voter Roll Record
           </h2>
-          <p className="mt-1 text-sm text-slate-600">
+          <p className="mt-1 text-xs sm:text-sm text-slate-600">
             Your elector identity and assigned parliamentary constituency have been verified.
           </p>
         </div>
@@ -138,11 +138,11 @@ export const ConstituencyScreen: React.FC<ConstituencyScreenProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-4 pt-4 border-t border-slate-100">
+        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-4 border-t border-slate-100">
           <button
             type="button"
             onClick={onBack}
-            className="px-4 py-2.5 text-xs font-medium text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
+            className="w-full sm:w-auto px-4 py-2.5 text-xs font-medium text-slate-600 hover:text-slate-900 border border-slate-200 sm:border-transparent rounded-lg transition-colors cursor-pointer text-center"
           >
             Back
           </button>
@@ -150,7 +150,7 @@ export const ConstituencyScreen: React.FC<ConstituencyScreenProps> = ({
           <button
             type="button"
             onClick={onProceed}
-            className="px-6 py-3 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-lg shadow-sm hover:shadow transition-all flex items-center gap-2 cursor-pointer text-sm"
+            className="w-full sm:w-auto px-6 py-3 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-lg shadow-sm hover:shadow transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
           >
             <span>Proceed to Candidate Ballot</span>
             <ArrowRight className="w-4 h-4" />

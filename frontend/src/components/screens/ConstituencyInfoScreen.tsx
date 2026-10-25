@@ -139,7 +139,7 @@ export const ConstituencyInfoScreen: React.FC = () => {
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+              <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                 <span className="text-slate-400">{c.candidates.length} Contesting Candidates</span>
                 <button
                   type="button"

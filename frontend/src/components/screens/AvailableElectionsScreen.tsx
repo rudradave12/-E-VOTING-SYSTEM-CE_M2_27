@@ -69,7 +69,7 @@ export const AvailableElectionsScreen: React.FC<AvailableElectionsScreenProps> =
         </div>
 
         {/* Filter Tabs */}
-        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl self-start md:self-auto border border-slate-200 text-xs font-medium">
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl self-start md:self-auto border border-slate-200 text-xs font-medium overflow-x-auto max-w-full">
           <button
             onClick={() => setFilter('all')}
             className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
@@ -296,7 +296,7 @@ export const AvailableElectionsScreen: React.FC<AvailableElectionsScreenProps> =
                       <ArrowRight className="w-4 h-4" />
                     </button>
                   ) : (
-                    <div className="w-full flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-500">
+                    <div className="w-full flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-500">
                       <span className="flex items-center gap-1.5 font-medium">
                         <Lock className="w-3.5 h-3.5 text-slate-400" />
                         {isScheduledFuture

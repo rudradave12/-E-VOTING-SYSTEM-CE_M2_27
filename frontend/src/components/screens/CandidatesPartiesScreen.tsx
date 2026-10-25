@@ -118,7 +118,7 @@ export const CandidatesPartiesScreen: React.FC = () => {
         </div>
 
         {/* Tab switcher */}
-        <div className="flex items-center gap-2 border-b border-slate-200 pt-4">
+        <div className="flex items-center gap-2 border-b border-slate-200 pt-4 overflow-x-auto scrollbar-none whitespace-nowrap">
           <button
             onClick={() => {
               setActiveTab('PARTIES');

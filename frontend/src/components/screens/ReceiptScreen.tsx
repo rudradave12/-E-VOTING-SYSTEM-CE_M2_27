@@ -172,7 +172,7 @@ export const ReceiptScreen: React.FC<ReceiptScreenProps> = ({
       </div>
 
       {/* Actions */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         <button
           onClick={handlePrint}
           className="w-full sm:w-auto px-5 py-2.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium rounded-lg text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
@@ -181,7 +181,7 @@ export const ReceiptScreen: React.FC<ReceiptScreenProps> = ({
           <span>Print / Save Receipt</span>
         </button>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
           <button
             onClick={onViewResults}
             className="w-full sm:w-auto px-5 py-2.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium rounded-lg text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
