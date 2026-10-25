@@ -3,7 +3,7 @@ services:
     name: blockballot
     runtime: node
     plan: free
-    branch: security/phase-7-hardening
+    branch: main
     buildCommand: npm install --include=dev && npm run build
     startCommand: npm start
     envVars:

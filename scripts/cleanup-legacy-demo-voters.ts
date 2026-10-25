@@ -4,7 +4,7 @@
  */
 
 import dotenv from 'dotenv';
-import { getFirebaseAdminFirestore, isFirebaseConfigured } from '../server/firebaseAdmin';
+import { getFirebaseAdminFirestore, isFirebaseConfigured } from '../backend/server/firebaseAdmin';
 
 dotenv.config();
 

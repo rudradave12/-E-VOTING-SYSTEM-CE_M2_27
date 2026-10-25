@@ -7,17 +7,17 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
-import { getFirebaseAdminAuth, getFirebaseAdminFirestore, isFirebaseConfigured } from '../server/firebaseAdmin';
+import { getFirebaseAdminAuth, getFirebaseAdminFirestore, isFirebaseConfigured } from '../backend/server/firebaseAdmin';
 import {
   AuthorityAccount,
   SCHEMA_VERSION_CURRENT,
-} from '../src/types/dataModel';
+} from '../frontend/src/types/dataModel';
 import {
   DEMO_OFFICER_IDENTIFIERS,
   OPERATIONAL_OFFICER_ROLES,
-} from '../src/types/permissions';
-import { getDefaultOfficerDefinitions } from '../server/auth/rbac';
-import { getDataRepositories } from '../server/repositories';
+} from '../frontend/src/types/permissions';
+import { getDefaultOfficerDefinitions } from '../backend/server/auth/rbac';
+import { getDataRepositories } from '../backend/server/repositories';
 
 dotenv.config();
 

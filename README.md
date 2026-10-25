@@ -43,7 +43,7 @@ BlockBallot strictly isolates its four electoral data categories:
 ```
 
 1. **Scenario A (Seeded 2024 Lok Sabha Demo Election)**: Seeded with researched 2024 candidates and official symbols for New Delhi, Varanasi, Wayanad, and Bangalore South. The demo ballot counter begins strictly at **zero (0)** for clean academic testing.
-2. **Official 2024 Historical Reference Data**: Read-only archival results from the 2024 General Elections. Completely immutable and partitioned in `src/data/historical2024.ts`.
+2. **Official 2024 Historical Reference Data**: Read-only archival results from the 2024 General Elections. Completely immutable and partitioned in `frontend/src/data/historical2024.ts`.
 3. **Scenario B (Administrator-Created Elections)**: Created and scheduled by authorized Returning Officers with customizable start and closing deadlines, constituency rosters, and state machine controls (`draft`, `scheduled`, `active`, `paused`, `concluded`).
 4. **Independent Party-Preference Poll**: An unofficial public-opinion research feature allowing citizens to record party preference. Fully separated from actual ballots and historical totals.
 
@@ -171,7 +171,7 @@ npm run lint
 npm test
 
 # 3. Phase 13 Authoritative Final Security Audit (25-workflow verification)
-npx tsx --test src/test/phase13_final_security_audit.test.ts
+npx tsx --test tests/phase13_final_security_audit.test.ts
 
 # 4. Dedicated Live Blockchain Integration Tests (Fails closed if node is offline)
 npm run test:integration
@@ -189,17 +189,17 @@ npm run build
 
 | Original Requirement | Architectural Specification | Implementation Files & Routes | Verification Evidence | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **Voter Identity & OTP** | Standard 10-char alphanumeric EPIC format with rate-limited 6-digit OTP valid for 180 seconds | `server/routes/voter.ts` (`/verify`, `/lookup`, `/verify-otp`) | `src/test/crypto.test.ts`, `src/test/ux_redesign.test.ts` | **Implemented** |
-| **Session Management** | RFC 7519 / HS256 signed JWT bearer tokens with issuer/audience validation and revocation | `server/crypto.ts` (`createVoterJwt`), `server/store.ts` (`createSession`) | `src/test/crypto.test.ts`, `src/test/phase7f_final_completion.test.ts` | **Implemented** |
-| **Off-Chain Data Protection** | Salted HMAC-SHA256 indexing (`epicHash`), masked mobile numbers, zero plaintext OTP storage | `server/crypto.ts`, `server/firestore.ts`, `firestore.rules` | `src/test/crypto.test.ts`, `src/test/phase7a2_emulator_integration.test.ts` | **Implemented** |
-| **Constituency Eligibility** | Electors can only vote for candidates in their registered constituency | `server/routes/voter.ts` (`/authorization`), `contracts/IndianElection.sol` | `src/test/phase7f_final_completion.test.ts` (Test 4) | **Implemented** |
-| **One-Person / One-Vote** | Status lifecycle transition from `ELIGIBLE` -> `AUTHORIZED` -> `VOTED` + Nullifier burning | `server/routes/voter.ts` (`/record-vote`), `contracts/IndianElection.sol` | `src/test/eip712.test.ts`, `src/test/contract_guards.test.ts` | **Implemented** |
-| **Live Voting Windows** | Strict time boundaries rejecting votes before start, at closing, or after closing | `server/routes/voter.ts` (`/authorization`), `contracts/IndianElection.sol` | `src/test/phase7f_final_completion.test.ts` (Test 3) | **Implemented** |
-| **Admin Election Lifecycle** | State machine: `draft` -> `scheduled` -> `active` -> `paused` -> `concluded` | `server/routes/admin.ts` (`/status`), `server/store.ts` | `src/test/ux_redesign.test.ts` (Test 8) | **Implemented** |
-| **Admin Candidate Nomination** | Candidate registration with ECI symbol verification and nomination lock | `server/routes/admin.ts` (`/candidates`), `server/store.ts` | `src/test/phase5_election_management.test.ts` (Test 3) | **Implemented** |
-| **Read-Only Concluded Archive** | Concluded elections displayed for public audit without voting forms | `src/components/screens/ElectionsResultsScreen.tsx` | `src/test/phase7f_final_completion.test.ts` (Test 5) | **Implemented** |
-| **Persistent Audit Logging** | Append-only audit events for election states, logins, authorizations, and votes | `server/store.ts` (`recordAuditEvent`), `server/firestore.ts` | `src/test/phase7f_final_completion.test.ts` (Test 7) | **Implemented** |
-| **Restart Recovery & Sync** | Server restores all election state from Firestore on boot | `server.ts`, `server/store.ts` (`syncFromFirestore`) | `src/test/phase7f_final_completion.test.ts` (Test 7) | **Implemented** |
+| **Voter Identity & OTP** | Standard 10-char alphanumeric EPIC format with rate-limited 6-digit OTP valid for 180 seconds | `backend/server/routes/voter.ts` (`/verify`, `/lookup`, `/verify-otp`) | `tests/crypto.test.ts`, `tests/ux_redesign.test.ts` | **Implemented** |
+| **Session Management** | RFC 7519 / HS256 signed JWT bearer tokens with issuer/audience validation and revocation | `backend/server/crypto.ts` (`createVoterJwt`), `backend/server/store.ts` (`createSession`) | `tests/crypto.test.ts`, `tests/phase7f_final_completion.test.ts` | **Implemented** |
+| **Off-Chain Data Protection** | Salted HMAC-SHA256 indexing (`epicHash`), masked mobile numbers, zero plaintext OTP storage | `backend/server/crypto.ts`, `backend/server/firestore.ts`, `firestore.rules` | `tests/crypto.test.ts`, `tests/phase7a2_emulator_integration.test.ts` | **Implemented** |
+| **Constituency Eligibility** | Electors can only vote for candidates in their registered constituency | `backend/server/routes/voter.ts` (`/authorization`), `contracts/IndianElection.sol` | `tests/phase7f_final_completion.test.ts` (Test 4) | **Implemented** |
+| **One-Person / One-Vote** | Status lifecycle transition from `ELIGIBLE` -> `AUTHORIZED` -> `VOTED` + Nullifier burning | `backend/server/routes/voter.ts` (`/record-vote`), `contracts/IndianElection.sol` | `tests/eip712.test.ts`, `tests/contract_guards.test.ts` | **Implemented** |
+| **Live Voting Windows** | Strict time boundaries rejecting votes before start, at closing, or after closing | `backend/server/routes/voter.ts` (`/authorization`), `contracts/IndianElection.sol` | `tests/phase7f_final_completion.test.ts` (Test 3) | **Implemented** |
+| **Admin Election Lifecycle** | State machine: `draft` -> `scheduled` -> `active` -> `paused` -> `concluded` | `backend/server/routes/admin.ts` (`/status`), `backend/server/store.ts` | `tests/ux_redesign.test.ts` (Test 8) | **Implemented** |
+| **Admin Candidate Nomination** | Candidate registration with ECI symbol verification and nomination lock | `backend/server/routes/admin.ts` (`/candidates`), `backend/server/store.ts` | `tests/phase5_election_management.test.ts` (Test 3) | **Implemented** |
+| **Read-Only Concluded Archive** | Concluded elections displayed for public audit without voting forms | `frontend/src/components/screens/ElectionsResultsScreen.tsx` | `tests/phase7f_final_completion.test.ts` (Test 5) | **Implemented** |
+| **Persistent Audit Logging** | Append-only audit events for election states, logins, authorizations, and votes | `backend/server/store.ts` (`recordAuditEvent`), `backend/server/firestore.ts` | `tests/phase7f_final_completion.test.ts` (Test 7) | **Implemented** |
+| **Restart Recovery & Sync** | Server restores all election state from Firestore on boot | `backend/server.ts`, `backend/server/store.ts` (`syncFromFirestore`) | `tests/phase7f_final_completion.test.ts` (Test 7) | **Implemented** |
 
 ### Intentionally Excluded Tasks (Scope Boundaries)
 1. **Public Cloud Resource Provisioning**: AWS ECS, EKS, RDS, or CloudFront creation is excluded to prevent cloud costs.

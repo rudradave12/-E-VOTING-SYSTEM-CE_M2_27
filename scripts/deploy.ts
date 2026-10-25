@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { ethers } from 'ethers';
 import dotenv from 'dotenv';
-import { SERVER_AUTHORIZATION_SIGNER_ADDRESS } from '../server/config';
+import { SERVER_AUTHORIZATION_SIGNER_ADDRESS } from '../backend/server/config';
 
 dotenv.config();
 
@@ -106,7 +106,8 @@ export async function deployContract(
     abi: artifact.abi,
   };
 
-  const manifestPath = path.resolve(__dirname, '../src/contracts/deployment.json');
+  const manifestPath = path.resolve(__dirname, '../frontend/src/contracts/deployment.json');
+  fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
   console.log(`[Deploy] Saved deployment manifest to: ${manifestPath}`);
 

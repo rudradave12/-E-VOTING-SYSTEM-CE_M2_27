@@ -21,8 +21,8 @@
 
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getDataRepositories } from '../server/repositories';
-import { ArchiveImporterService } from '../server/services/archiveImporter';
+import { getDataRepositories } from '../backend/server/repositories';
+import { ArchiveImporterService } from '../backend/server/services/archiveImporter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

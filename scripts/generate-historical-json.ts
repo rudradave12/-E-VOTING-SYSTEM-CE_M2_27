@@ -1,8 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { HISTORICAL_CONSTITUENCIES_2024, HISTORICAL_PROVENANCE } from '../src/data/historical2024';
-import { HistoricalElectionRecord, HistoricalConstituencyResult, HistoricalCandidateResult } from '../src/types/archive';
+import { HISTORICAL_CONSTITUENCIES_2024, HISTORICAL_PROVENANCE } from '../frontend/src/data/historical2024';
+import { HistoricalElectionRecord, HistoricalConstituencyResult, HistoricalCandidateResult } from '../frontend/src/types/archive';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

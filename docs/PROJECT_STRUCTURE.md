@@ -13,91 +13,137 @@
 ```text
 BlockBallot-EVoting-System/
 │
-├── src/                                  # Frontend Single-Page Application (React 19 + TypeScript)
-│   ├── app/                              # Layout, application scaffolding & root entry
-│   ├── components/                       # UI presentation components
-│   │   ├── common/                       # Shared modal dialogs, icons, indicators & party symbols
-│   │   │   ├── CandidateAffidavitModal.tsx # Form 26 local candidate affidavit & asset viewer
-│   │   │   ├── ConfirmationModal.tsx     # Reusable action confirmation modal
-│   │   │   ├── GazetteResultModal.tsx    # Form 20 official constituency gazette viewer
-│   │   │   ├── OfficialPartySymbol.tsx   # ECI official political party symbol renderer
-│   │   │   ├── StatusBadge.tsx           # Election & voter status pill tags
-│   │   │   └── ...                       # Additional common visual elements
-│   │   ├── screens/                      # Screen views (Voter, Officer, Public Monitor, Archive)
-│   │   │   ├── AdminAuditScreen.tsx      # Security event logs & immutable audit trail
-│   │   │   ├── AdminCandidatesScreen.tsx # Candidate roster & nomination management
-│   │   │   ├── AdminDashboardScreen.tsx  # Role-specific Election Officer & VRO hub
-│   │   │   ├── AdminElectionsScreen.tsx  # Election lifecycle management & scheduling
-│   │   │   ├── AdminExceptionsScreen.tsx # Manual physical ID exception authorizations
-│   │   │   ├── AdminLoginScreen.tsx      # Cryptographic officer authentication
-│   │   │   ├── AdminVotersScreen.tsx     # Voter roll search, status toggles & review
-│   │   │   ├── AvailableElectionsScreen.tsx # Public list of active, scheduled & archived polls
-│   │   │   ├── CandidatesPartiesScreen.tsx # 2024 political party register & symbol references
-│   │   │   ├── CandidatesScreen.tsx      # Ballot candidate selection (voting workflow)
-│   │   │   ├── ConstituencyInfoScreen.tsx # 543 Parliamentary constituency profiles & gazette view
-│   │   │   ├── ConstituencyScreen.tsx    # Voter constituency lock & jurisdiction verification
-│   │   │   ├── ElectionMonitorScreen.tsx # Public real-time participation & node metrics
-│   │   │   ├── ElectionsResultsScreen.tsx # Concluded election tallies & historical records
-│   │   │   ├── FaceEnrollmentScreen.tsx  # Optical face template capture & vectorization
-│   │   │   ├── FingerprintEnrollmentScreen.tsx # Minutiae extraction & biometric registration
-│   │   │   ├── HistoricalArchiveScreen.tsx # Full 2024 General Election searchable archive
-│   │   │   ├── HomeScreen.tsx            # Public landing screen & voting practice entry
-│   │   │   ├── HowItWorksScreen.tsx      # Academic architecture walkthrough & protocols
-│   │   │   ├── IdentifyScreen.tsx        # Voter EPIC identification & biometric challenge
-│   │   │   ├── MetaMaskScreen.tsx        # Web3 wallet connection & EVM submission
-│   │   │   ├── OtpScreen.tsx             # Out-of-band delivery challenge verification
-│   │   │   ├── PracticeVotingScreen.tsx  # Sandboxed mock voting simulator (zero EVM impact)
-│   │   │   ├── PreferencePollScreen.tsx  # Public opinion survey (isolated from elections)
-│   │   │   ├── ReceiptScreen.tsx         # Cryptographic vote receipt & verification hash
-│   │   │   └── ReviewScreen.tsx          # Elector ballot review prior to EIP-712 signing
-│   │   ├── Navbar.tsx                    # Top navigation, language selector & jurisdiction pill
-│   │   ├── PersonaQuickBar.tsx           # Zero-runtime component (returns null; production compliant)
-│   │   └── VotingStepper.tsx             # 5-step voting progress indicator
-│   ├── context/                          # Global React contexts (LanguageContext, etc.)
-│   ├── data/                             # Mock data & static reference records
-│   │   ├── historical2024.ts             # 2024 Lok Sabha constituency profiles & parties
-│   │   └── mockData.ts                   # Initial simulation elections & test constituencies
-│   ├── services/                         # Frontend API clients & gateway adapters
-│   │   ├── archiveApi.ts                 # Historical archive HTTP client
-│   │   ├── electionMonitorApi.ts         # Public election monitor HTTP client
-│   │   ├── officerApi.ts                 # Officer authentication & administrative commands
-│   │   ├── sessionApi.ts                 # Voter session authorization & recovery client
-│   │   └── voterApi.ts                   # Elector identification & challenge gateway
-│   ├── test/                             # Automated test suites (Phases 01 through 13)
-│   │   ├── phase01_demo_voters_removal.test.ts
-│   │   ├── phase02_voter_roll_registration.test.ts
-│   │   ├── phase03_face_enrollment_verification.test.ts
-│   │   ├── phase04_fingerprint_enrollment.test.ts
-│   │   ├── phase05_manual_id_verification.test.ts
-│   │   ├── phase06_election_schedule_transition.test.ts
-│   │   ├── phase07_session_security_anti_replay.test.ts
-│   │   ├── phase08_tamper_resistant_audit.test.ts
-│   │   ├── phase09_historical_archive_pipeline.test.ts
-│   │   ├── phase10_election_monitor_dashboard.test.ts
-│   │   ├── phase11_production_security_hardening.test.ts
-│   │   ├── phase12_ui_ux_integration.test.ts
-│   │   └── phase13_final_security_audit.test.ts
-│   ├── types/                            # Core TypeScript interface definitions
-│   │   ├── archive.ts                    # Historical election record & provenance schemas
-│   │   ├── audit.ts                      # Immutable security audit log schemas
-│   │   ├── biometric.ts                  # Biometric template & minutiae metadata schemas
-│   │   └── index.ts                      # Central domain entities (Voter, Election, Candidate)
-│   ├── utils/                            # Client-side utility functions
-│   │   ├── crypto.ts                     # Web Crypto hashing & EIP-712 signature verification
-│   │   └── evmSimulator.ts               # Local in-browser EVM execution fallback
-│   ├── App.tsx                           # Master routing & screen controller
-│   ├── index.css                         # Tailwind CSS v4 styling rules & custom themes
-│   └── main.tsx                          # React 19 root DOM mounting entrypoint
+├── frontend/                             # Frontend Application Layer (React 19, TypeScript, Vite 8)
+│   ├── src/                              # Browser application source code
+│   │   ├── components/                   # UI presentation components
+│   │   │   ├── common/                   # Shared modal dialogs, icons, indicators & party symbols
+│   │   │   │   ├── CandidateAffidavitModal.tsx # Form 26 local candidate affidavit & asset viewer
+│   │   │   │   ├── ConfirmationModal.tsx # Reusable action confirmation modal
+│   │   │   │   ├── GazetteResultModal.tsx # Form 20 official constituency gazette viewer
+│   │   │   │   ├── OfficialPartySymbol.tsx # ECI official political party symbol renderer
+│   │   │   │   └── ...                   # Additional common visual elements
+│   │   │   ├── screens/                  # Screen views (Voter, Officer, Public Monitor, Archive)
+│   │   │   │   ├── AdminAuditScreen.tsx  # Security event logs & immutable audit trail
+│   │   │   │   ├── AdminCandidatesScreen.tsx # Candidate roster & nomination management
+│   │   │   │   ├── AdminDashboardScreen.tsx # Role-specific Election Officer & VRO hub
+│   │   │   │   ├── AdminElectionsScreen.tsx # Election lifecycle management & scheduling
+│   │   │   │   ├── AdminExceptionsScreen.tsx # Manual physical ID exception authorizations
+│   │   │   │   ├── AdminLoginScreen.tsx  # Cryptographic officer authentication
+│   │   │   │   ├── AdminVotersScreen.tsx # Voter roll search, status toggles & review
+│   │   │   │   ├── AvailableElectionsScreen.tsx # Public list of active, scheduled & archived polls
+│   │   │   │   ├── CandidatesPartiesScreen.tsx # 2024 political party register & symbol references
+│   │   │   │   ├── CandidatesScreen.tsx  # Ballot candidate selection (voting workflow)
+│   │   │   │   ├── ConstituencyInfoScreen.tsx # 543 Parliamentary constituency profiles
+│   │   │   │   ├── ConstituencyScreen.tsx # Voter constituency lock & jurisdiction verification
+│   │   │   │   ├── ElectionMonitorScreen.tsx # Public real-time participation & node metrics
+│   │   │   │   ├── ElectionsResultsScreen.tsx # Concluded election tallies & historical records
+│   │   │   │   ├── FaceEnrollmentScreen.tsx # Optical face template capture & vectorization
+│   │   │   │   ├── FingerprintEnrollmentScreen.tsx # Minutiae extraction & biometric registration
+│   │   │   │   ├── HistoricalArchiveScreen.tsx # Full 2024 General Election searchable archive
+│   │   │   │   ├── HomeScreen.tsx        # Public landing screen & voting practice entry
+│   │   │   │   ├── HowItWorksScreen.tsx  # Academic architecture walkthrough & protocols
+│   │   │   │   ├── IdentifyScreen.tsx    # Voter EPIC identification & biometric challenge
+│   │   │   │   ├── MetaMaskScreen.tsx    # Web3 wallet connection & EVM submission
+│   │   │   │   ├── OtpScreen.tsx         # Out-of-band delivery challenge verification
+│   │   │   │   ├── PracticeVotingScreen.tsx # Sandboxed mock voting simulator (zero EVM impact)
+│   │   │   │   ├── PreferencePollScreen.tsx # Public opinion survey (isolated from elections)
+│   │   │   │   ├── ReceiptScreen.tsx     # Cryptographic vote receipt & verification hash
+│   │   │   │   └── ReviewScreen.tsx      # Elector ballot review prior to EIP-712 signing
+│   │   │   ├── AcademicNoticeBanner.tsx  # Global academic prototype warning banner
+│   │   │   ├── CivicEmblem.tsx           # Indian civic emblem & visual branding
+│   │   │   ├── Navbar.tsx                # Top navigation, language selector & jurisdiction pill
+│   │   │   ├── PersonaQuickBar.tsx       # Zero-runtime component (returns null; production compliant)
+│   │   │   └── VotingStepper.tsx         # 5-step voting progress indicator
+│   │   ├── context/                      # Global React contexts (LanguageContext, etc.)
+│   │   ├── contracts/                    # Deployment manifest (deployment.json)
+│   │   ├── data/                         # Mock data & static reference records
+│   │   │   ├── historical2024.ts         # 2024 Lok Sabha constituency profiles & parties
+│   │   │   └── mockData.ts               # Initial simulation elections & test constituencies
+│   │   ├── lib/                          # Client libraries (Firebase client initialization)
+│   │   ├── services/                     # Frontend API clients & biometric adapters
+│   │   │   ├── biometricService.ts       # Face/fingerprint capture adapter
+│   │   │   └── voterApi.ts               # Elector identification & challenge gateway
+│   │   ├── types/                        # TypeScript domain interfaces
+│   │   │   ├── archive.ts                # Historical election record & provenance schemas
+│   │   │   ├── dataModel.ts              # Core schemas (VoterProfile, VotingSession, etc.)
+│   │   │   ├── index.ts                  # Central domain entities (Voter, Election, Candidate)
+│   │   │   ├── monitor.ts                # Public election monitor interfaces
+│   │   │   └── permissions.ts            # RBAC roles and permissions
+│   │   ├── utils/                        # Client-side utility functions
+│   │   │   ├── crypto.ts                 # Web Crypto hashing & EIP-712 signature verification
+│   │   │   └── evmSimulator.ts           # Local in-browser EVM execution fallback
+│   │   ├── App.tsx                       # Master routing & screen controller
+│   │   ├── index.css                     # Tailwind CSS styling rules & custom themes
+│   │   └── main.tsx                      # React 19 root DOM mounting entrypoint
+│   ├── index.html                        # Application HTML shell
+│   └── vite.config.ts                    # Vite build configuration (outputs to ../dist)
 │
-├── server/                               # Backend Node.js / Express Server (TypeScript)
-│   ├── auth/                             # Role-Based Access Control & Session Token Security
-│   │   ├── rbac.ts                       # EO, VRO, Admin role policies & action checks
-│   │   └── sessionToken.ts               # HMAC-SHA256 authenticated session token generator
-│   ├── config/                           # Configuration loaders & schema validation
-│   │   └── environment.ts                # Strict fail-closed environment variable parser
-│   ├── middleware/                       # Request processing middleware
-│   │   ├── auditLogger.ts                # Structured security audit event logger
-│   │   ├── rateLimiter.ts                # IP & EPIC rate limiting algorithms
+├── backend/                              # Backend Application Layer (Node.js, Express, TypeScript)
+│   ├── server.ts                         # Server entrypoint (serves API & static/dev frontend)
+│   └── server/                           # Backend modules
+│       ├── auth/                         # Role-Based Access Control & Session Token Security
+│       │   └── rbac.ts                   # EO, VRO, Admin role policies & action checks
+│       ├── repositories/                 # Data access layer (in-memory & Firestore implementations)
+│       │   ├── firestoreRepositories.ts  # Firestore database repository implementations
+│       │   ├── inMemoryRepositories.ts   # Hermetic in-memory repositories for testing
+│       │   ├── index.ts                  # Repository factory & accessors
+│       │   └── types.ts                  # Repository interfaces & filters
+│       ├── routes/                       # Express API route controllers
+│       │   ├── admin.ts                  # Administrative endpoints (election management, officers)
+│       │   ├── archive.ts                # Historical election data archive endpoints
+│       │   ├── historical.ts             # Legacy historical reference endpoint
+│       │   ├── monitor.ts                # Public election monitor dashboard API
+│       │   ├── poll.ts                   # Party preference survey API
+│       │   └── voter.ts                  # Voter verification, OTP challenge & EIP-712 authorization
+│       ├── security/                     # Security, encryption & data minimization modules
+│       │   ├── dataMinimization.ts       # PII sanitization & field masking
+│       │   ├── encryption.ts             # Field-level authenticated AES-GCM encryption
+│       │   ├── index.ts                  # Security module exports
+│       │   └── keyProvider.ts            # Key derivation & provider interface
+│       ├── services/                     # Business logic services
+│       │   ├── archiveImporter.ts        # Historical Form 20 dataset validation & ingestion
+│       │   └── monitorService.ts         # Public election monitor aggregator
+│       ├── utils/                        # Backend utilities
+│       │   └── voterId.ts                # Simulation voter ID generation & validation
+│       ├── config.ts                     # Strict fail-closed environment variable configuration
+│       ├── crypto.ts                     # Server HMAC, nullifier derivation & signature utilities
+│       ├── firebaseAdmin.ts              # Firebase Admin SDK initialization & mock helpers
+│       ├── firestore.ts                  # Firestore schema definitions & persistence operations
+│       └── store.ts                      # Central in-memory state store with sync hooks
+│
+├── tests/                                # Automated Test Suites (All 28 suites, Phases 01–13)
+│   ├── fixtures/                         # Test fixtures (voterFixtures.ts)
+│   ├── contract_guards.test.ts           # Smart contract security guards
+│   ├── crypto.test.ts                    # Cryptographic primitives verification
+│   ├── eip712.test.ts                    # EIP-712 typed signing tests
+│   ├── phase01_demo_voters_removal.test.ts
+│   ├── phase02_data_model.test.ts
+│   ├── phase03_officer_rbac.test.ts
+│   ├── phase04_voter_registry.test.ts
+│   ├── phase05_biometric_enrollment_ui.test.ts
+│   ├── phase06_manual_id_exceptions.test.ts
+│   ├── phase07_election_lifecycle.test.ts
+│   ├── phase08_voting_session_security.test.ts
+│   ├── phase09_encryption_privacy.test.ts
+│   ├── phase10_historical_archive.test.ts
+│   ├── phase11_public_election_monitor.test.ts
+│   ├── phase12_ui_ux_integration.test.ts
+│   ├── phase13_final_security_audit.test.ts
+│   └── ...                               # Additional phase verification test suites
+│
+├── contracts/                            # Solidity Smart Contracts (IndianElection.sol)
+├── database/                             # Database Schemas & Rules Documentation
+├── data/                                 # Historical ECI Datasets (Form 20 JSON files)
+├── docs/                                 # Comprehensive Architecture & Audit Documentation
+├── scripts/                              # Deployment, benchmark, migration & seed scripts
+├── .env.example                          # Safe environment variable template with empty placeholders
+├── firebase.json                         # Firebase project & emulator configuration
+├── firestore.rules                       # Firestore security rules
+├── hardhat.config.cjs                    # Hardhat EVM compilation & network configuration
+├── package.json                          # Root orchestration package manifest
+├── package-lock.json                     # Dependency lockfile
+├── render.yaml                           # Cloud deployment configuration
+└── tsconfig.json                         # Project-wide TypeScript configuration
 │   │   └── requestValidator.ts           # Joi/Zod request payload sanitizers
 │   ├── repositories/                     # Persistence abstraction layer
 │   │   ├── archiveRepository.ts          # Historical election document store

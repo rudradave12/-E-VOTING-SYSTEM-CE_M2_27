@@ -18,11 +18,22 @@
     "jsx": "react-jsx",
     "paths": {
       "@/*": [
+        "./frontend/src/*",
         "./*"
+      ],
+      "@backend/*": [
+        "./backend/*"
       ]
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "exclude": ["dist"]
+  "include": [
+    "frontend/**/*",
+    "backend/**/*",
+    "tests/**/*",
+    "scripts/**/*",
+    "hardhat.config.cjs"
+  ],
+  "exclude": ["dist", "node_modules"]
 }

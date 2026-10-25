@@ -66,9 +66,9 @@ async function main() {
   console.log('Executing live smart-contract, EIP-712, and receipt integration test suites...\n');
 
   const testFiles = [
-    'src/test/contract_guards.test.ts',
-    'src/test/eip712.test.ts',
-    'src/test/phase7d_blockchain_integration.test.ts',
+    'tests/contract_guards.test.ts',
+    'tests/eip712.test.ts',
+    'tests/phase7d_blockchain_integration.test.ts',
   ];
 
   const child = spawn(

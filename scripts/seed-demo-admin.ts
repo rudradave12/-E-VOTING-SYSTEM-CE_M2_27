@@ -7,7 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
-import { getFirebaseAdminAuth, getFirebaseAdminFirestore, isFirebaseConfigured } from '../server/firebaseAdmin';
+import { getFirebaseAdminAuth, getFirebaseAdminFirestore, isFirebaseConfigured } from '../backend/server/firebaseAdmin';
 
 dotenv.config();
 

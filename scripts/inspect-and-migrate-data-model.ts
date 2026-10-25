@@ -4,7 +4,7 @@
  */
 
 import dotenv from 'dotenv';
-import { getFirebaseAdminFirestore, isFirebaseConfigured } from '../server/firebaseAdmin';
+import { getFirebaseAdminFirestore, isFirebaseConfigured } from '../backend/server/firebaseAdmin';
 import {
   VoterProfile,
   VoterElectionParticipation,
@@ -12,7 +12,7 @@ import {
   SCHEMA_VERSION_LEGACY,
   validateVoterProfile,
   validateElectionParticipation,
-} from '../src/types/dataModel';
+} from '../frontend/src/types/dataModel';
 
 dotenv.config();
 

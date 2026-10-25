@@ -4,12 +4,12 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx server.ts",
-    "build": "vite build",
-    "start": "tsx server.ts",
-    "preview": "vite preview",
+    "dev": "tsx backend/server.ts",
+    "build": "vite build frontend",
+    "start": "tsx backend/server.ts",
+    "preview": "vite preview frontend",
     "lint": "tsc --noEmit",
-    "test": "tsx --test --test-concurrency=1 src/test/*.test.ts",
+    "test": "tsx --test --test-concurrency=1 tests/*.test.ts",
     "test:integration": "tsx scripts/run-blockchain-integration.ts",
     "benchmark": "tsx scripts/benchmark-performance.ts",
     "admin:seed": "tsx scripts/seed-demo-admin.ts",
@@ -20,7 +20,7 @@
     "contract:deploy": "tsx scripts/deploy.ts",
     "archive:import": "tsx scripts/import-historical-data.ts",
     "emulator:start": "firebase emulators:start --only firestore",
-    "emulator:test": "firebase emulators:exec --only firestore \"tsx --test src/test/phase7a2_emulator_integration.test.ts\""
+    "emulator:test": "firebase emulators:exec --only firestore \"tsx --test tests/phase7a2_emulator_integration.test.ts\""
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.6.1",
