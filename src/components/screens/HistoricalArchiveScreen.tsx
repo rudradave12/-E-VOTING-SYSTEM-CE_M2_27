@@ -620,7 +620,7 @@ export const HistoricalArchiveScreen: React.FC<HistoricalArchiveScreenProps> = (
                     </div>
 
                     {/* Candidate Results Table */}
-                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                    <div className="overflow-x-auto bb-table-container rounded-xl border border-slate-200">
                       <table className="w-full text-left text-xs border-collapse">
                         <thead>
                           <tr className="bg-slate-50 text-slate-600 border-b border-slate-200 font-semibold">

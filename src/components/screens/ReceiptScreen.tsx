@@ -18,6 +18,8 @@ import {
   ChevronDown,
   ChevronUp,
   Cpu,
+  Copy,
+  Check,
 } from 'lucide-react';
 
 interface ReceiptScreenProps {
@@ -33,6 +35,13 @@ export const ReceiptScreen: React.FC<ReceiptScreenProps> = ({
 }) => {
   const { language, t } = useLanguage();
   const [showTechnical, setShowTechnical] = useState<boolean>(false);
+  const [copiedHash, setCopiedHash] = useState<boolean>(false);
+
+  const handleCopyHash = () => {
+    navigator.clipboard.writeText(receipt.transactionHash);
+    setCopiedHash(true);
+    setTimeout(() => setCopiedHash(false), 2000);
+  };
 
   const handlePrint = () => {
     window.print();
@@ -110,9 +119,24 @@ export const ReceiptScreen: React.FC<ReceiptScreenProps> = ({
 
           <div className="flex justify-between items-center pt-1">
             <span className="text-slate-500">Reference Hash:</span>
-            <span className="font-mono text-xs font-semibold text-slate-800 truncate max-w-[200px]" title={receipt.transactionHash}>
-              {receipt.transactionHash}
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="font-mono text-xs font-semibold text-slate-800 truncate max-w-[180px] sm:max-w-xs" title={receipt.transactionHash}>
+                {receipt.transactionHash}
+              </span>
+              <button
+                type="button"
+                onClick={handleCopyHash}
+                title="Copy Transaction Hash"
+                aria-label="Copy transaction hash to clipboard"
+                className="p-1 text-slate-400 hover:text-slate-700 rounded transition-colors cursor-pointer bb-touch-target"
+              >
+                {copiedHash ? (
+                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5" />
+                )}
+              </button>
+            </div>
           </div>
         </div>
 

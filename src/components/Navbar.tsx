@@ -30,6 +30,7 @@ interface NavbarProps {
   onNavigate: (screen: NavigationScreen) => void;
   isAdminAuthenticated: boolean;
   onAdminLogout: () => void;
+  adminUser?: any;
   voterName?: string;
   onResetVoterSession?: () => void;
 }
@@ -39,6 +40,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onNavigate,
   isAdminAuthenticated,
   onAdminLogout,
+  adminUser,
   voterName,
   onResetVoterSession,
 }) => {
@@ -63,6 +65,9 @@ export const Navbar: React.FC<NavbarProps> = ({
     'admin-candidates',
     'admin-voters',
     'admin-audit',
+    'face-enrollment',
+    'fingerprint-enrollment',
+    'admin-exceptions',
   ].includes(currentScreen);
 
   const navItems = [
@@ -206,16 +211,28 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* Section 7: Staff Login / Admin Access */}
             {isAdminAuthenticated ? (
               <div className="flex items-center gap-1.5">
+                {adminUser?.role && (
+                  <span
+                    className="hidden lg:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-slate-100 text-slate-800 border border-slate-300"
+                    title={`Logged in as ${adminUser.displayName || adminUser.email} (${adminUser.role})`}
+                  >
+                    {adminUser.role === 'VOTER_REGISTRATION_OFFICER'
+                      ? 'VRO'
+                      : adminUser.role === 'ELECTION_OFFICER'
+                      ? 'EO'
+                      : 'ADMIN'}
+                  </span>
+                )}
                 <button
                   onClick={() => handleNavClick('admin-dashboard')}
-                  className="px-3 py-1.5 text-xs font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1.5"
+                  className="px-3 py-1.5 text-xs font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-orange-500"
                 >
                   <Shield className="w-3.5 h-3.5 text-amber-400" />
                   <span className="hidden sm:inline">Admin Console</span>
                 </button>
                 <button
                   onClick={onAdminLogout}
-                  className="px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                  className="px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-orange-500"
                 >
                   {t.logout}
                 </button>
@@ -223,7 +240,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             ) : (
               <button
                 onClick={() => handleNavClick('admin-login')}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-orange-500 ${
                   isAdminFlow
                     ? 'bg-slate-900 text-white border-slate-900'
                     : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
@@ -237,8 +254,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* Mobile Hamburger Menu Toggle */}
             <button
               onClick={() => setMobileMenuOpen((prev) => !prev)}
-              aria-label="Toggle navigation menu"
-              className="md:hidden p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 cursor-pointer"
+              aria-expanded={mobileMenuOpen}
+              aria-controls="mobile-navigation-menu"
+              aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+              className="md:hidden p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 cursor-pointer bb-touch-target focus-visible:ring-2 focus-visible:ring-orange-500"
             >
               {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
@@ -247,7 +266,11 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Mobile Navigation Dropdown */}
         {mobileMenuOpen && (
-          <div className="md:hidden py-3 border-t border-slate-200 space-y-1">
+          <nav
+            id="mobile-navigation-menu"
+            aria-label="Mobile navigation"
+            className="md:hidden py-3 border-t border-slate-200 space-y-1 animate-in fade-in duration-150"
+          >
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive =
@@ -260,7 +283,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   key={item.id}
                   onClick={() => handleNavClick(item.id)}
-                  className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-2 text-xs font-semibold transition-colors cursor-pointer ${
+                  className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-2.5 text-xs font-semibold transition-colors cursor-pointer bb-touch-target focus-visible:ring-2 focus-visible:ring-orange-500 ${
                     isActive
                       ? item.isHighlight
                         ? 'bg-orange-50 text-orange-700 font-bold'
@@ -270,7 +293,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       : 'text-slate-600 hover:bg-slate-50'
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
+                  <Icon className="w-4 h-4 shrink-0" />
                   <span>{item.label}</span>
                 </button>
               );
@@ -279,13 +302,13 @@ export const Navbar: React.FC<NavbarProps> = ({
             {isAdminAuthenticated && (
               <button
                 onClick={() => handleNavClick('admin-dashboard')}
-                className="w-full px-3 py-2.5 rounded-lg flex items-center gap-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                className="w-full px-3 py-2.5 rounded-lg flex items-center gap-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer bb-touch-target focus-visible:ring-2 focus-visible:ring-orange-500"
               >
-                <Shield className="w-4 h-4 text-amber-500" />
-                <span>Admin Console</span>
+                <Shield className="w-4 h-4 text-amber-500 shrink-0" />
+                <span>Admin Console ({adminUser?.role || 'Authenticated'})</span>
               </button>
             )}
-          </div>
+          </nav>
         )}
       </div>
     </header>

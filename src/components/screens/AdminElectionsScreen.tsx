@@ -346,7 +346,7 @@ export const AdminElectionsScreen: React.FC<AdminElectionsScreenProps> = ({
             <span>
               Opens in <strong className="font-mono">{days > 0 ? `${days}d ` : ''}{hours}h {minutes}m {seconds}s</strong>
             </span>
-            <span className="text-[10px] text-amber-600 ml-1 hidden sm:inline">(Authoritative Server Clock)</span>
+            <span className="text-[10px] text-amber-700 ml-1 hidden sm:inline">(Informational Client Estimate — Server Clock Authoritative)</span>
           </div>
         );
       } else {
@@ -373,7 +373,7 @@ export const AdminElectionsScreen: React.FC<AdminElectionsScreenProps> = ({
             <span>
               Closes in <strong className="font-mono">{days > 0 ? `${days}d ` : ''}{hours}h {minutes}m {seconds}s</strong>
             </span>
-            <span className="text-[10px] text-emerald-600 ml-1 hidden sm:inline">(Authoritative Server Clock)</span>
+            <span className="text-[10px] text-emerald-700 ml-1 hidden sm:inline">(Informational Client Estimate — Server Clock Authoritative)</span>
           </div>
         );
       } else {

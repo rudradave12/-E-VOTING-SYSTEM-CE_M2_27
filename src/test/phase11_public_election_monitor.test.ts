@@ -87,6 +87,7 @@ test('BlockBallot — Phase 11: Public Election Monitor Dashboard Suite', async 
 
     // 3. Seed historical archive with canonical dataset for cross-archive tests
     const archiveRepo = getDataRepositories().historicalArchive;
+    if (!archiveRepo) throw new Error('Historical archive repository not available');
     const importer = new ArchiveImporterService(archiveRepo);
     await importer.importDataset(CANONICAL_DATASET_PATH, { dryRun: false, allowUpdates: true });
 

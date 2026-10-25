@@ -1,14 +1,135 @@
 @import "tailwindcss";
 
+:root {
+  /* Civic Design System Tokens */
+  --bb-primary: #ea580c;
+  --bb-primary-hover: #c2410c;
+  --bb-primary-subtle: #fff7ed;
+  --bb-primary-border: #fed7aa;
+  
+  --bb-surface: #ffffff;
+  --bb-surface-subtle: #f8fafc;
+  --bb-surface-muted: #f1f5f9;
+  
+  --bb-border: #e2e8f0;
+  --bb-border-subtle: #cbd5e1;
+  --bb-border-strong: #94a3b8;
+  
+  --bb-text-main: #0f172a;
+  --bb-text-muted: #64748b;
+  --bb-text-subtle: #94a3b8;
+  
+  --bb-success: #15803d;
+  --bb-success-bg: #f0fdf4;
+  --bb-success-border: #bbf7d0;
+  
+  --bb-warning: #b45309;
+  --bb-warning-bg: #fffbeb;
+  --bb-warning-border: #fde68a;
+  
+  --bb-danger: #b91c1c;
+  --bb-danger-bg: #fef2f2;
+  --bb-danger-border: #fecaca;
+  
+  --bb-focus-ring: #ea580c;
+  --bb-radius: 0.75rem;
+}
+
 @layer base {
+  html {
+    scroll-behavior: smooth;
+    text-size-adjust: 100%;
+  }
+
   body {
     font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--bb-text-main);
+    background-color: #f8fafc;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
+
   h1, h2, h3, h4, h5, h6 {
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    letter-spacing: -0.015em;
   }
+
   code, pre, .font-mono {
     font-family: 'JetBrains Mono', monospace;
     font-variant-numeric: tabular-nums;
+  }
+
+  /* Accessible focus indicators for keyboard navigation */
+  :focus-visible {
+    outline: 2px solid var(--bb-focus-ring);
+    outline-offset: 2px;
+  }
+}
+
+/* Accessible focus utility */
+.bb-focus-ring {
+  transition: box-shadow 0.15s ease-in-out, border-color 0.15s ease-in-out;
+}
+.bb-focus-ring:focus-visible {
+  outline: 2px solid var(--bb-focus-ring) !important;
+  outline-offset: 2px !important;
+}
+
+/* Responsive Table Container & Touch Target Utilities */
+.bb-table-container {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 #f8fafc;
+}
+
+.bb-table-container::-webkit-scrollbar {
+  height: 6px;
+}
+
+.bb-table-container::-webkit-scrollbar-track {
+  background: #f8fafc;
+}
+
+.bb-table-container::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 9999px;
+}
+
+/* Minimum Accessible Touch Target */
+.bb-touch-target {
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* WCAG Reduced Motion Preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Print Styles for Official Civic Receipt */
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  header, nav, .no-print, button:not(.print-include) {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  main {
+    padding: 0 !important;
   }
 }

@@ -125,9 +125,16 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
               />
               <Search className="w-5 h-5 text-slate-400 absolute right-3.5 top-3.5 pointer-events-none" />
             </div>
-            <p className="text-[11px] text-slate-500 mt-1.5">
-              Simulation ID format: <span className="font-mono">BBV-SIM-&lt;token&gt;</span> (or legacy 10-char alphanumeric test EPIC).
-            </p>
+            <div className="flex items-center justify-between flex-wrap gap-1 text-[11px] text-slate-500 mt-1.5">
+              <span>Simulation ID format: <span className="font-mono">BBV-SIM-&lt;token&gt;</span> (or 10-char test EPIC).</span>
+              <button
+                type="button"
+                onClick={() => setEpicInput('IND-DL-982341')}
+                className="text-orange-600 hover:text-orange-800 underline font-semibold cursor-pointer"
+              >
+                Use sample test ID
+              </button>
+            </div>
           </div>
 
           {error && (

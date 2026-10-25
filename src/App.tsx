@@ -576,6 +576,7 @@ export function AppInner() {
         onNavigate={(screen) => setCurrentScreen(screen)}
         isAdminAuthenticated={isAdminAuthenticated}
         onAdminLogout={handleAdminLogout}
+        adminUser={adminUser}
         voterName={currentVoter?.name}
         onResetVoterSession={handleResetSession}
       />
@@ -621,11 +622,11 @@ export function AppInner() {
           />
         )}
 
-        {currentScreen === 'candidates-parties' && (
+        {(currentScreen === 'candidates-parties' || currentScreen === 'political-parties') && (
           <CandidatesPartiesScreen />
         )}
 
-        {currentScreen === 'constituencies-info' && (
+        {(currentScreen === 'constituencies-info' || currentScreen === 'constituency-info') && (
           <ConstituencyInfoScreen />
         )}
 
@@ -752,7 +753,7 @@ export function AppInner() {
           />
         )}
 
-        {currentScreen === 'admin-dashboard' && (
+        {(currentScreen === 'admin-dashboard' || currentScreen === 'administration') && (
           <AdminDashboardScreen
             election={activeElection}
             constituencies={constituencies}
@@ -839,6 +840,59 @@ export function AppInner() {
             adminUser={adminUser}
             onBack={() => setCurrentScreen('admin-dashboard')}
           />
+        )}
+
+        {/* Fallback Recovery State for Unrecognized or Expired Screen */}
+        {![
+          'welcome',
+          'home',
+          'available-elections',
+          'vote',
+          'elections-results',
+          'election-results',
+          'results',
+          'candidates-parties',
+          'political-parties',
+          'constituencies-info',
+          'constituency-info',
+          'preference-poll',
+          'historical-archive',
+          'election-monitor',
+          'how-it-works',
+          'practice-voting',
+          'identify',
+          'otp',
+          'constituency',
+          'candidates',
+          'review',
+          'metamask',
+          'receipt',
+          'admin-login',
+          'admin-dashboard',
+          'administration',
+          'admin-elections',
+          'admin-candidates',
+          'admin-voters',
+          'face-enrollment',
+          'fingerprint-enrollment',
+          'admin-audit',
+          'admin-exceptions',
+        ].includes(currentScreen) && (
+          <div className="max-w-md mx-auto py-16 px-4 text-center space-y-4">
+            <div className="w-12 h-12 bg-slate-100 text-slate-600 rounded-full flex items-center justify-center mx-auto">
+              <ShieldAlert className="w-6 h-6" />
+            </div>
+            <h2 className="text-lg font-bold text-slate-900">Navigation State Unrecognized</h2>
+            <p className="text-xs text-slate-600">
+              The requested view is not available or your previous session has ended.
+            </p>
+            <button
+              onClick={() => setCurrentScreen('welcome')}
+              className="px-4 py-2 bg-orange-600 text-white text-xs font-semibold rounded-lg hover:bg-orange-700 transition-colors cursor-pointer"
+            >
+              Return to Home
+            </button>
+          </div>
         )}
 
         {/* Phase 08: Fullscreen Exit Warning Modal (Warning #1 or #2) */}

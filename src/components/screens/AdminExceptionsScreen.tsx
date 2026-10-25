@@ -550,12 +550,17 @@ export const AdminExceptionsScreen: React.FC<AdminExceptionsScreenProps> = ({
 
       {/* Decision Review & Confirmation Modal */}
       {showConfirmModal && activeException && pendingAction && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="exception-modal-title"
+        >
           <div className="bg-white rounded-xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
-                <FileCheck className="w-5 h-5 text-purple-600" />
-                <h3 className="text-base font-bold text-slate-900">
+                <FileCheck className="w-5 h-5 text-purple-600" aria-hidden="true" />
+                <h3 id="exception-modal-title" className="text-base font-bold text-slate-900">
                   {pendingAction === 'APPROVE' ? 'Approve Manual Physical ID' : 'Decline Exception Request'}
                 </h3>
               </div>

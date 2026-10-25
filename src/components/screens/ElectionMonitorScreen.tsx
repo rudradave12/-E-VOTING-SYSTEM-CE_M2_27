@@ -664,7 +664,7 @@ export const ElectionMonitorScreen: React.FC<ElectionMonitorScreenProps> = ({
                         <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
                           Constituency Breakdown
                         </h4>
-                        <div className="overflow-x-auto">
+                        <div className="overflow-x-auto bb-table-container">
                           <table className="w-full text-left text-xs">
                             <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
                               <tr>

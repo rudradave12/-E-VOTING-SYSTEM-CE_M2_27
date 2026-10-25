@@ -506,7 +506,7 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto bb-table-container">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider text-[10px]">
@@ -1157,16 +1157,22 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
 
       {/* Deactivation Confirmation Modal */}
       {deactivateTarget && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        <div
+          className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="deactivate-modal-title"
+          aria-describedby="deactivate-modal-description"
+        >
           <div className="bg-white rounded-xl border border-slate-200 p-6 max-w-md w-full shadow-2xl">
             <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-4">
-              <Trash2 className="w-6 h-6 stroke-[2]" />
+              <Trash2 className="w-6 h-6 stroke-[2]" aria-hidden="true" />
             </div>
 
-            <h3 className="text-lg font-bold text-slate-900 mb-1">
+            <h3 id="deactivate-modal-title" className="text-lg font-bold text-slate-900 mb-1">
               Deactivate Elector Record
             </h3>
-            <p className="text-xs text-slate-600 mb-4 leading-relaxed">
+            <p id="deactivate-modal-description" className="text-xs text-slate-600 mb-4 leading-relaxed">
               Are you sure you want to deactivate <span className="font-semibold text-slate-900">{deactivateTarget.fullName}</span> ({deactivateTarget.simulationVoterId})?
             </p>
 
@@ -1191,7 +1197,7 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
                 type="button"
                 onClick={() => setDeactivateTarget(null)}
                 disabled={isDeactivating}
-                className="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-900 cursor-pointer disabled:opacity-50"
+                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg cursor-pointer disabled:opacity-50 bb-touch-target focus-visible:ring-2 focus-visible:ring-slate-400"
               >
                 Cancel
               </button>
@@ -1199,7 +1205,7 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
                 type="button"
                 onClick={handleDeactivateConfirm}
                 disabled={isDeactivating}
-                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg text-xs cursor-pointer flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg text-xs cursor-pointer flex items-center gap-1.5 transition-colors disabled:opacity-50 bb-touch-target focus-visible:ring-2 focus-visible:ring-red-500"
               >
                 {isDeactivating ? (
                   <>
