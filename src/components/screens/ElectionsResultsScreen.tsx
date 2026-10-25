@@ -41,6 +41,7 @@ interface ElectionsResultsScreenProps {
   candidates?: Candidate[];
   constituencies?: Constituency[];
   initialTab?: 'previous-elections' | 'official-2024';
+  onNavigateToArchive?: () => void;
 }
 
 export const ElectionsResultsScreen: React.FC<ElectionsResultsScreenProps> = ({
@@ -48,6 +49,7 @@ export const ElectionsResultsScreen: React.FC<ElectionsResultsScreenProps> = ({
   candidates = INITIAL_CANDIDATES,
   constituencies = INITIAL_CONSTITUENCIES,
   initialTab = 'previous-elections',
+  onNavigateToArchive,
 }) => {
   const { t, language } = useLanguage();
 
@@ -158,6 +160,15 @@ export const ElectionsResultsScreen: React.FC<ElectionsResultsScreenProps> = ({
             <BookOpen className="w-3.5 h-3.5 text-emerald-600" />
             <span>Official 2024 ECI Gazette</span>
           </button>
+          {onNavigateToArchive && (
+            <button
+              onClick={onNavigateToArchive}
+              className="px-3.5 py-2 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 text-orange-600 hover:text-orange-700 bg-orange-50 hover:bg-orange-100 font-semibold border border-orange-200"
+            >
+              <Database className="w-3.5 h-3.5 text-orange-600" />
+              <span>Full Historical Archive</span>
+            </button>
+          )}
         </div>
       </div>
 

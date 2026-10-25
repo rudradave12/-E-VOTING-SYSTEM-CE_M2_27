@@ -58,6 +58,7 @@ import { AdminAuditScreen } from './components/screens/AdminAuditScreen';
 import { FaceEnrollmentScreen } from './components/screens/FaceEnrollmentScreen';
 import { FingerprintEnrollmentScreen } from './components/screens/FingerprintEnrollmentScreen';
 import { AdminExceptionsScreen } from './components/screens/AdminExceptionsScreen';
+import { HistoricalArchiveScreen } from './components/screens/HistoricalArchiveScreen';
 import { VoterProfile } from './types/dataModel';
 import { ShieldAlert, AlertTriangle, Lock, RefreshCw, Key, Maximize2, X, CheckCircle2 } from 'lucide-react';
 
@@ -615,6 +616,7 @@ export function AppInner() {
             elections={elections}
             candidates={candidates}
             constituencies={constituencies}
+            onNavigateToArchive={() => setCurrentScreen('historical-archive')}
           />
         )}
 
@@ -630,7 +632,13 @@ export function AppInner() {
           <PreferencePollScreen
             currentVoter={currentVoter}
             onNavigateToAuth={() => setCurrentScreen('practice-voting')}
-            onNavigateToArchive={() => setCurrentScreen('elections-results')}
+            onNavigateToArchive={() => setCurrentScreen('historical-archive')}
+          />
+        )}
+
+        {currentScreen === 'historical-archive' && (
+          <HistoricalArchiveScreen
+            onBackToLive={() => setCurrentScreen('available-elections')}
           />
         )}
 

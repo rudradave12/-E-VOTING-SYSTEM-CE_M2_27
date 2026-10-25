@@ -20,6 +20,7 @@ import {
   X,
   Shield,
   RotateCcw,
+  Database,
 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -75,6 +76,11 @@ export const Navbar: React.FC<NavbarProps> = ({
       id: 'elections-results',
       label: language === 'hi' ? 'पूर्व चुनाव एवं परिणाम' : 'Previous Elections',
       icon: BarChart3,
+    },
+    {
+      id: 'historical-archive',
+      label: language === 'hi' ? 'ऐतिहासिक संग्रह' : 'Historical Archive',
+      icon: Database,
     },
     {
       id: 'how-it-works',

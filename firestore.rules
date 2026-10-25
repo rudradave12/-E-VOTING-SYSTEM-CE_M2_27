@@ -201,6 +201,18 @@ service cloud.firestore {
       allow write: if false; // Protected from client modification; populated via server import pipeline
     }
 
+    // 8a. Historical Election Data Archive (Phase 10): Strictly READ-ONLY for public visitors and client SDK
+    match /historical_archive/{archiveId} {
+      allow read: if isValidId(archiveId);
+      allow list: if true;
+      allow write: if false; // Protected from client modification; populated via server import pipeline
+
+      match /{document=**} {
+        allow read: if true;
+        allow write: if false;
+      }
+    }
+
     // 9. Political Parties Directory: Strictly READ-ONLY from client SDK
     match /political_parties/{partyCode} {
       allow read: if isValidId(partyCode);

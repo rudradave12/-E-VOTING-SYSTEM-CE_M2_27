@@ -38,7 +38,14 @@ import {
   VoterProfileFilter,
   AuditEventFilter,
   ExceptionFilter,
+  IHistoricalArchiveRepository,
 } from './types';
+import {
+  HistoricalElectionRecord,
+  HistoricalConstituencyResult,
+  HistoricalArchiveQuery,
+  validateHistoricalElectionRecord,
+} from '../../src/types/archive';
 
 export class FirestoreVoterProfileRepository implements IVoterProfileRepository {
   private col() {
@@ -444,6 +451,111 @@ export class FirestoreManualIdExceptionRepository implements IManualIdExceptionR
   }
 }
 
+export class FirestoreHistoricalArchiveRepository implements IHistoricalArchiveRepository {
+  private col() {
+    return serverDb.collection('historical_archive');
+  }
+
+  public async findById(id: string): Promise<HistoricalElectionRecord | null> {
+    const snap = await this.col().doc(id).get();
+    if (!snap.exists) return null;
+    return snap.data() as HistoricalElectionRecord;
+  }
+
+  public async save(record: HistoricalElectionRecord): Promise<void> {
+    const validation = validateHistoricalElectionRecord(record);
+    if (!validation.valid) {
+      throw new Error(`Invalid historical election record: ${validation.errors.join('; ')}`);
+    }
+    await this.col().doc(record.id).set(record);
+  }
+
+  public async list(query?: HistoricalArchiveQuery): Promise<{ records: HistoricalElectionRecord[]; total: number }> {
+    let q: any = this.col();
+
+    if (query?.year) {
+      q = q.where('year', '==', Number(query.year));
+    }
+    if (query?.electionType) {
+      q = q.where('electionType', '==', String(query.electionType).toUpperCase());
+    }
+    if (query?.verificationStatus) {
+      q = q.where('verificationStatus', '==', query.verificationStatus);
+    }
+
+    const snap = await q.get();
+    let result: HistoricalElectionRecord[] = snap.docs.map((d: any): HistoricalElectionRecord => d.data() as HistoricalElectionRecord);
+
+    if (query?.state && query.state !== 'ALL') {
+      const targetState = query.state.toLowerCase();
+      result = result.filter(
+        (r: HistoricalElectionRecord) =>
+          Boolean(r.state && r.state.toLowerCase().includes(targetState)) ||
+          r.constituencyResults.some((c: any) => c.state.toLowerCase().includes(targetState))
+      );
+    }
+
+    if (query?.query) {
+      const term = query.query.toLowerCase().trim();
+      result = result.filter((r: HistoricalElectionRecord) => {
+        if (r.electionName.toLowerCase().includes(term)) return true;
+        if (r.state && r.state.toLowerCase().includes(term)) return true;
+        if (String(r.year).includes(term)) return true;
+        return r.constituencyResults.some(
+          (c: any) =>
+            c.constituencyName.toLowerCase().includes(term) ||
+            c.constituencyCode.toLowerCase().includes(term) ||
+            (c.winnerName && c.winnerName.toLowerCase().includes(term)) ||
+            (c.winnerParty && c.winnerParty.toLowerCase().includes(term)) ||
+            c.candidates.some(
+              (cand: any) =>
+                cand.candidateName.toLowerCase().includes(term) ||
+                cand.partyName.toLowerCase().includes(term) ||
+                cand.partyAbbreviation.toLowerCase().includes(term)
+            )
+        );
+      });
+    }
+
+    result.sort((a: HistoricalElectionRecord, b: HistoricalElectionRecord) => b.year - a.year);
+    const total = result.length;
+
+    const page = Math.max(1, Number(query?.page) || 1);
+    const limit = Math.max(1, Math.min(100, Number(query?.limit) || 10));
+    const offset = (page - 1) * limit;
+
+    const paginated = result.slice(offset, offset + limit);
+    return { records: paginated, total };
+  }
+
+  public async findConstituency(
+    electionId: string,
+    constituencyCodeOrId: string
+  ): Promise<HistoricalConstituencyResult | null> {
+    const election = await this.findById(electionId);
+    if (!election) return null;
+    const match = election.constituencyResults.find(
+      (c) =>
+        c.constituencyId === constituencyCodeOrId ||
+        c.constituencyCode === constituencyCodeOrId ||
+        c.constituencyName.toLowerCase() === constituencyCodeOrId.toLowerCase()
+    );
+    return match || null;
+  }
+
+  public async count(): Promise<number> {
+    const snap = await this.col().get();
+    return snap.size;
+  }
+
+  public async clear(): Promise<void> {
+    const snap = await this.col().get();
+    for (const doc of snap.docs) {
+      await doc.ref.delete();
+    }
+  }
+}
+
 export function createFirestoreRepositories(): IDataRepositories {
   return {
     voterProfiles: new FirestoreVoterProfileRepository(),
@@ -453,5 +565,6 @@ export function createFirestoreRepositories(): IDataRepositories {
     authorities: new FirestoreAuthorityAccountRepository(),
     auditEvents: new FirestoreAuditEventRepository(),
     exceptions: new FirestoreManualIdExceptionRepository(),
+    historicalArchive: new FirestoreHistoricalArchiveRepository(),
   };
 }

@@ -260,7 +260,8 @@ export type NavigationScreen =
   | 'admin-audit'
   | 'admin-exceptions'
   | 'face-enrollment'
-  | 'fingerprint-enrollment';
+  | 'fingerprint-enrollment'
+  | 'historical-archive';
 
 export interface PreferencePollConfig {
   id: string;
@@ -296,4 +297,7 @@ export * from './dataModel';
 
 // Phase 03 Permissions & RBAC exports
 export * from './permissions';
+
+// Phase 10 Historical Archive exports
+export * from './archive';
 

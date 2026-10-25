@@ -20,6 +20,11 @@ import {
   ExceptionPurpose,
   ExceptionStatus,
 } from '../../src/types/dataModel';
+import {
+  HistoricalElectionRecord,
+  HistoricalConstituencyResult,
+  HistoricalArchiveQuery,
+} from '../../src/types/archive';
 
 export interface VoterProfileFilter {
   constituencyId?: string;
@@ -122,6 +127,15 @@ export interface IVotingSessionRepository {
   clear(): Promise<void>;
 }
 
+export interface IHistoricalArchiveRepository {
+  findById(id: string): Promise<HistoricalElectionRecord | null>;
+  save(record: HistoricalElectionRecord): Promise<void>;
+  list(query?: HistoricalArchiveQuery): Promise<{ records: HistoricalElectionRecord[]; total: number }>;
+  findConstituency(electionId: string, constituencyCodeOrId: string): Promise<HistoricalConstituencyResult | null>;
+  count(): Promise<number>;
+  clear(): Promise<void>;
+}
+
 export interface IDataRepositories {
   voterProfiles: IVoterProfileRepository;
   participations: IVoterParticipationRepository;
@@ -131,5 +145,6 @@ export interface IDataRepositories {
   auditEvents: IAuditEventRepository;
   exceptions: IManualIdExceptionRepository;
   sessions?: IVotingSessionRepository;
+  historicalArchive?: IHistoricalArchiveRepository;
 }
 

@@ -51,7 +51,7 @@ import { validateNoProhibitedFields, sanitizeLogData, maskMobile } from '../secu
 export const adminRouter = Router();
 
 // In-memory admin session store for backward compatibility
-const adminSessions: Map<string, { email: string; uid?: string; role?: string; expiresAt: number }> = new Map();
+export const adminSessions: Map<string, { email: string; uid?: string; role?: string; expiresAt: number }> = new Map();
 
 export function clearAdminSessionsForTesting(): void {
   adminSessions.clear();

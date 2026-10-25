@@ -37,7 +37,14 @@ import {
   VoterProfileFilter,
   AuditEventFilter,
   ExceptionFilter,
+  IHistoricalArchiveRepository,
 } from './types';
+import {
+  HistoricalElectionRecord,
+  HistoricalConstituencyResult,
+  HistoricalArchiveQuery,
+  validateHistoricalElectionRecord,
+} from '../../src/types/archive';
 
 export class InMemoryVoterProfileRepository implements IVoterProfileRepository {
   private profiles = new Map<string, VoterProfile>();
@@ -423,6 +430,104 @@ export class InMemoryManualIdExceptionRepository implements IManualIdExceptionRe
   }
 }
 
+export class InMemoryHistoricalArchiveRepository implements IHistoricalArchiveRepository {
+  private records = new Map<string, HistoricalElectionRecord>();
+
+  public async findById(id: string): Promise<HistoricalElectionRecord | null> {
+    const record = this.records.get(id);
+    if (!record) return null;
+    return JSON.parse(JSON.stringify(record));
+  }
+
+  public async save(record: HistoricalElectionRecord): Promise<void> {
+    const validation = validateHistoricalElectionRecord(record);
+    if (!validation.valid) {
+      throw new Error(`Invalid historical election record: ${validation.errors.join('; ')}`);
+    }
+    this.records.set(record.id, JSON.parse(JSON.stringify(record)));
+  }
+
+  public async list(query?: HistoricalArchiveQuery): Promise<{ records: HistoricalElectionRecord[]; total: number }> {
+    let result = Array.from(this.records.values());
+
+    if (query?.year) {
+      result = result.filter((r) => r.year === Number(query.year));
+    }
+    if (query?.electionType) {
+      const targetType = String(query.electionType).toUpperCase();
+      result = result.filter((r) => r.electionType.toUpperCase() === targetType);
+    }
+    if (query?.state && query.state !== 'ALL') {
+      const targetState = query.state.toLowerCase();
+      result = result.filter(
+        (r) =>
+          (r.state && r.state.toLowerCase().includes(targetState)) ||
+          r.constituencyResults.some((c) => c.state.toLowerCase().includes(targetState))
+      );
+    }
+    if (query?.verificationStatus) {
+      result = result.filter((r) => r.verificationStatus === query.verificationStatus);
+    }
+    if (query?.query) {
+      const q = query.query.toLowerCase().trim();
+      result = result.filter((r) => {
+        if (r.electionName.toLowerCase().includes(q)) return true;
+        if (r.state && r.state.toLowerCase().includes(q)) return true;
+        if (String(r.year).includes(q)) return true;
+        return r.constituencyResults.some(
+          (c) =>
+            c.constituencyName.toLowerCase().includes(q) ||
+            c.constituencyCode.toLowerCase().includes(q) ||
+            (c.winnerName && c.winnerName.toLowerCase().includes(q)) ||
+            (c.winnerParty && c.winnerParty.toLowerCase().includes(q)) ||
+            c.candidates.some(
+              (cand) =>
+                cand.candidateName.toLowerCase().includes(q) ||
+                cand.partyName.toLowerCase().includes(q) ||
+                cand.partyAbbreviation.toLowerCase().includes(q)
+            )
+        );
+      });
+    }
+
+    result.sort((a, b) => b.year - a.year);
+    const total = result.length;
+
+    const page = Math.max(1, Number(query?.page) || 1);
+    const limit = Math.max(1, Math.min(100, Number(query?.limit) || 10));
+    const offset = (page - 1) * limit;
+
+    const paginated = result.slice(offset, offset + limit);
+    return {
+      records: paginated.map((r) => JSON.parse(JSON.stringify(r))),
+      total,
+    };
+  }
+
+  public async findConstituency(
+    electionId: string,
+    constituencyCodeOrId: string
+  ): Promise<HistoricalConstituencyResult | null> {
+    const election = this.records.get(electionId);
+    if (!election) return null;
+    const match = election.constituencyResults.find(
+      (c) =>
+        c.constituencyId === constituencyCodeOrId ||
+        c.constituencyCode === constituencyCodeOrId ||
+        c.constituencyName.toLowerCase() === constituencyCodeOrId.toLowerCase()
+    );
+    return match ? JSON.parse(JSON.stringify(match)) : null;
+  }
+
+  public async count(): Promise<number> {
+    return this.records.size;
+  }
+
+  public async clear(): Promise<void> {
+    this.records.clear();
+  }
+}
+
 export function createInMemoryRepositories(): IDataRepositories {
   return {
     voterProfiles: new InMemoryVoterProfileRepository(),
@@ -432,5 +537,6 @@ export function createInMemoryRepositories(): IDataRepositories {
     authorities: new InMemoryAuthorityAccountRepository(),
     auditEvents: new InMemoryAuditEventRepository(),
     exceptions: new InMemoryManualIdExceptionRepository(),
+    historicalArchive: new InMemoryHistoricalArchiveRepository(),
   };
 }

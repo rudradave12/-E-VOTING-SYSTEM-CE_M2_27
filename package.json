@@ -18,6 +18,7 @@
     "model:migrate": "tsx scripts/inspect-and-migrate-data-model.ts",
     "node:start": "hardhat --config hardhat.config.cjs node --hostname 127.0.0.1 --port 8545",
     "contract:deploy": "tsx scripts/deploy.ts",
+    "archive:import": "tsx scripts/import-historical-data.ts",
     "emulator:start": "firebase emulators:start --only firestore",
     "emulator:test": "firebase emulators:exec --only firestore \"tsx --test src/test/phase7a2_emulator_integration.test.ts\""
   },

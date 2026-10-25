@@ -10,6 +10,10 @@ import {
   PreferencePollConfig,
   PollAggregateRecord,
   PollResponseRecord,
+  HistoricalElectionRecord,
+  HistoricalConstituencyResult,
+  HistoricalSourceProvenance,
+  ArchiveImportSummary,
 } from '../types';
 import { RecognizedPartyRecord } from '../data/historical2024';
 import {
@@ -1131,6 +1135,166 @@ export class VoterApiClient {
       return await res.json();
     } catch (err: any) {
       return { success: false, message: err.message || 'Network error unlocking session.' };
+    }
+  }
+
+  // =========================================================================
+  // Phase 10: Historical Election Data Archive Client API
+  // =========================================================================
+
+  /**
+   * GET /api/archive/elections
+   * Browse and search historical elections with filtering and pagination.
+   */
+  public async getArchivedElections(params?: {
+    year?: number;
+    type?: string;
+    state?: string;
+    q?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{
+    success: boolean;
+    elections?: any[];
+    total?: number;
+    page?: number;
+    limit?: number;
+    totalPages?: number;
+    disclaimer?: string;
+    message?: string;
+  }> {
+    try {
+      const searchParams = new URLSearchParams();
+      if (params?.year) searchParams.set('year', String(params.year));
+      if (params?.type) searchParams.set('type', params.type);
+      if (params?.state) searchParams.set('state', params.state);
+      if (params?.q) searchParams.set('q', params.q);
+      if (params?.status) searchParams.set('status', params.status);
+      if (params?.page) searchParams.set('page', String(params.page));
+      if (params?.limit) searchParams.set('limit', String(params.limit));
+
+      const qs = searchParams.toString();
+      const res = await fetch(`/api/archive/elections${qs ? `?${qs}` : ''}`);
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error fetching archived elections.' };
+    }
+  }
+
+  /**
+   * GET /api/archive/elections/:id
+   * Retrieve full archived election details.
+   */
+  public async getArchivedElectionById(id: string): Promise<{
+    success: boolean;
+    election?: HistoricalElectionRecord;
+    disclaimer?: string;
+    message?: string;
+  }> {
+    try {
+      const res = await fetch(`/api/archive/elections/${encodeURIComponent(id)}`);
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error fetching election details.' };
+    }
+  }
+
+  /**
+   * GET /api/archive/elections/:id/constituencies
+   * Search constituencies for an archived election.
+   */
+  public async getArchivedElectionConstituencies(
+    id: string,
+    params?: { q?: string; state?: string }
+  ): Promise<{
+    success: boolean;
+    constituencies?: HistoricalConstituencyResult[];
+    totalCount?: number;
+    disclaimer?: string;
+    message?: string;
+  }> {
+    try {
+      const searchParams = new URLSearchParams();
+      if (params?.q) searchParams.set('q', params.q);
+      if (params?.state) searchParams.set('state', params.state);
+
+      const qs = searchParams.toString();
+      const res = await fetch(`/api/archive/elections/${encodeURIComponent(id)}/constituencies${qs ? `?${qs}` : ''}`);
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error fetching constituencies.' };
+    }
+  }
+
+  /**
+   * GET /api/archive/elections/:id/constituencies/:codeOrId
+   */
+  public async getArchivedConstituency(
+    electionId: string,
+    codeOrId: string
+  ): Promise<{
+    success: boolean;
+    constituency?: HistoricalConstituencyResult;
+    disclaimer?: string;
+    message?: string;
+  }> {
+    try {
+      const res = await fetch(
+        `/api/archive/elections/${encodeURIComponent(electionId)}/constituencies/${encodeURIComponent(codeOrId)}`
+      );
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error fetching constituency.' };
+    }
+  }
+
+  /**
+   * GET /api/archive/provenance/:id
+   */
+  public async getArchiveProvenance(id: string): Promise<{
+    success: boolean;
+    provenance?: HistoricalSourceProvenance;
+    verificationStatus?: string;
+    isVerified?: boolean;
+    verificationNotes?: string;
+    importedAt?: number;
+    message?: string;
+  }> {
+    try {
+      const res = await fetch(`/api/archive/provenance/${encodeURIComponent(id)}`);
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error fetching provenance.' };
+    }
+  }
+
+  /**
+   * POST /api/archive/import
+   * Execute administrative import workflow (PLATFORM_ADMIN only).
+   */
+  public async importArchiveDataset(data: {
+    filePath?: string;
+    payload?: any;
+    dryRun?: boolean;
+    allowUpdates?: boolean;
+  }): Promise<{
+    success: boolean;
+    summary?: ArchiveImportSummary;
+    message?: string;
+  }> {
+    try {
+      const res = await fetch('/api/archive/import', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+        body: JSON.stringify(data),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error executing archive import.' };
     }
   }
 }
