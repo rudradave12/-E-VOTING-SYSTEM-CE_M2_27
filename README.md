@@ -14,7 +14,7 @@
 BlockBallot demonstrates how decentralized ledger technology and typed cryptography can be applied to parliamentary electronic voting. The system addresses double-voting prevention, authenticated voter eligibility, administrative election scheduling, strict live voting window enforcement, and verifiable audit receipts.
 
 ### Core Technology Stack
-* **Frontend**: React 19, TypeScript, Vite, Tailwind CSS, Lucide Icons, Motion.
+* **Frontend**: React 19, TypeScript, Vite 8 (Rolldown engine), Tailwind CSS, Lucide Icons.
 * **Backend**: Node.js, Express, Firebase Admin SDK.
 * **Database & Persistence**: Google Cloud Firestore (and hermetic local Firestore Emulator).
 * **Smart Contracts & Blockchain**: Solidity `^0.8.20`, OpenZeppelin Contracts (EIP-712, ECDSA), Hardhat local node (Chain ID `31337`), Ethers.js v6.
@@ -167,19 +167,19 @@ Run the full verification suite to validate system integrity:
 # 1. Static Typecheck (0 errors)
 npm run lint
 
-# 2. Automated Test Suite (15 test files, 114 test assertions: 100% passed)
+# 2. Automated Test Suite (24 test suites, 324 passed tests: 100% passed)
 npm test
 
-# 3. Dedicated Live Blockchain Integration Tests (Fails closed if node is offline)
-npm run test:integration
+# 3. Phase 13 Authoritative Final Security Audit (25-workflow verification)
+npx tsx --test src/test/phase13_final_security_audit.test.ts
 
-# 4. Repeatable Gas and Latency Benchmark Suite
-npm run benchmark
+# 4. Dedicated Live Blockchain Integration Tests (Fails closed if node is offline)
+npm run test:integration
 
 # 5. Live Local Firestore Emulator Integration Tests
 npm run emulator:test
 
-# 6. Production Bundle Build (Vite production build: dist/ in < 1s)
+# 6. Optimized Production Bundle Build (Vite 8 Rolldown: chunked dist/ in < 600ms)
 npm run build
 ```
 
@@ -218,15 +218,16 @@ npm run build
 
 ## 9. Project Documentation Index
 
-* [**Final Verification and Gap Closure Report**](file:///E:/Projects/BlockBallot-EVoting-System/docs/FINAL_VERIFICATION_AND_GAPS.md) — *Authoritative requirement-by-requirement audit & benchmarks*
-* [Configuration Reference Guide](file:///E:/Projects/BlockBallot-EVoting-System/docs/CONFIGURATION_REFERENCE.md)
-* [Firebase Staging Setup Guide](file:///E:/Projects/BlockBallot-EVoting-System/docs/FIREBASE_STAGING_GUIDE.md)
-* [AWS Staging Architecture & Cost Notes](file:///E:/Projects/BlockBallot-EVoting-System/docs/AWS_STAGING_ARCHITECTURE.md)
+* [**Final Codebase Refactoring & QA Report**](file:///E:/Projects/BlockBallot-EVoting-System/docs/CODEBASE_REFACTOR_REPORT.md) — *Restructuring, bundle optimization, redirect elimination & test results*
+* [**Project Structure & Architecture Guide**](file:///E:/Projects/BlockBallot-EVoting-System/docs/PROJECT_STRUCTURE.md) — *Detailed directory layout, component boundaries, entrypoints & data flows*
+* [**Codebase Audit & Inventory**](file:///E:/Projects/BlockBallot-EVoting-System/docs/CODEBASE_AUDIT.md) — *Comprehensive pre-refactor architectural analysis and gap inventory*
+* [**Phase 13 Final Security Audit**](file:///E:/Projects/BlockBallot-EVoting-System/docs/PHASE13_FINAL_SECURITY_AUDIT.md) — *Authoritative 25-workflow release readiness and security review*
+* [**Release Readiness Decision**](file:///E:/Projects/BlockBallot-EVoting-System/docs/RELEASE_READINESS.md) — *Formal release verdict: Academic simulation approved; public blocked*
+* [**Known Cryptographic Limitations**](file:///E:/Projects/BlockBallot-EVoting-System/docs/KNOWN_LIMITATIONS.md) — *Detailed analysis of EVM transaction calldata candidate-choice disclosure*
+* [Database Architecture & Rules Guide](file:///E:/Projects/BlockBallot-EVoting-System/database/README.md)
+* [Phase 12 UI/UX Audit](file:///E:/Projects/BlockBallot-EVoting-System/docs/PHASE12_UI_UX_AUDIT.md)
 * [Staging & Operations Runbook](file:///E:/Projects/BlockBallot-EVoting-System/docs/STAGING_RUNBOOK.md)
-* [Voter Workflow Guide](file:///E:/Projects/BlockBallot-EVoting-System/docs/VOTER_WORKFLOW_GUIDE.md)
-* [Administrator Workflow Guide](file:///E:/Projects/BlockBallot-EVoting-System/docs/ADMIN_WORKFLOW_GUIDE.md)
-* [Security & Limitations Document](file:///E:/Projects/BlockBallot-EVoting-System/docs/SECURITY_AND_LIMITATIONS.md)
-* [Academic Demonstration Checklist](file:///E:/Projects/BlockBallot-EVoting-System/docs/ACADEMIC_DEMO_CHECKLIST.md)
+* [Configuration Reference Guide](file:///E:/Projects/BlockBallot-EVoting-System/docs/CONFIGURATION_REFERENCE.md)
 
 ---
 
