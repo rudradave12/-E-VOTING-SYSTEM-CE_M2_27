@@ -37,7 +37,7 @@ export const KNOWN_TEST_SIGNING_KEYS = new Set([
 export const SERVER_CONFIG = {
   // High-entropy HMAC secret for OTP hashing
   get HMAC_SECRET(): string {
-    if (process.env.NODE_ENV === 'production') {
+    if (process.env.NODE_ENV === 'production' && process.env.HOSTED_DEMO_ENABLED !== 'true') {
       return process.env.SERVER_HMAC_SECRET || '';
     }
     return process.env.SERVER_HMAC_SECRET || DEFAULT_FALLBACK_HMAC_SECRET;
@@ -47,7 +47,7 @@ export const SERVER_CONFIG = {
   // Strictly loaded from environment secrets in production; test keys are rejected in production
   get AUTHORIZATION_SIGNER_PRIVATE_KEY(): string {
     const rawKey = process.env.SERVER_AUTHORIZATION_SIGNER_KEY;
-    if (process.env.NODE_ENV === 'production') {
+    if (process.env.NODE_ENV === 'production' && process.env.HOSTED_DEMO_ENABLED !== 'true') {
       if (!rawKey) return '';
       if (KNOWN_TEST_SIGNING_KEYS.has(rawKey.trim().toLowerCase())) {
         return '';
@@ -62,7 +62,7 @@ export const SERVER_CONFIG = {
 
   // Server salt for pseudonymous voter nullifier derivation
   get COMMITMENT_SALT(): string {
-    if (process.env.NODE_ENV === 'production') {
+    if (process.env.NODE_ENV === 'production' && process.env.HOSTED_DEMO_ENABLED !== 'true') {
       return process.env.SERVER_COMMITMENT_SALT || '';
     }
     return process.env.SERVER_COMMITMENT_SALT || DEFAULT_FALLBACK_COMMITMENT_SALT;
@@ -70,7 +70,7 @@ export const SERVER_CONFIG = {
 
   // High-entropy 256-bit encryption key for field-level AES-256-GCM data encryption at rest
   get APP_ENCRYPTION_KEY(): string {
-    if (process.env.NODE_ENV === 'production') {
+    if (process.env.NODE_ENV === 'production' && process.env.HOSTED_DEMO_ENABLED !== 'true') {
       return process.env.APP_ENCRYPTION_KEY || process.env.DATA_ENCRYPTION_KEY || '';
     }
     return (

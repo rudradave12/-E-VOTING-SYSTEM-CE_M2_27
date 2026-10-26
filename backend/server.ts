@@ -22,11 +22,18 @@ async function startServer() {
   // 1. Production Fail-Closed Safeguard
   const configCheck = validateServerConfig();
   if (isProd && !configCheck.isValid) {
-    console.error('[BlockBallot Server] FATAL: Production startup aborted due to configuration security violations:');
-    for (const err of configCheck.errors) {
-      console.error(`  - ${err}`);
+    if (process.env.HOSTED_DEMO_ENABLED === 'true') {
+      console.warn('[BlockBallot Server] NOTICE: Running in HOSTED_DEMO_ENABLED mode with academic fallback keys for demonstration.');
+      for (const err of configCheck.errors) {
+        console.warn(`  [Demo Advisory] ${err}`);
+      }
+    } else {
+      console.error('[BlockBallot Server] FATAL: Production startup aborted due to configuration security violations:');
+      for (const err of configCheck.errors) {
+        console.error(`  - ${err}`);
+      }
+      process.exit(1);
     }
-    process.exit(1);
   }
 
   const app = express();
