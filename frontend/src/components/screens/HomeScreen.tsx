@@ -19,7 +19,6 @@ import {
   Info,
   Calendar,
   CheckCircle2,
-  GraduationCap,
 } from 'lucide-react';
 import { CivicEmblem } from '../CivicEmblem';
 import { AcademicSimulationNotice } from '../common/AcademicSimulationNotice';
@@ -253,29 +252,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         <p className="text-xs text-slate-600 leading-relaxed">
           In this academic prototype, voter personal identity (EPIC ID, phone number, name) is kept strictly off-chain using cryptographically derived nullifiers to prevent duplicate voting. However, on public EVM blockchains, smart contract function arguments (candidate choice and constituency ID) are contained in transaction calldata and receipt logs. Therefore, this prototype does not guarantee cryptographic ballot secrecy (such as through zero-knowledge proofs) and is not legally approved for official Indian elections.
         </p>
-      </div>
-
-      {/* Academic Capstone & Project Team Banner */}
-      <div className="rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50/70 via-white to-orange-50/70 p-6 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="space-y-1">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[11px] font-semibold">
-            <GraduationCap className="w-3.5 h-3.5" />
-            <span>Project ID: CE_M2_27 · Silver Oak University</span>
-          </div>
-          <h3 className="font-bold text-slate-900 text-base">
-            B.Tech Computer Engineering Capstone Project
-          </h3>
-          <p className="text-xs text-slate-600 max-w-2xl">
-            <strong>BlockBallot</strong> — Developed by <strong>Rudra Patel</strong> (2301030400100), <strong>Rudra Dave</strong> (2301030400084), and <strong>Ayush Jagtap</strong> (2301030400085) under faculty guidance of <strong>Ms. Jhankhana Koshti</strong>.
-          </p>
-        </div>
-        <button
-          onClick={() => onNavigate('about-project')}
-          className="shrink-0 inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-        >
-          <span>View Project & Team</span>
-          <ArrowRight className="w-3.5 h-3.5" />
-        </button>
       </div>
 
       {/* Secondary Research & Administrative Links */}

@@ -5,14 +5,10 @@
 
 import React from 'react';
 import {
-  GraduationCap,
-  Users,
-  Award,
   ExternalLink,
   Github,
   Globe,
   BookOpen,
-  Building2,
   FileCode,
   ShieldCheck,
   Cpu,
@@ -20,6 +16,10 @@ import {
   ArrowRight,
   Database,
   Lock,
+  KeyRound,
+  FileText,
+  Activity,
+  CheckCircle2,
 } from 'lucide-react';
 import { CivicEmblem } from '../CivicEmblem';
 import { NavigationScreen } from '../../types';
@@ -29,27 +29,6 @@ interface AboutProjectScreenProps {
 }
 
 export const AboutProjectScreen: React.FC<AboutProjectScreenProps> = ({ onNavigate }) => {
-  const teamMembers = [
-    {
-      name: 'Rudra Patel',
-      enrollment: '2301030400100',
-      role: 'Project Contributor',
-      branch: 'Computer Engineering',
-    },
-    {
-      name: 'Rudra Dave',
-      enrollment: '2301030400084',
-      role: 'Project Contributor',
-      branch: 'Computer Engineering',
-    },
-    {
-      name: 'Ayush Jagtap',
-      enrollment: '2301030400085',
-      role: 'Project Contributor',
-      branch: 'Computer Engineering',
-    },
-  ];
-
   return (
     <div className="w-full max-w-6xl mx-auto px-4 py-8 space-y-8 animate-fadeIn">
       {/* Header Banner */}
@@ -60,8 +39,8 @@ export const AboutProjectScreen: React.FC<AboutProjectScreenProps> = ({ onNaviga
         <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
           <div className="space-y-3 max-w-3xl">
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 border border-white/15 rounded-full text-xs font-medium text-orange-200">
-              <GraduationCap className="w-4 h-4 text-orange-400" />
-              <span>Academic Engineering Capstone · Project ID: CE_M2_27</span>
+              <ShieldCheck className="w-4 h-4 text-orange-400" />
+              <span>Academic Research Prototype · Verifiable E-Voting</span>
             </div>
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-white leading-tight">
               Blockchain-Based E-Voting System for Indian Political Elections with Secure Connections (BlockBallot)
@@ -76,7 +55,7 @@ export const AboutProjectScreen: React.FC<AboutProjectScreenProps> = ({ onNaviga
           <div className="shrink-0 bg-white/5 border border-white/10 rounded-xl p-4 flex flex-col items-center text-center">
             <CivicEmblem size={56} className="text-white drop-shadow-md mb-2" />
             <span className="text-xs font-semibold tracking-wider uppercase text-slate-300">BlockBallot</span>
-            <span className="text-[11px] text-slate-400 font-mono">B.Tech CE · 7th Sem</span>
+            <span className="text-[11px] text-slate-400 font-mono">Academic Prototype</span>
           </div>
         </div>
       </div>
@@ -104,119 +83,63 @@ export const AboutProjectScreen: React.FC<AboutProjectScreenProps> = ({ onNaviga
         </div>
       </div>
 
-      {/* Academic Credentials & Department Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Project Meta Information */}
-        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs space-y-4">
-          <div className="flex items-center gap-2.5 text-slate-900 border-b border-slate-100 pb-3">
-            <Building2 className="w-5 h-5 text-indigo-600" />
-            <h2 className="text-base font-bold">Institutional Information</h2>
-          </div>
-          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3 text-xs sm:text-sm">
-            <div>
-              <dt className="text-slate-400 text-xs">Project ID</dt>
-              <dd className="font-semibold text-slate-800 font-mono">CE_M2_27</dd>
-            </div>
-            <div>
-              <dt className="text-slate-400 text-xs">Programme</dt>
-              <dd className="font-semibold text-slate-800">Bachelor of Technology (B.Tech)</dd>
-            </div>
-            <div>
-              <dt className="text-slate-400 text-xs">Branch</dt>
-              <dd className="font-semibold text-slate-800">Computer Engineering</dd>
-            </div>
-            <div>
-              <dt className="text-slate-400 text-xs">Academic Semester</dt>
-              <dd className="font-semibold text-slate-800">Semester 7</dd>
-            </div>
-            <div className="sm:col-span-2">
-              <dt className="text-slate-400 text-xs">Course Name & Code</dt>
-              <dd className="font-semibold text-slate-800">
-                Advanced Programming with Project-I (Course Code: 1010103494) / Minor Project
-              </dd>
-            </div>
-            <div className="sm:col-span-2">
-              <dt className="text-slate-400 text-xs">Institution</dt>
-              <dd className="font-semibold text-slate-800">
-                College of Technology, Silver Oak University, Ahmedabad, Gujarat
-              </dd>
-            </div>
-          </dl>
-        </div>
-
-        {/* Faculty Guide Card */}
-        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs space-y-4 flex flex-col justify-between">
-          <div className="space-y-4">
-            <div className="flex items-center gap-2.5 text-slate-900 border-b border-slate-100 pb-3">
-              <Award className="w-5 h-5 text-emerald-600" />
-              <h2 className="text-base font-bold">Project Faculty Guide</h2>
-            </div>
-            <div className="flex items-start gap-4 pt-1">
-              <div className="w-14 h-14 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 font-bold text-lg shrink-0">
-                JK
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-base font-bold text-slate-900">Ms. Jhankhana Koshti</h3>
-                <span className="inline-block px-2.5 py-0.5 bg-emerald-100/70 text-emerald-800 rounded-md text-xs font-medium">
-                  Internal Guide
-                </span>
-                <p className="text-xs text-slate-600 pt-1">
-                  Department of Computer Engineering<br />
-                  College of Technology, Silver Oak University
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="pt-4 border-t border-slate-100 text-[11px] text-slate-400 italic">
-            Faculty guidance and supervision under the Department of Computer Engineering for the B.Tech 7th Semester
-            Capstone Evaluation.
-          </div>
-        </div>
-      </div>
-
-      {/* Project Team Members */}
+      {/* Core Architectural Pillars */}
       <div className="bg-white rounded-xl border border-slate-200 p-6 sm:p-8 shadow-xs space-y-6">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-          <div className="flex items-center gap-2.5 text-slate-900">
-            <Users className="w-5 h-5 text-orange-600" />
-            <h2 className="text-lg font-bold">Project Team Members</h2>
-          </div>
-          <span className="text-xs text-slate-500 font-medium">Group ID: CE_M2_27</span>
+        <div className="flex items-center gap-2.5 text-slate-900 border-b border-slate-100 pb-3">
+          <Cpu className="w-5 h-5 text-indigo-600" />
+          <h2 className="text-lg font-bold">Key Architectural Features & Security Principles</h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {teamMembers.map((member, idx) => (
-            <div
-              key={member.enrollment}
-              className="bg-slate-50 hover:bg-slate-100/80 transition-colors border border-slate-200 rounded-xl p-5 space-y-3 relative group"
-            >
-              <div className="flex items-center justify-between">
-                <span className="w-8 h-8 rounded-lg bg-orange-100 text-orange-700 font-bold text-xs flex items-center justify-center">
-                  0{idx + 1}
-                </span>
-                <span className="text-[11px] font-mono px-2 py-0.5 bg-white border border-slate-200 rounded text-slate-600">
-                  {member.role}
-                </span>
-              </div>
-              <div>
-                <h3 className="font-bold text-slate-900 text-base">{member.name}</h3>
-                <p className="text-xs text-slate-500">{member.branch}</p>
-              </div>
-              <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs">
-                <span className="text-slate-400">Enrollment No.</span>
-                <span className="font-mono font-semibold text-slate-800 bg-white px-2 py-0.5 rounded border border-slate-200">
-                  {member.enrollment}
-                </span>
-              </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs sm:text-sm">
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+            <div className="flex items-center gap-2 font-bold text-slate-900">
+              <KeyRound className="w-4 h-4 text-orange-600" />
+              <span>1. EIP-712 Typed Signature Authorization</span>
             </div>
-          ))}
+            <p className="text-slate-600 leading-relaxed text-xs">
+              Voters receive a cryptographically signed authorization ticket after verifying their synthetic identity and
+              OTP. The smart contract validates this signature on-chain to authorize exactly one ballot per eligible elector.
+            </p>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+            <div className="flex items-center gap-2 font-bold text-slate-900">
+              <Lock className="w-4 h-4 text-emerald-600" />
+              <span>2. On-Chain Double-Voting Prevention</span>
+            </div>
+            <p className="text-slate-600 leading-relaxed text-xs">
+              Ballot choices are recorded on an immutable EVM smart contract ledger (<code className="font-mono text-slate-800">BlockBallot.sol</code>). A cryptographic nullifier mapping prevents duplicate ballot submissions.
+            </p>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+            <div className="flex items-center gap-2 font-bold text-slate-900">
+              <ShieldCheck className="w-4 h-4 text-blue-600" />
+              <span>3. Role Separation & Administrative Safeguards</span>
+            </div>
+            <p className="text-slate-600 leading-relaxed text-xs">
+              Strict separation between Voter Registration Officers (VRO), Election Officers (EO), and Platform
+              Administrators prevents unauthorized privilege escalation and ensures clean division of authority.
+            </p>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+            <div className="flex items-center gap-2 font-bold text-slate-900">
+              <Activity className="w-4 h-4 text-purple-600" />
+              <span>4. Tamper-Resistant Auditing & Gazette Archive</span>
+            </div>
+            <p className="text-slate-600 leading-relaxed text-xs">
+              Every identity lookup, OTP dispatch, status update, and ballot authorization generates an auditable,
+              timestamped log event. Official 2024 Lok Sabha election results are preserved in an isolated archive.
+            </p>
+          </div>
         </div>
       </div>
 
       {/* Architecture & Tech Stack */}
       <div className="bg-white rounded-xl border border-slate-200 p-6 sm:p-8 shadow-xs space-y-6">
         <div className="flex items-center gap-2.5 text-slate-900 border-b border-slate-100 pb-3">
-          <Cpu className="w-5 h-5 text-indigo-600" />
+          <Layers className="w-5 h-5 text-indigo-600" />
           <h2 className="text-lg font-bold">System Architecture & Verified Stack</h2>
         </div>
 
