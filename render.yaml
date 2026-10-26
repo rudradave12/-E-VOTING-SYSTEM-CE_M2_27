@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: blockballot
+    name: blockballot-e-voting-system
     runtime: node
     plan: free
     branch: main

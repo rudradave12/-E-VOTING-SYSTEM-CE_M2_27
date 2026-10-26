@@ -22,6 +22,7 @@ import {
   RotateCcw,
   Database,
   Activity,
+  Info,
 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -113,6 +114,12 @@ export const Navbar: React.FC<NavbarProps> = ({
       label: language === 'hi' ? 'मतदाता' : 'Voter Login',
       fullTitle: language === 'hi' ? 'मतदाता लॉगिन' : 'Voter Identification & Login',
       icon: Users,
+    },
+    {
+      id: 'about-project',
+      label: language === 'hi' ? 'परियोजना' : 'About Project',
+      fullTitle: language === 'hi' ? 'परियोजना एवं दल का विवरण' : 'Project & Team Details',
+      icon: Info,
     },
   ];
 

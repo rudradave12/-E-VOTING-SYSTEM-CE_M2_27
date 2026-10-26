@@ -17,7 +17,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 async function startServer() {
-  const isProd = process.env.NODE_ENV === 'production';
+  const isProd = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
 
   // 1. Production Fail-Closed Safeguard
   const configCheck = validateServerConfig();
@@ -139,19 +139,57 @@ async function startServer() {
       console.warn('[BlockBallot] Initial Firestore seed/sync notice:', err.message);
     });
 
-  // Vite development integration or static serving
-  const candidateDist = path.resolve(__dirname, '../dist');
-  const fallbackDist = path.resolve(__dirname, '../frontend/dist');
-  const distDir = fs.existsSync(path.join(candidateDist, 'index.html')) ? candidateDist : fallbackDist;
-  const distExists = fs.existsSync(path.join(distDir, 'index.html'));
+  // Robust production dist resolution across project layouts
+  const distCandidates = [
+    path.resolve(__dirname, '../dist'),
+    path.resolve(process.cwd(), 'dist'),
+    path.resolve(__dirname, '../../dist'),
+    path.resolve(__dirname, '../frontend/dist'),
+    path.resolve(process.cwd(), 'frontend/dist'),
+  ];
+  let distDir = distCandidates.find((dir) => fs.existsSync(path.join(dir, 'index.html')));
 
-  if (isProd || distExists) {
-    app.use(express.static(distDir));
+  // Self-healing fallback: if in production/Render or hosted mode and dist does not exist, run build
+  const isHosted = isProd || process.env.RENDER === 'true' || process.env.HOSTED_DEMO_ENABLED === 'true';
+  if (!distDir && isHosted) {
+    console.warn('[BlockBallot Server] Production build not found at startup. Executing self-healing frontend build...');
+    try {
+      const { execSync } = await import('child_process');
+      execSync('npm run build', { stdio: 'inherit', cwd: path.resolve(__dirname, '..') });
+      distDir = distCandidates.find((dir) => fs.existsSync(path.join(dir, 'index.html')));
+    } catch (buildErr: any) {
+      console.error('[BlockBallot Server] Self-healing build notice:', buildErr?.message);
+    }
+  }
+
+  if (distDir && fs.existsSync(path.join(distDir, 'index.html'))) {
+    console.log(`[BlockBallot Server] Serving static production bundle from: ${distDir}`);
+    // Static assets with fingerprinted caching (1 year immutable)
+    app.use(
+      '/assets',
+      express.static(path.join(distDir, 'assets'), {
+        maxAge: '1y',
+        immutable: true,
+      })
+    );
+    // General static assets with no-cache on index.html
+    app.use(
+      express.static(distDir, {
+        setHeaders: (res, filePath) => {
+          if (filePath.endsWith('index.html')) {
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+          }
+        },
+      })
+    );
+    // SPA catch-all for client-side routing (excluding /api/*)
     app.get('*', (_req, res, next) => {
       if (_req.path.startsWith('/api/')) return next();
-      res.sendFile(path.join(distDir, 'index.html'));
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.sendFile(path.join(distDir!, 'index.html'));
     });
   } else {
+    console.warn('[BlockBallot Server] NOTICE: Vite dev server middleware active (local development only).');
     const vite = await createViteServer({
       configFile: path.resolve(__dirname, '../frontend/vite.config.ts'),
       root: path.resolve(__dirname, '../frontend'),

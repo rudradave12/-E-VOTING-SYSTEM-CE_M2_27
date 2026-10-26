@@ -31,35 +31,96 @@ import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import { Navbar } from './components/Navbar';
 import { VotingStepper } from './components/VotingStepper';
 
-// Screens
-import { AvailableElectionsScreen } from './components/screens/AvailableElectionsScreen';
+// Core Primary Screens (Instant Initial Load)
 import { HomeScreen } from './components/screens/HomeScreen';
-import { ElectionsResultsScreen } from './components/screens/ElectionsResultsScreen';
-import { CandidatesPartiesScreen } from './components/screens/CandidatesPartiesScreen';
-import { ConstituencyInfoScreen } from './components/screens/ConstituencyInfoScreen';
-import { HowItWorksScreen } from './components/screens/HowItWorksScreen';
-import { PreferencePollScreen } from './components/screens/PreferencePollScreen';
-import { PracticeVotingScreen } from './components/screens/PracticeVotingScreen';
+import { AvailableElectionsScreen } from './components/screens/AvailableElectionsScreen';
 import { IdentifyScreen } from './components/screens/IdentifyScreen';
 import { OtpScreen } from './components/screens/OtpScreen';
 import { ConstituencyScreen } from './components/screens/ConstituencyScreen';
 import { CandidatesScreen } from './components/screens/CandidatesScreen';
 import { ReviewScreen } from './components/screens/ReviewScreen';
-import { MetaMaskScreen } from './components/screens/MetaMaskScreen';
 import { ReceiptScreen } from './components/screens/ReceiptScreen';
-import { AdminLoginScreen } from './components/screens/AdminLoginScreen';
-import { AdminDashboardScreen } from './components/screens/AdminDashboardScreen';
-import { AdminElectionsScreen } from './components/screens/AdminElectionsScreen';
-import { AdminCandidatesScreen } from './components/screens/AdminCandidatesScreen';
-import { AdminVotersScreen } from './components/screens/AdminVotersScreen';
-import { AdminAuditScreen } from './components/screens/AdminAuditScreen';
-import { FaceEnrollmentScreen } from './components/screens/FaceEnrollmentScreen';
-import { FingerprintEnrollmentScreen } from './components/screens/FingerprintEnrollmentScreen';
-import { AdminExceptionsScreen } from './components/screens/AdminExceptionsScreen';
-import { HistoricalArchiveScreen } from './components/screens/HistoricalArchiveScreen';
-import { ElectionMonitorScreen } from './components/screens/ElectionMonitorScreen';
+
+// Secondary & Administrative Screens (Code-split for fast initial load)
+const AboutProjectScreen = React.lazy(() =>
+  import('./components/screens/AboutProjectScreen').then((m) => ({ default: m.AboutProjectScreen }))
+);
+const ElectionsResultsScreen = React.lazy(() =>
+  import('./components/screens/ElectionsResultsScreen').then((m) => ({ default: m.ElectionsResultsScreen }))
+);
+const CandidatesPartiesScreen = React.lazy(() =>
+  import('./components/screens/CandidatesPartiesScreen').then((m) => ({ default: m.CandidatesPartiesScreen }))
+);
+const ConstituencyInfoScreen = React.lazy(() =>
+  import('./components/screens/ConstituencyInfoScreen').then((m) => ({ default: m.ConstituencyInfoScreen }))
+);
+const HowItWorksScreen = React.lazy(() =>
+  import('./components/screens/HowItWorksScreen').then((m) => ({ default: m.HowItWorksScreen }))
+);
+const PreferencePollScreen = React.lazy(() =>
+  import('./components/screens/PreferencePollScreen').then((m) => ({ default: m.PreferencePollScreen }))
+);
+const PracticeVotingScreen = React.lazy(() =>
+  import('./components/screens/PracticeVotingScreen').then((m) => ({ default: m.PracticeVotingScreen }))
+);
+const MetaMaskScreen = React.lazy(() =>
+  import('./components/screens/MetaMaskScreen').then((m) => ({ default: m.MetaMaskScreen }))
+);
+const AdminLoginScreen = React.lazy(() =>
+  import('./components/screens/AdminLoginScreen').then((m) => ({ default: m.AdminLoginScreen }))
+);
+const AdminDashboardScreen = React.lazy(() =>
+  import('./components/screens/AdminDashboardScreen').then((m) => ({ default: m.AdminDashboardScreen }))
+);
+const AdminElectionsScreen = React.lazy(() =>
+  import('./components/screens/AdminElectionsScreen').then((m) => ({ default: m.AdminElectionsScreen }))
+);
+const AdminCandidatesScreen = React.lazy(() =>
+  import('./components/screens/AdminCandidatesScreen').then((m) => ({ default: m.AdminCandidatesScreen }))
+);
+const AdminVotersScreen = React.lazy(() =>
+  import('./components/screens/AdminVotersScreen').then((m) => ({ default: m.AdminVotersScreen }))
+);
+const AdminAuditScreen = React.lazy(() =>
+  import('./components/screens/AdminAuditScreen').then((m) => ({ default: m.AdminAuditScreen }))
+);
+const FaceEnrollmentScreen = React.lazy(() =>
+  import('./components/screens/FaceEnrollmentScreen').then((m) => ({ default: m.FaceEnrollmentScreen }))
+);
+const FingerprintEnrollmentScreen = React.lazy(() =>
+  import('./components/screens/FingerprintEnrollmentScreen').then((m) => ({ default: m.FingerprintEnrollmentScreen }))
+);
+const AdminExceptionsScreen = React.lazy(() =>
+  import('./components/screens/AdminExceptionsScreen').then((m) => ({ default: m.AdminExceptionsScreen }))
+);
+const HistoricalArchiveScreen = React.lazy(() =>
+  import('./components/screens/HistoricalArchiveScreen').then((m) => ({ default: m.HistoricalArchiveScreen }))
+);
+const ElectionMonitorScreen = React.lazy(() =>
+  import('./components/screens/ElectionMonitorScreen').then((m) => ({ default: m.ElectionMonitorScreen }))
+);
+
+const ScreenLoadingFallback: React.FC = () => (
+  <div className="min-h-[40vh] flex flex-col items-center justify-center p-8 space-y-3">
+    <div className="w-8 h-8 border-3 border-orange-500 border-t-transparent rounded-full animate-spin" />
+    <span className="text-xs font-semibold text-slate-500 font-mono">Loading BlockBallot Module...</span>
+  </div>
+);
 import { VoterProfile } from './types/dataModel';
-import { ShieldAlert, AlertTriangle, Lock, RefreshCw, Key, Maximize2, X, CheckCircle2 } from 'lucide-react';
+import {
+  ShieldAlert,
+  AlertTriangle,
+  Lock,
+  RefreshCw,
+  Key,
+  Maximize2,
+  X,
+  CheckCircle2,
+  ExternalLink,
+  Github,
+  Info,
+  GraduationCap,
+} from 'lucide-react';
 
 export function AppInner() {
   const [currentScreen, setCurrentScreen] = useState<NavigationScreen>('welcome');
@@ -582,13 +643,18 @@ export function AppInner() {
       {isVoterFlow && <VotingStepper currentScreen={currentScreen} />}
 
       <main className="flex-1 pb-16">
-        {(currentScreen === 'welcome' || currentScreen === 'home') && (
-          <HomeScreen
-            onNavigate={(screen) => setCurrentScreen(screen)}
-            elections={elections}
-            onStartPractice={() => setCurrentScreen('available-elections')}
-          />
-        )}
+        <React.Suspense fallback={<ScreenLoadingFallback />}>
+          {(currentScreen === 'welcome' || currentScreen === 'home') && (
+            <HomeScreen
+              onNavigate={(screen) => setCurrentScreen(screen)}
+              elections={elections}
+              onStartPractice={() => setCurrentScreen('available-elections')}
+            />
+          )}
+
+          {currentScreen === 'about-project' && (
+            <AboutProjectScreen onNavigate={(screen) => setCurrentScreen(screen)} />
+          )}
 
         {(currentScreen === 'available-elections' || currentScreen === 'vote') && (
           <AvailableElectionsScreen
@@ -835,11 +901,13 @@ export function AppInner() {
             onBack={() => setCurrentScreen('admin-dashboard')}
           />
         )}
+        </React.Suspense>
 
         {/* Fallback Recovery State for Unrecognized or Expired Screen */}
         {![
           'welcome',
           'home',
+          'about-project',
           'available-elections',
           'vote',
           'elections-results',
@@ -1074,59 +1142,192 @@ export function AppInner() {
         )}
       </main>
 
-      <footer className="border-t border-slate-200 bg-white py-8 px-4 text-xs text-slate-500">
-        <div className="max-w-6xl mx-auto space-y-4">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-slate-100 pb-4">
-            <div className="text-left">
-              <span className="font-bold text-slate-800 block text-xs">BlockBallot E-Voting Academic Prototype</span>
-              <p className="text-[11px] text-slate-500 mt-0.5">
-                Synthetic test records only · EIP-712 typed authorizations · Solidity 0.8.20 EVM ledger · Not affiliated with live UIDAI/ECI systems.
+      <footer className="border-t border-slate-200 bg-slate-900 text-slate-300 py-10 px-4 text-xs">
+        <div className="max-w-7xl mx-auto space-y-8">
+          {/* Top row: Project identity, University, and Actions */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 border-b border-slate-800 pb-8">
+            {/* Col 1: Project Title & Description */}
+            <div className="space-y-3 md:col-span-1">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-orange-600 flex items-center justify-center font-black text-white text-xs shadow-md">
+                  BB
+                </div>
+                <div>
+                  <span className="font-bold text-white text-sm tracking-tight block">BlockBallot</span>
+                  <span className="text-[10px] text-orange-400 font-mono">Academic Prototype · CE_M2_27</span>
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Academic research prototype exploring blockchain-based electronic voting workflows with EIP-712 typed authorizations, EVM smart contracts, and role-based officer controls.
               </p>
+              <div className="pt-1">
+                <button
+                  onClick={() => {
+                    setCurrentScreen('about-project');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500/15 text-orange-300 hover:bg-orange-500/25 border border-orange-500/30 text-[11px] font-semibold transition-colors cursor-pointer"
+                >
+                  <Info className="w-3.5 h-3.5" />
+                  View Full Project Details
+                </button>
+              </div>
             </div>
-            <div className="flex items-center gap-3 text-[11px] font-mono text-slate-400">
-              <span>Local EVM: 31337</span>
-              <span>·</span>
-              <span>Node.js / Express</span>
-              <span>·</span>
-              <span>React 19 / Vite</span>
+
+            {/* Col 2: Navigation Links */}
+            <div className="space-y-3">
+              <span className="font-bold text-white text-xs uppercase tracking-wider block">
+                Platform Navigation
+              </span>
+              <ul className="space-y-2 text-[11px] text-slate-400">
+                <li>
+                  <button
+                    onClick={() => {
+                      setCurrentScreen('about-project');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className="hover:text-orange-400 transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Info className="w-3 h-3 text-orange-400" />
+                    About Project & Research Specs
+                  </button>
+                </li>
+                <li>
+                  <button
+                    onClick={() => {
+                      setCurrentScreen('how-it-works');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className="hover:text-white transition-colors cursor-pointer"
+                  >
+                    How Voting Works (Guide)
+                  </button>
+                </li>
+                <li>
+                  <button
+                    onClick={() => {
+                      setCurrentScreen('elections-results');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className="hover:text-white transition-colors cursor-pointer"
+                  >
+                    2024 Sourced Results Archive
+                  </button>
+                </li>
+                <li>
+                  <button
+                    onClick={() => {
+                      setCurrentScreen('candidates-parties');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className="hover:text-white transition-colors cursor-pointer"
+                  >
+                    Party & Candidate Directory
+                  </button>
+                </li>
+                <li>
+                  <button
+                    onClick={() => {
+                      setCurrentScreen('preference-poll');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className="hover:text-white transition-colors cursor-pointer"
+                  >
+                    Party Preference Poll (Survey)
+                  </button>
+                </li>
+                <li>
+                  <button
+                    onClick={() => {
+                      setCurrentScreen('admin-login');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className="text-orange-400 hover:text-orange-300 font-medium transition-colors cursor-pointer"
+                  >
+                    Officer / Admin Portal →
+                  </button>
+                </li>
+              </ul>
+            </div>
+
+            {/* Col 3: Academic Team & Faculty Guide */}
+            <div className="space-y-3">
+              <span className="font-bold text-white text-xs uppercase tracking-wider block flex items-center gap-1.5">
+                <GraduationCap className="w-3.5 h-3.5 text-orange-400" />
+                Academic Credits
+              </span>
+              <div className="space-y-2 text-[11px] text-slate-400">
+                <div>
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 block">
+                    Internal Faculty Guide
+                  </span>
+                  <span className="text-slate-200 font-medium block">Ms. Jhankhana Koshti</span>
+                  <span className="text-[10px] text-slate-400">Dept. of Computer Engineering</span>
+                </div>
+                <div className="pt-1">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 block">
+                    Project Group Members
+                  </span>
+                  <ul className="space-y-1 text-slate-300">
+                    <li>1. Rudra Patel · <span className="font-mono text-slate-400">2301030400100</span></li>
+                    <li>2. Rudra Dave · <span className="font-mono text-slate-400">2301030400084</span></li>
+                    <li>3. Ayush Jagtap · <span className="font-mono text-slate-400">2301030400085</span></li>
+                  </ul>
+                </div>
+                <p className="text-[10px] text-slate-400 pt-1">
+                  College of Technology, Silver Oak University
+                </p>
+              </div>
+            </div>
+
+            {/* Col 4: Links & Technical Verification */}
+            <div className="space-y-3">
+              <span className="font-bold text-white text-xs uppercase tracking-wider block">
+                Repository & Links
+              </span>
+              <div className="space-y-2 text-[11px]">
+                <a
+                  href="https://github.com/rudradave12/-E-VOTING-SYSTEM-CE_M2_27"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-slate-300 hover:text-white transition-colors"
+                >
+                  <Github className="w-3.5 h-3.5 text-slate-400" />
+                  <span>GitHub: rudradave12/CE_M2_27</span>
+                  <ExternalLink className="w-3 h-3 text-slate-500" />
+                </a>
+                <div className="block">
+                  <a
+                    href="https://blockballot-e-voting-system.onrender.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 transition-colors"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>Live Render Deployment</span>
+                    <ExternalLink className="w-3 h-3 text-emerald-500" />
+                  </a>
+                </div>
+                <div className="pt-2 text-[10px] font-mono text-slate-400 space-y-1 bg-slate-800/60 p-2.5 rounded-lg border border-slate-700/60">
+                  <div>Course Code: 1010103494</div>
+                  <div>Branch: Computer Engg (Sem 7)</div>
+                  <div>Stack: React 19 / Express / Solidity</div>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3 text-[11px]">
-            <div className="flex flex-wrap items-center gap-4 text-slate-600">
-              <button
-                onClick={() => setCurrentScreen('how-it-works')}
-                className="hover:text-slate-900 hover:underline cursor-pointer"
-              >
-                How Voting Works
-              </button>
-              <button
-                onClick={() => setCurrentScreen('elections-results')}
-                className="hover:text-slate-900 hover:underline cursor-pointer"
-              >
-                2024 Sourced Results Archive
-              </button>
-              <button
-                onClick={() => setCurrentScreen('candidates-parties')}
-                className="hover:text-slate-900 hover:underline cursor-pointer"
-              >
-                Party & Candidate Reference
-              </button>
-              <button
-                onClick={() => setCurrentScreen('preference-poll')}
-                className="hover:text-slate-900 hover:underline cursor-pointer"
-              >
-                Party Preference Poll (Opinion Survey)
-              </button>
-            </div>
-
-            <div>
-              <button
-                onClick={() => setCurrentScreen('admin-login')}
-                className="font-semibold text-slate-700 hover:text-orange-700 cursor-pointer"
-              >
-                Administrative Officer Login →
-              </button>
+          {/* Bottom row: Academic Disclaimer */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] text-slate-400">
+            <p className="text-center sm:text-left leading-relaxed max-w-3xl">
+              <strong className="text-slate-300">Academic Simulation Disclaimer:</strong> BlockBallot is an academic capstone prototype developed solely for educational and research evaluation at Silver Oak University. It is not an official service of the Election Commission of India (ECI) or UIDAI. Not approved for legally binding public elections.
+            </p>
+            <div className="flex items-center gap-3 font-mono text-[10px] text-slate-400 whitespace-nowrap">
+              <span>Solidity 0.8.20</span>
+              <span>·</span>
+              <span>EIP-712</span>
+              <span>·</span>
+              <span>Local EVM: 31337</span>
             </div>
           </div>
         </div>
