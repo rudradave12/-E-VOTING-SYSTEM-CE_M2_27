@@ -8,6 +8,11 @@ services:
     startCommand: npm start
     envVars:
       - key: NODE_ENV
-        value: development
+        value: production
       - key: PORT
         value: 10000
+      - key: FIREBASE_PROJECT_ID
+        value: e-voting-system-india
+      - key: FIRESTORE_DATABASE_ID
+        value: (default)
+

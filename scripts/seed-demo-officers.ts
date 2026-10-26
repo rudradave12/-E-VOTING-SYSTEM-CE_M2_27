@@ -55,12 +55,13 @@ function readEnvLocal(): string {
  * Updates or appends a key in .env.local safely
  */
 function upsertEnvLocalKey(content: string, key: string, value: string): string {
+  const quoted = `"${value}"`;
   const regex = new RegExp(`^${key}=.*$`, 'm');
   if (regex.test(content)) {
-    return content.replace(regex, `${key}=${value}`);
+    return content.replace(regex, `${key}=${quoted}`);
   }
   const trimmed = content.trim();
-  return trimmed ? `${trimmed}\n${key}=${value}\n` : `${key}=${value}\n`;
+  return trimmed ? `${trimmed}\n${key}=${quoted}\n` : `${key}=${quoted}\n`;
 }
 
 /**
@@ -80,28 +81,27 @@ export async function seedDemoOfficers(): Promise<SeedOfficersResult> {
   let eoPassword = '';
   const eoMatch = envLocalContent.match(/^OFFICER_EO_PASSWORD=(.+)$/m);
   if (eoMatch && eoMatch[1].trim()) {
-    eoPassword = eoMatch[1].trim();
-  } else {
-    eoPassword = `EO#${crypto.randomBytes(10).toString('base64url')}!2026`;
+    eoPassword = eoMatch[1].trim().replace(/^["']|["']$/g, '');
+  }
+  if (!eoPassword || eoPassword.length < 8) {
+    eoPassword = `EO_${crypto.randomBytes(12).toString('base64url')}!2026`;
     envLocalContent = upsertEnvLocalKey(envLocalContent, 'OFFICER_EO_PASSWORD', eoPassword);
   }
 
   let vroPassword = '';
   const vroMatch = envLocalContent.match(/^OFFICER_VRO_PASSWORD=(.+)$/m);
   if (vroMatch && vroMatch[1].trim()) {
-    vroPassword = vroMatch[1].trim();
-  } else {
-    vroPassword = `VRO#${crypto.randomBytes(10).toString('base64url')}!2026`;
-    envLocalContent = upsertEnvLocalKey(envLocalContent, 'OFFICER_VRO_PASSWORD', vroPassword);
+    vroPassword = vroMatch[1].trim().replace(/^["']|["']$/g, '');
+  }
+  if (!vroPassword || vroPassword.length < 8) {
+    vroPassword = `VRO_${crypto.randomBytes(12).toString('base64url')}!2026`;
   }
 
-  // Ensure file header exists in .env.local
-  if (!envLocalContent.includes('OFFICER_EO_PASSWORD')) {
-    envLocalContent = upsertEnvLocalKey(envLocalContent, 'OFFICER_EO_PASSWORD', eoPassword);
-  }
-  if (!envLocalContent.includes('OFFICER_VRO_PASSWORD')) {
-    envLocalContent = upsertEnvLocalKey(envLocalContent, 'OFFICER_VRO_PASSWORD', vroPassword);
-  }
+  envLocalContent = upsertEnvLocalKey(envLocalContent, 'OFFICER_EO_PASSWORD', eoPassword);
+  envLocalContent = upsertEnvLocalKey(envLocalContent, 'OFFICER_VRO_PASSWORD', vroPassword);
+
+  process.env.OFFICER_EO_PASSWORD = eoPassword;
+  process.env.OFFICER_VRO_PASSWORD = vroPassword;
 
   fs.writeFileSync(ENV_LOCAL_PATH, envLocalContent, 'utf8');
 
@@ -146,6 +146,7 @@ export async function seedDemoOfficers(): Promise<SeedOfficersResult> {
       } catch (err: any) {
         if (err.code === 'auth/uid-already-exists' || err.code === 'auth/email-already-exists') {
           await auth.updateUser(eoAccount.id, {
+            email: eoAccount.email,
             password: eoPassword,
             displayName: eoAccount.displayName,
           });
@@ -165,6 +166,7 @@ export async function seedDemoOfficers(): Promise<SeedOfficersResult> {
       } catch (err: any) {
         if (err.code === 'auth/uid-already-exists' || err.code === 'auth/email-already-exists') {
           await auth.updateUser(vroAccount.id, {
+            email: vroAccount.email,
             password: vroPassword,
             displayName: vroAccount.displayName,
           });

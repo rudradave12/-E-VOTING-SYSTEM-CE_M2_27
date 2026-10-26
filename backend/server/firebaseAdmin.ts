@@ -53,35 +53,207 @@ export async function resetFirebaseAdminForTesting(): Promise<void> {
   testFirestore = null;
 }
 
+import fs from 'fs';
+import path from 'path';
+
+/**
+ * Safely parses and normalizes service-account JSON from a JSON string, base64 string, or file path.
+ * Normalizes escaped newlines in RSA private keys to prevent PEM start line errors.
+ */
+export function parseServiceAccountKey(raw: string): any {
+  if (!raw || typeof raw !== 'string' || raw.trim().length === 0) {
+    throw new Error('Service-account credential string is empty.');
+  }
+
+  let content = raw.trim();
+
+  // If a file path is provided and exists, read it
+  if (fs.existsSync(content)) {
+    try {
+      content = fs.readFileSync(content, 'utf8').trim();
+    } catch (err: any) {
+      throw new Error(`Failed to read service account credential file: ${err.message}`);
+    }
+  }
+
+  // Handle Base64-encoded JSON if applicable
+  if (!content.startsWith('{') && /^[A-Za-z0-9+/=_\-\r\n]+$/.test(content)) {
+    try {
+      const decoded = Buffer.from(content, 'base64').toString('utf8').trim();
+      if (decoded.startsWith('{')) {
+        content = decoded;
+      }
+    } catch {
+      // Fall through if not valid base64
+    }
+  }
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(content);
+  } catch (err: any) {
+    throw new Error(`Service-account JSON could not be parsed: ${err.message}`);
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('Service-account credential must be a valid JSON object.');
+  }
+
+  // Ensure private key handles newlines appropriately (replaces literal '\n' characters)
+  if (parsed.private_key && typeof parsed.private_key === 'string') {
+    parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
+  }
+
+  return parsed;
+}
+
 /**
  * Checks whether Firebase Admin credentials or an emulator environment are configured.
  */
 export function isFirebaseConfigured(): boolean {
   if (testFirestore !== null) return true;
   return Boolean(
-    process.env.FIREBASE_SERVICE_ACCOUNT_KEY ||
-    process.env.GOOGLE_APPLICATION_CREDENTIALS ||
-    process.env.FIRESTORE_EMULATOR_HOST
+    (process.env.FIRESTORE_EMULATOR_HOST && process.env.FIRESTORE_EMULATOR_HOST.trim().length > 0) ||
+    (process.env.FIREBASE_SERVICE_ACCOUNT_KEY && process.env.FIREBASE_SERVICE_ACCOUNT_KEY.trim().length > 0) ||
+    (process.env.GOOGLE_APPLICATION_CREDENTIALS && process.env.GOOGLE_APPLICATION_CREDENTIALS.trim().length > 0)
   );
 }
 
 /**
+ * Returns safe, non-sensitive diagnostic metadata about the current Firebase configuration mode.
+ */
+export function getFirebaseDiagnostics(): {
+  configured: boolean;
+  mode: 'emulator' | 'service_account_key' | 'google_application_credentials' | 'missing';
+  projectId: string;
+  databaseId: string;
+  emulatorHost?: string;
+  detail: string;
+} {
+  const emulatorHost = process.env.FIRESTORE_EMULATOR_HOST?.trim();
+  const saKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY?.trim();
+  const gCreds = process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim();
+
+  if (emulatorHost) {
+    return {
+      configured: true,
+      mode: 'emulator',
+      emulatorHost,
+      projectId: SERVER_CONFIG.PROJECT_ID,
+      databaseId: SERVER_CONFIG.FIRESTORE_DATABASE_ID,
+      detail: `Connecting to local Firestore emulator at ${emulatorHost}`,
+    };
+  }
+
+  if (saKey) {
+    try {
+      const parsed = parseServiceAccountKey(saKey);
+      return {
+        configured: true,
+        mode: 'service_account_key',
+        projectId: parsed.project_id || SERVER_CONFIG.PROJECT_ID,
+        databaseId: SERVER_CONFIG.FIRESTORE_DATABASE_ID,
+        detail: `Valid service account credentials for project '${parsed.project_id || SERVER_CONFIG.PROJECT_ID}'`,
+      };
+    } catch (err: any) {
+      return {
+        configured: false,
+        mode: 'service_account_key',
+        projectId: SERVER_CONFIG.PROJECT_ID,
+        databaseId: SERVER_CONFIG.FIRESTORE_DATABASE_ID,
+        detail: `FIREBASE_SERVICE_ACCOUNT_KEY error: ${err.message}`,
+      };
+    }
+  }
+
+  if (gCreds) {
+    if (!fs.existsSync(gCreds)) {
+      return {
+        configured: false,
+        mode: 'google_application_credentials',
+        projectId: SERVER_CONFIG.PROJECT_ID,
+        databaseId: SERVER_CONFIG.FIRESTORE_DATABASE_ID,
+        detail: `GOOGLE_APPLICATION_CREDENTIALS file not found at path: ${path.basename(gCreds)}`,
+      };
+    }
+    try {
+      const parsed = parseServiceAccountKey(gCreds);
+      return {
+        configured: true,
+        mode: 'google_application_credentials',
+        projectId: parsed.project_id || SERVER_CONFIG.PROJECT_ID,
+        databaseId: SERVER_CONFIG.FIRESTORE_DATABASE_ID,
+        detail: `Valid credential file for project '${parsed.project_id || SERVER_CONFIG.PROJECT_ID}'`,
+      };
+    } catch (err: any) {
+      return {
+        configured: false,
+        mode: 'google_application_credentials',
+        projectId: SERVER_CONFIG.PROJECT_ID,
+        databaseId: SERVER_CONFIG.FIRESTORE_DATABASE_ID,
+        detail: `Credential file parsing error: ${err.message}`,
+      };
+    }
+  }
+
+  return {
+    configured: false,
+    mode: 'missing',
+    projectId: SERVER_CONFIG.PROJECT_ID,
+    databaseId: SERVER_CONFIG.FIRESTORE_DATABASE_ID,
+    detail: 'No permitted Firebase Admin credential source was configured (FIREBASE_SERVICE_ACCOUNT_KEY, GOOGLE_APPLICATION_CREDENTIALS, or FIRESTORE_EMULATOR_HOST required).',
+  };
+}
+
+/**
  * Initializes and returns the shared Firebase Admin App instance.
+ * Supports:
+ * - Mode 1: FIRESTORE_EMULATOR_HOST (Local emulator)
+ * - Mode 2: FIREBASE_SERVICE_ACCOUNT_KEY (JSON string or base64)
+ * - Mode 3: GOOGLE_APPLICATION_CREDENTIALS (Secret file or GCP ADC)
  */
 export function getFirebaseAdminApp(): App {
   if (!adminApp) {
     if (getApps().length === 0) {
-      const saKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-      if (saKey) {
+      const emulatorHost = process.env.FIRESTORE_EMULATOR_HOST?.trim();
+      const saKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY?.trim();
+      const gCreds = process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim();
+
+      // Mode 1: Local Firestore Emulator
+      if (emulatorHost) {
+        adminApp = initializeApp({
+          projectId: SERVER_CONFIG.PROJECT_ID || 'demo-blockballot',
+        });
+      }
+      // Mode 2 & 3: Service Account Key JSON / Base64 / Path
+      else if (saKey) {
         try {
-          const parsed = JSON.parse(saKey);
+          const parsed = parseServiceAccountKey(saKey);
+          const projectId = parsed.project_id || SERVER_CONFIG.PROJECT_ID;
           adminApp = initializeApp({
             credential: cert(parsed),
-            projectId: SERVER_CONFIG.PROJECT_ID,
+            projectId,
           });
         } catch (e: any) {
-          console.warn('[FirebaseAdmin] Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY JSON:', e.message);
-          adminApp = initializeApp({ projectId: SERVER_CONFIG.PROJECT_ID });
+          console.warn('[FirebaseAdmin] Failed to initialize with FIREBASE_SERVICE_ACCOUNT_KEY:', e.message);
+          throw new Error(`Firebase Admin initialization failed: ${e.message}`);
+        }
+      }
+      // Mode 2 & 3: GOOGLE_APPLICATION_CREDENTIALS file path
+      else if (gCreds) {
+        if (!fs.existsSync(gCreds)) {
+          throw new Error(`GOOGLE_APPLICATION_CREDENTIALS file not found at path: '${path.basename(gCreds)}'`);
+        }
+        try {
+          const parsed = parseServiceAccountKey(gCreds);
+          const projectId = parsed.project_id || SERVER_CONFIG.PROJECT_ID;
+          adminApp = initializeApp({
+            credential: cert(parsed),
+            projectId,
+          });
+        } catch (e: any) {
+          console.warn('[FirebaseAdmin] Failed to initialize with GOOGLE_APPLICATION_CREDENTIALS:', e.message);
+          throw new Error(`Firebase Admin initialization failed: ${e.message}`);
         }
       } else {
         adminApp = initializeApp({ projectId: SERVER_CONFIG.PROJECT_ID });

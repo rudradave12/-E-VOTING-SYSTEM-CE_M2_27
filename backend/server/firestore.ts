@@ -460,8 +460,16 @@ export async function initPreferencePollIfNotExists(): Promise<void> {
 export async function getPreferencePollFromFirestore(pollId: string = DEFAULT_PREFERENCE_POLL_ID): Promise<PreferencePollConfig | null> {
   assertConfigured();
   const pollRef = serverDb.collection('preference_polls').doc(pollId);
-  const snap = await pollRef.get();
-  if (!snap.exists) return null;
+  let snap = await pollRef.get();
+  if (!snap.exists) {
+    if (pollId === DEFAULT_PREFERENCE_POLL_ID) {
+      await initPreferencePollIfNotExists();
+      snap = await pollRef.get();
+      if (!snap.exists) return null;
+    } else {
+      return null;
+    }
+  }
   return snap.data() as PreferencePollConfig;
 }
 

@@ -71,42 +71,47 @@ export const Navbar: React.FC<NavbarProps> = ({
   ].includes(currentScreen);
 
   const navItems = [
-    { id: 'welcome', label: language === 'hi' ? 'मुख्य पृष्ठ' : 'Home', shortLabel: language === 'hi' ? 'मुख्य' : 'Home', icon: Home },
+    {
+      id: 'welcome',
+      label: language === 'hi' ? 'मुख्य' : 'Home',
+      fullTitle: language === 'hi' ? 'मुख्य पृष्ठ' : 'Home',
+      icon: Home,
+    },
     {
       id: 'available-elections',
-      label: language === 'hi' ? 'मतदान / उपलब्ध चुनाव' : 'Vote / Elections',
-      shortLabel: language === 'hi' ? 'मतदान' : 'Vote',
+      label: language === 'hi' ? 'मतदान' : 'Vote',
+      fullTitle: language === 'hi' ? 'मतदान / उपलब्ध चुनाव' : 'Vote / Elections',
       icon: Vote,
       isHighlight: true,
     },
     {
       id: 'elections-results',
-      label: language === 'hi' ? 'पूर्व चुनाव एवं परिणाम' : 'Previous Elections',
-      shortLabel: language === 'hi' ? 'परिणाम' : 'Results',
+      label: language === 'hi' ? 'परिणाम' : 'Results',
+      fullTitle: language === 'hi' ? 'पूर्व चुनाव एवं परिणाम' : 'Election Results',
       icon: BarChart3,
     },
     {
       id: 'election-monitor',
-      label: language === 'hi' ? 'चुनाव मॉनिटर' : 'Election Monitor',
-      shortLabel: language === 'hi' ? 'मॉनिटर' : 'Monitor',
+      label: language === 'hi' ? 'मॉनिटर' : 'Monitor',
+      fullTitle: language === 'hi' ? 'चुनाव मॉनिटर' : 'Election Monitor',
       icon: Activity,
     },
     {
       id: 'historical-archive',
-      label: language === 'hi' ? 'ऐतिहासिक संग्रह' : 'Historical Archive',
-      shortLabel: language === 'hi' ? 'संग्रह' : 'Archive',
+      label: language === 'hi' ? 'संग्रह' : 'Archive',
+      fullTitle: language === 'hi' ? 'ऐतिहासिक संग्रह' : 'Historical Archive',
       icon: Database,
     },
     {
       id: 'how-it-works',
-      label: language === 'hi' ? 'मतदान कैसे काम करता है' : 'How Voting Works',
-      shortLabel: language === 'hi' ? 'मार्गदर्शन' : 'Guide',
+      label: language === 'hi' ? 'मार्गदर्शन' : 'How It Works',
+      fullTitle: language === 'hi' ? 'मतदान कैसे काम करता है' : 'How Voting Works Guide',
       icon: HelpCircle,
     },
     {
       id: 'identify',
-      label: language === 'hi' ? 'मतदाता लॉगिन' : 'Voter Login',
-      shortLabel: language === 'hi' ? 'लॉगिन' : 'Login',
+      label: language === 'hi' ? 'मतदाता' : 'Voter Login',
+      fullTitle: language === 'hi' ? 'मतदाता लॉगिन' : 'Voter Identification & Login',
       icon: Users,
     },
   ];
@@ -117,24 +122,24 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   return (
-    <header className="border-b border-slate-200 bg-white sticky top-0 z-40 shadow-2xs">
+    <header className="border-b border-slate-200 bg-white sticky top-0 z-40 shadow-2xs w-full max-w-full">
       {/* Subtle Indian Tricolor Decorative Top Edge */}
       <div className="h-1 w-full bg-gradient-to-r from-orange-600 via-slate-100 to-emerald-600" />
 
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 gap-2 sm:gap-4">
+      <div className="w-full max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8">
+        <div className="flex items-center justify-between h-16 gap-1.5 sm:gap-2 lg:gap-3 xl:gap-4">
           {/* Brand Wordmark */}
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
             <button
               onClick={() => handleNavClick('welcome')}
               className="flex items-center gap-2 sm:gap-2.5 text-left group cursor-pointer"
             >
-              <CivicEmblem size={30} className="group-hover:rotate-12 transition-transform duration-300 shrink-0" />
+              <CivicEmblem size={28} className="group-hover:rotate-12 transition-transform duration-300 shrink-0" />
               <div>
                 <span className="text-base sm:text-lg lg:text-xl font-bold tracking-tight text-slate-900 block leading-none">
                   BlockBallot
                 </span>
-                <span className="hidden sm:block text-[10px] sm:text-[11px] font-semibold text-slate-500 uppercase tracking-widest mt-0.5">
+                <span className="hidden xl:block text-[10px] font-semibold text-slate-500 uppercase tracking-widest mt-0.5">
                   Academic E-Voting Prototype
                 </span>
               </div>
@@ -142,7 +147,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Primary Navigation Sections (Desktop & Landscape Tablets) */}
-          <nav className="hidden lg:flex items-center gap-1 xl:gap-1.5 text-xs font-semibold text-slate-600">
+          <nav className="hidden lg:flex items-center gap-1 xl:gap-1.5 2xl:gap-2 text-[11px] xl:text-xs font-semibold text-slate-600 min-w-0">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive =
@@ -155,7 +160,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   key={item.id}
                   onClick={() => handleNavClick(item.id)}
-                  className={`px-2 xl:px-3 py-1.5 xl:py-2 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+                  title={item.fullTitle}
+                  className={`px-2 xl:px-2.5 2xl:px-3 py-1.5 rounded-lg flex items-center gap-1 xl:gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
                     isActive
                       ? item.isHighlight
                         ? 'bg-orange-50 text-orange-700 ring-1 ring-orange-200 font-bold'
@@ -166,8 +172,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   }`}
                 >
                   <Icon className={`w-3.5 h-3.5 shrink-0 ${item.isHighlight ? 'text-orange-600' : 'text-slate-500'}`} />
-                  <span className="hidden xl:inline">{item.label}</span>
-                  <span className="inline xl:hidden">{item.shortLabel}</span>
+                  <span>{item.label}</span>
                 </button>
               );
             })}
@@ -175,15 +180,15 @@ export const Navbar: React.FC<NavbarProps> = ({
             {isAdminAuthenticated && (
               <button
                 onClick={() => handleNavClick('admin-dashboard')}
-                className={`px-2 xl:px-3 py-1.5 xl:py-2 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+                title="Admin Management Console"
+                className={`px-2 xl:px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
                   currentScreen === 'admin-dashboard'
                     ? 'bg-slate-900 text-white font-bold'
                     : 'hover:text-slate-900 hover:bg-slate-50'
                 }`}
               >
                 <Shield className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                <span className="hidden xl:inline">Admin Console</span>
-                <span className="inline xl:hidden">Admin</span>
+                <span>Admin</span>
               </button>
             )}
           </nav>
@@ -194,7 +199,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             {voterName && isVoterFlow && (
               <div className="hidden md:flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span className="font-semibold truncate max-w-[80px] sm:max-w-[100px]">{voterName}</span>
+                <span className="font-semibold truncate max-w-[70px] xl:max-w-[100px]">{voterName}</span>
                 <button
                   onClick={onResetVoterSession}
                   title="Reset practice voter session"
@@ -221,7 +226,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div className="flex items-center gap-1 sm:gap-1.5">
                 {adminUser?.role && (
                   <span
-                    className="hidden xl:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-slate-100 text-slate-800 border border-slate-300"
+                    className="hidden 2xl:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-slate-100 text-slate-800 border border-slate-300"
                     title={`Logged in as ${adminUser.displayName || adminUser.email} (${adminUser.role})`}
                   >
                     {adminUser.role === 'VOTER_REGISTRATION_OFFICER'
@@ -248,7 +253,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             ) : (
               <button
                 onClick={() => handleNavClick('admin-login')}
-                className={`hidden sm:flex px-2.5 sm:px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap cursor-pointer items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-orange-500 ${
+                className={`hidden sm:flex px-2 sm:px-2.5 py-1.5 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap cursor-pointer items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-orange-500 ${
                   isAdminFlow
                     ? 'bg-slate-900 text-white border-slate-900'
                     : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
@@ -318,7 +323,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   }`}
                 >
                   <Icon className="w-4 h-4 shrink-0" />
-                  <span>{item.label}</span>
+                  <span>{item.fullTitle || item.label}</span>
                 </button>
               );
             })}

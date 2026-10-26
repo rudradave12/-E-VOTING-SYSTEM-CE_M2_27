@@ -113,11 +113,15 @@ export const AdminLoginScreen: React.FC<AdminLoginScreenProps> = ({
             <div>
               <span className="font-semibold">Election Officer:</span>{' '}
               <code className="bg-amber-100/80 px-1 py-0.5 rounded text-[10px] font-mono">EO-SIM-001</code>
+              {' '}or{' '}
+              <code className="bg-amber-100/80 px-1 py-0.5 rounded text-[10px] font-mono">election.officer@blockballot.local</code>
               <span className="text-amber-700 text-[10px] block">Elections, candidates, turnout, lifecycle management</span>
             </div>
             <div>
               <span className="font-semibold">Voter Registration Officer:</span>{' '}
               <code className="bg-amber-100/80 px-1 py-0.5 rounded text-[10px] font-mono">VRO-SIM-001</code>
+              {' '}or{' '}
+              <code className="bg-amber-100/80 px-1 py-0.5 rounded text-[10px] font-mono">voter.registration@blockballot.local</code>
               <span className="text-amber-700 text-[10px] block">Voter records, registration scope, enrollment access</span>
             </div>
             <div>
@@ -125,7 +129,7 @@ export const AdminLoginScreen: React.FC<AdminLoginScreenProps> = ({
               <code className="bg-amber-100/80 px-1 py-0.5 rounded text-[10px] font-mono">demo.admin@blockballot.local</code>
             </div>
             <div className="pt-1 text-[10px] text-amber-700 italic border-t border-amber-200/60">
-              Run <code className="bg-amber-100/80 px-1 py-0.5 rounded font-mono">npm run officers:seed</code> to generate secure credentials in <code className="bg-amber-100/80 px-1 py-0.5 rounded font-mono">.env.local</code>. Disabled in production.
+              Run <code className="bg-amber-100/80 px-1 py-0.5 rounded font-mono">npm run officers:seed</code> or <code className="bg-amber-100/80 px-1 py-0.5 rounded font-mono">npm run demo:credentials</code> to inspect credentials in <code className="bg-amber-100/80 px-1 py-0.5 rounded font-mono">.env.local</code>. Disabled in production.
             </div>
           </div>
         </div>
@@ -140,7 +144,7 @@ export const AdminLoginScreen: React.FC<AdminLoginScreenProps> = ({
               type="text"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="EO-SIM-001 or VRO-SIM-001 or email"
+              placeholder="EO-SIM-001, VRO-SIM-001, or officer email"
               className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white"
               required
               disabled={isLoading}

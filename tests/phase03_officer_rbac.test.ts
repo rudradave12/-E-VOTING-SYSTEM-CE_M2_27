@@ -40,6 +40,7 @@ import {
   isConstituencyInScope,
 } from '../backend/server/auth/rbac';
 import { seedDemoOfficers } from '../scripts/seed-demo-officers';
+import { seedDemoAdmin } from '../scripts/seed-demo-admin';
 import { getDataRepositories } from '../backend/server/repositories';
 import { SERVER_CONFIG } from '../backend/server/config';
 
@@ -196,6 +197,96 @@ test('BlockBallot — Phase 03: Two Officer Roles & Backend RBAC Test Suite', as
       body: JSON.stringify({ email: '', password: '' }),
     });
     assert.equal(emptyCreds.status, 401);
+  });
+
+  // --------------------------------------------------------------------------
+  // Requirement 4b: Both operational accounts authenticate with Simulation ID and Demo Email
+  // --------------------------------------------------------------------------
+  await t.test('4b. Both operational demo accounts authenticate with Simulation ID and Demo Email', async () => {
+    const eoPassword = getLocalConfigValue('OFFICER_EO_PASSWORD') || 'Officer@2024!';
+    const vroPassword = getLocalConfigValue('OFFICER_VRO_PASSWORD') || 'VroOfficer@2024!';
+    const adminPassword = getLocalConfigValue('DEMO_ADMIN_PASSWORD') || SERVER_CONFIG.DEMO_ADMIN_PASSWORD;
+
+    // 1. Election Officer by Simulation ID
+    const eoIdRes = await fetch(`${baseUrl}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'EO-SIM-001', password: eoPassword }),
+    });
+    assert.equal(eoIdRes.status, 200, 'EO-SIM-001 login should succeed');
+    const eoIdData = await eoIdRes.json();
+    assert.equal(eoIdData.user.role, 'ELECTION_OFFICER');
+
+    // 2. Election Officer by Demo Email
+    const eoEmailRes = await fetch(`${baseUrl}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'election.officer@blockballot.local', password: eoPassword }),
+    });
+    assert.equal(eoEmailRes.status, 200, 'election.officer@blockballot.local login should succeed');
+    const eoEmailData = await eoEmailRes.json();
+    assert.equal(eoEmailData.user.role, 'ELECTION_OFFICER');
+
+    // 3. Voter Registration Officer by Simulation ID
+    const vroIdRes = await fetch(`${baseUrl}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'VRO-SIM-001', password: vroPassword }),
+    });
+    assert.equal(vroIdRes.status, 200, 'VRO-SIM-001 login should succeed');
+    const vroIdData = await vroIdRes.json();
+    assert.equal(vroIdData.user.role, 'VOTER_REGISTRATION_OFFICER');
+
+    // 4. Voter Registration Officer by Demo Email
+    const vroEmailRes = await fetch(`${baseUrl}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'voter.registration@blockballot.local', password: vroPassword }),
+    });
+    assert.equal(vroEmailRes.status, 200, 'voter.registration@blockballot.local login should succeed');
+    const vroEmailData = await vroEmailRes.json();
+    assert.equal(vroEmailData.user.role, 'VOTER_REGISTRATION_OFFICER');
+
+    // 5. Platform Administrator by UID
+    const adminUidRes = await fetch(`${baseUrl}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'demo-admin-uid', password: adminPassword }),
+    });
+    assert.equal(adminUidRes.status, 200, 'demo-admin-uid login should succeed');
+    const adminUidData = await adminUidRes.json();
+    assert.equal(adminUidData.user.role, 'PLATFORM_ADMIN');
+
+    // 6. Platform Administrator by Email
+    const adminEmailRes = await fetch(`${baseUrl}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'demo.admin@blockballot.local', password: adminPassword }),
+    });
+    assert.equal(adminEmailRes.status, 200, 'demo.admin@blockballot.local login should succeed');
+    const adminEmailData = await adminEmailRes.json();
+    assert.equal(adminEmailData.user.role, 'PLATFORM_ADMIN');
+  });
+
+  // --------------------------------------------------------------------------
+  // Requirement 4c: Repeated seeding preserves all credentials without clobbering
+  // --------------------------------------------------------------------------
+  await t.test('4c. Repeated seeding preserves officer and admin credentials without clobbering', async () => {
+    await seedDemoAdmin();
+    const eoBefore = getLocalConfigValue('OFFICER_EO_PASSWORD');
+    const vroBefore = getLocalConfigValue('OFFICER_VRO_PASSWORD');
+    const adminBefore = getLocalConfigValue('DEMO_ADMIN_PASSWORD');
+
+    await seedDemoOfficers();
+    await seedDemoAdmin();
+
+    const eoAfter = getLocalConfigValue('OFFICER_EO_PASSWORD');
+    const vroAfter = getLocalConfigValue('OFFICER_VRO_PASSWORD');
+    const adminAfter = getLocalConfigValue('DEMO_ADMIN_PASSWORD');
+
+    if (eoBefore) assert.equal(eoAfter, eoBefore, 'EO password must not be overwritten');
+    if (vroBefore) assert.equal(vroAfter, vroBefore, 'VRO password must not be overwritten');
+    if (adminBefore) assert.equal(adminAfter, adminBefore, 'Admin password must not be overwritten');
   });
 
   // --------------------------------------------------------------------------

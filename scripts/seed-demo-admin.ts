@@ -13,6 +13,16 @@ dotenv.config();
 
 const ENV_LOCAL_PATH = path.resolve(process.cwd(), '.env.local');
 
+function upsertEnvLocalKey(content: string, key: string, value: string): string {
+  const quoted = `"${value}"`;
+  const regex = new RegExp(`^${key}=.*$`, 'm');
+  if (regex.test(content)) {
+    return content.replace(regex, `${key}=${quoted}`);
+  }
+  const trimmed = content.trim();
+  return trimmed ? `${trimmed}\n${key}=${quoted}\n` : `${key}=${quoted}\n`;
+}
+
 export async function seedDemoAdmin(): Promise<{ email: string; password: string }> {
   let existingContent = '';
   let demoPassword = '';
@@ -21,28 +31,26 @@ export async function seedDemoAdmin(): Promise<{ email: string; password: string
     existingContent = fs.readFileSync(ENV_LOCAL_PATH, 'utf8');
     const match = existingContent.match(/^DEMO_ADMIN_PASSWORD=(.+)$/m);
     if (match && match[1].trim()) {
-      demoPassword = match[1].trim();
+      demoPassword = match[1].trim().replace(/^["']|["']$/g, '');
     }
   }
 
-  if (!demoPassword) {
+  if (!demoPassword || demoPassword.length < 8) {
     // Generate high-entropy 16-character alphanumeric password with special characters
     const rand = crypto.randomBytes(8).toString('hex');
-    demoPassword = `DemoAdmin#${rand}!2026`;
-
-    const newConfig = [
-      '# ==============================================================================#',
-      '# BlockBallot — Local Environment Configuration (Ignored by Git)',
-      '# Local Demo Administrator Credentials for Academic Demonstration Only',
-      '# ==============================================================================#',
-      'DEMO_ADMIN_EMAIL=demo.admin@blockballot.local',
-      `DEMO_ADMIN_PASSWORD=${demoPassword}`,
-      'DEMO_ADMIN_ENABLED=true',
-      '',
-    ].join('\n');
-
-    fs.writeFileSync(ENV_LOCAL_PATH, newConfig, 'utf8');
+    demoPassword = `DemoAdmin_${rand}!2026`;
   }
+
+  let updatedContent = existingContent;
+  updatedContent = upsertEnvLocalKey(updatedContent, 'DEMO_ADMIN_EMAIL', 'demo.admin@blockballot.local');
+  updatedContent = upsertEnvLocalKey(updatedContent, 'DEMO_ADMIN_PASSWORD', demoPassword);
+  updatedContent = upsertEnvLocalKey(updatedContent, 'DEMO_ADMIN_ENABLED', 'true');
+
+  fs.writeFileSync(ENV_LOCAL_PATH, updatedContent, 'utf8');
+
+  process.env.DEMO_ADMIN_EMAIL = 'demo.admin@blockballot.local';
+  process.env.DEMO_ADMIN_PASSWORD = demoPassword;
+  process.env.DEMO_ADMIN_ENABLED = 'true';
 
   // Provision into Firebase Authentication & Firestore Emulator if running
   if (isFirebaseConfigured()) {

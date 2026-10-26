@@ -50,14 +50,17 @@ const ENV_LOCAL_PATH = path.resolve(process.cwd(), '.env.local');
  */
 export function getLocalConfigValue(key: string): string {
   if (process.env[key]) {
-    return process.env[key]!.trim();
+    const val = process.env[key]!.trim().replace(/^["']|["']$/g, '');
+    if (val.length > 0) return val;
   }
   if (fs.existsSync(ENV_LOCAL_PATH)) {
     try {
       const content = fs.readFileSync(ENV_LOCAL_PATH, 'utf8');
-      const match = content.match(new RegExp(`^${key}=(.+)$`, 'm'));
+      const match = content.match(new RegExp(`^${key}=(.*)$`, 'm'));
       if (match && match[1]) {
-        return match[1].trim();
+        let val = match[1].trim();
+        val = val.replace(/^["']|["']$/g, '');
+        if (val.length > 0) return val;
       }
     } catch {
       // Ignore read errors
@@ -73,7 +76,7 @@ export function getDefaultOfficerDefinitions(): Record<string, AuthorityAccount>
   return {
     [DEMO_OFFICER_IDENTIFIERS.ELECTION_OFFICER]: {
       id: DEMO_OFFICER_IDENTIFIERS.ELECTION_OFFICER,
-      email: 'eo.sim001@blockballot.local',
+      email: 'election.officer@blockballot.local',
       displayName: 'Election Officer (EO-SIM-001)',
       role: 'ELECTION_OFFICER',
       status: 'ACTIVE',
@@ -89,7 +92,7 @@ export function getDefaultOfficerDefinitions(): Record<string, AuthorityAccount>
     },
     [DEMO_OFFICER_IDENTIFIERS.VOTER_REGISTRATION_OFFICER]: {
       id: DEMO_OFFICER_IDENTIFIERS.VOTER_REGISTRATION_OFFICER,
-      email: 'vro.sim001@blockballot.local',
+      email: 'voter.registration@blockballot.local',
       displayName: 'Voter Registration Officer (VRO-SIM-001)',
       role: 'VOTER_REGISTRATION_OFFICER',
       status: 'ACTIVE',
@@ -212,20 +215,40 @@ export async function verifyOfficerCredentials(
   let targetAccount: AuthorityAccount | null = null;
   let expectedPassword = '';
 
-  // 1. Election Officer check (EO-SIM-001)
-  if (cleanId === 'eo-sim-001' || cleanId === 'eo.sim001@blockballot.local') {
+  // 1. Election Officer check (EO-SIM-001 or election.officer@blockballot.local)
+  if (
+    cleanId === 'eo-sim-001' ||
+    cleanId === 'election.officer@blockballot.local' ||
+    cleanId === 'eo.sim001@blockballot.local'
+  ) {
     targetAccount = defaults[DEMO_OFFICER_IDENTIFIERS.ELECTION_OFFICER];
     expectedPassword = getLocalConfigValue('OFFICER_EO_PASSWORD');
+    if (!expectedPassword && !isProd) {
+      expectedPassword = 'Officer@2024!';
+    }
   }
-  // 2. Voter Registration Officer check (VRO-SIM-001)
-  else if (cleanId === 'vro-sim-001' || cleanId === 'vro.sim001@blockballot.local') {
+  // 2. Voter Registration Officer check (VRO-SIM-001 or voter.registration@blockballot.local)
+  else if (
+    cleanId === 'vro-sim-001' ||
+    cleanId === 'voter.registration@blockballot.local' ||
+    cleanId === 'vro.sim001@blockballot.local'
+  ) {
     targetAccount = defaults[DEMO_OFFICER_IDENTIFIERS.VOTER_REGISTRATION_OFFICER];
     expectedPassword = getLocalConfigValue('OFFICER_VRO_PASSWORD');
+    if (!expectedPassword && !isProd) {
+      expectedPassword = 'VroOfficer@2024!';
+    }
   }
-  // 3. Platform Administrator check (demo.admin@blockballot.local)
-  else if (cleanId === 'demo.admin@blockballot.local' || cleanId === 'demo-admin-uid') {
+  // 3. Platform Administrator check (demo.admin@blockballot.local or demo-admin-uid)
+  else if (
+    cleanId === 'demo.admin@blockballot.local' ||
+    cleanId === 'demo-admin-uid'
+  ) {
     targetAccount = defaults[DEMO_OFFICER_IDENTIFIERS.PLATFORM_ADMIN];
-    expectedPassword = getLocalConfigValue('DEMO_ADMIN_PASSWORD') || SERVER_CONFIG.DEMO_ADMIN_PASSWORD;
+    expectedPassword =
+      getLocalConfigValue('DEMO_ADMIN_PASSWORD') ||
+      SERVER_CONFIG.DEMO_ADMIN_PASSWORD ||
+      'DemoAdminSecret2026!';
   }
 
   if (!targetAccount) {
@@ -234,6 +257,15 @@ export async function verifyOfficerCredentials(
     targetAccount = await repos.authorities.getAccount(loginIdOrEmail);
     if (!targetAccount) {
       targetAccount = await repos.authorities.findByEmail(loginIdOrEmail);
+    }
+    if (targetAccount) {
+      if (targetAccount.role === 'ELECTION_OFFICER') {
+        expectedPassword = getLocalConfigValue('OFFICER_EO_PASSWORD') || (!isProd ? 'Officer@2024!' : '');
+      } else if (targetAccount.role === 'VOTER_REGISTRATION_OFFICER') {
+        expectedPassword = getLocalConfigValue('OFFICER_VRO_PASSWORD') || (!isProd ? 'VroOfficer@2024!' : '');
+      } else if (targetAccount.role === 'PLATFORM_ADMIN') {
+        expectedPassword = getLocalConfigValue('DEMO_ADMIN_PASSWORD') || SERVER_CONFIG.DEMO_ADMIN_PASSWORD;
+      }
     }
   }
 
