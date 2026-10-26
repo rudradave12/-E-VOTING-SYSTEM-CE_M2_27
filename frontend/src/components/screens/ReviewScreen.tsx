@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Candidate, Constituency, VoterRecord } from '../../types';
 import { OfficialPartySymbol } from '../common/OfficialPartySymbol';
+import { AcademicSimulationNotice } from '../common/AcademicSimulationNotice';
 import { useLanguage } from '../../context/LanguageContext';
 import {
   Shield,
@@ -49,7 +50,9 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
   };
 
   return (
-    <div className="max-w-2xl mx-auto px-3 sm:px-4 py-4 sm:py-8">
+    <div className="max-w-2xl mx-auto px-3 sm:px-4 py-4 sm:py-8 space-y-4">
+      <AcademicSimulationNotice variant="card" />
+
       <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-8 shadow-xs">
         {/* Step Indicator & Header */}
         <div className="mb-6 border-b border-slate-200 pb-5">

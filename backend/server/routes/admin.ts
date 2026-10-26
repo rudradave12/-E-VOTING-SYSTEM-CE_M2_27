@@ -225,9 +225,12 @@ adminRouter.post('/login', async (req: Request, res: Response): Promise<void> =>
     return;
   }
 
-  // Flow B: Local Operational Officer & Demo Administrator login (strictly disabled in production)
+  // Flow B: Local Operational Officer & Demo Administrator login (strictly disabled in production unless HOSTED_DEMO_ENABLED)
   if (email && typeof email === 'string' && password && typeof password === 'string') {
-    if (SERVER_CONFIG.NODE_ENV === 'production' || process.env.NODE_ENV === 'production') {
+    const isProd = SERVER_CONFIG.NODE_ENV === 'production' || process.env.NODE_ENV === 'production';
+    const isHostedDemo = process.env.HOSTED_DEMO_ENABLED === 'true';
+
+    if (isProd && !isHostedDemo) {
       res.status(403).json({
         success: false,
         message: 'Access denied: Password authentication is disabled in production. Verified Commission hardware/ID tokens required.',
@@ -394,12 +397,14 @@ adminRouter.post('/elections/reconcile', (req: Request, res: Response): void => 
  * Requires ELECTION_CREATE permission and scope verification.
  */
 adminRouter.post('/elections', requirePermission('ELECTION_CREATE'), async (req: Request, res: Response): Promise<void> => {
-  const { title, description, electionType, numericId, startTime, endTime, contractAddress, constituencyIds, status, timezone } = req.body;
+  const { description, electionType, numericId, contractAddress, constituencyIds, status, timezone } = req.body;
+  const rawTitle = req.body.title || req.body.name;
 
-  if (!title || typeof title !== 'string' || title.trim().length === 0) {
+  if (!rawTitle || typeof rawTitle !== 'string' || rawTitle.trim().length === 0) {
     res.status(400).json({ success: false, message: 'Election title is required.' });
     return;
   }
+  const title = rawTitle.trim();
 
   // Scope enforcement: verify all constituencyIds are within officer's assignment scope
   const session = (req as any).officer as OfficerSession;
@@ -423,8 +428,20 @@ adminRouter.post('/elections', requirePermission('ELECTION_CREATE'), async (req:
     }
   }
 
-  const start = Number(startTime) || Math.floor(Date.now() / 1000);
-  const end = Number(endTime) || start + 86400 * 7;
+  const parseTime = (val: any): number | null => {
+    if (!val) return null;
+    if (typeof val === 'number') return val > 1e11 ? Math.floor(val / 1000) : val;
+    if (typeof val === 'string') {
+      const num = Number(val);
+      if (!isNaN(num) && num > 0) return num > 1e11 ? Math.floor(num / 1000) : num;
+      const parsed = Date.parse(val);
+      if (!isNaN(parsed)) return Math.floor(parsed / 1000);
+    }
+    return null;
+  };
+
+  const start = parseTime(req.body.startTime || req.body.startDate) || Math.floor(Date.now() / 1000);
+  const end = parseTime(req.body.endTime || req.body.endDate) || (start + 86400 * 7);
 
   if (end <= start) {
     res.status(400).json({ success: false, message: 'Election closing deadline must be strictly after start time.' });
@@ -464,6 +481,12 @@ adminRouter.post('/elections', requirePermission('ELECTION_CREATE'), async (req:
     electionId: created.numericId,
   });
 
+  if (session && session.assignmentScope && session.assignmentScope.electionIds) {
+    if (!session.assignmentScope.electionIds.includes(created.id)) {
+      session.assignmentScope.electionIds.push(created.id);
+    }
+  }
+
   res.status(201).json({ success: true, message: `Election created in ${created.status} state.`, election: created });
 });
 
@@ -476,12 +499,22 @@ adminRouter.patch('/elections/:id', requirePermission('ELECTION_UPDATE'), async 
   const session = (req as any).officer as OfficerSession;
   const { id } = req.params;
 
-  if (session && !isElectionInScope(session.assignmentScope, id)) {
+  const targetElectionEarly = serverStore.getElectionById(id) || serverStore.findElectionByNumericId(Number(id));
+  const hasScopeAccessPatch =
+    !session?.assignmentScope ||
+    isElectionInScope(session.assignmentScope, id) ||
+    Boolean(
+      targetElectionEarly &&
+      targetElectionEarly.constituencyIds &&
+      targetElectionEarly.constituencyIds.some((cId: string) => isConstituencyInScope(session.assignmentScope, cId))
+    );
+
+  if (!hasScopeAccessPatch) {
     serverStore.recordAuditEvent({
       id: `audit-scope-denied-${Date.now()}`,
       timestamp: Date.now(),
       type: 'ADMIN_ACTION',
-      description: `Scope violation: Account '${session.accountId}' attempted config edit on out-of-scope election '${id}'`,
+      description: `Scope violation: Account '${session?.accountId}' attempted config edit on out-of-scope election '${id}'`,
       electionId: 1,
     });
 
@@ -502,11 +535,11 @@ adminRouter.patch('/elections/:id', requirePermission('ELECTION_UPDATE'), async 
 });
 
 /**
- * PATCH /api/admin/elections/:id/status
+ * PATCH / PUT /api/admin/elections/:id/status
  * Manages election lifecycle transitions (draft -> scheduled -> active -> paused -> concluded / cancelled).
  * Enforces action-specific permissions and officer assignment scope.
  */
-adminRouter.patch('/elections/:id/status', async (req: Request, res: Response): Promise<void> => {
+const handleElectionStatusUpdate = async (req: Request, res: Response): Promise<void> => {
   const token = extractSessionToken(req);
   if (!token) {
     res.status(401).json({ success: false, message: 'Unauthorized. Officer authentication required.' });
@@ -527,8 +560,18 @@ adminRouter.patch('/elections/:id/status', async (req: Request, res: Response): 
   const { id } = req.params;
   const { status, reason } = req.body;
 
-  // Scope enforcement
-  if (session.assignmentScope && !isElectionInScope(session.assignmentScope, id)) {
+  // Scope enforcement: verify election is in officer's scope or its constituencies are in jurisdiction
+  const targetElection = serverStore.getElectionById(id) || serverStore.findElectionByNumericId(Number(id));
+  const hasScopeAccess =
+    !session.assignmentScope ||
+    isElectionInScope(session.assignmentScope, id) ||
+    Boolean(
+      targetElection &&
+      targetElection.constituencyIds &&
+      targetElection.constituencyIds.some((cId: string) => isConstituencyInScope(session.assignmentScope, cId))
+    );
+
+  if (!hasScopeAccess) {
     serverStore.recordAuditEvent({
       id: `audit-scope-denied-${Date.now()}`,
       timestamp: Date.now(),
@@ -618,9 +661,11 @@ adminRouter.patch('/elections/:id/status', async (req: Request, res: Response): 
     success: true,
     message: result.message,
     status: result.election?.status || status,
-    election: result.election,
   });
-});
+};
+
+adminRouter.patch('/elections/:id/status', handleElectionStatusUpdate);
+adminRouter.put('/elections/:id/status', handleElectionStatusUpdate);
 
 /**
  * GET /api/constituencies

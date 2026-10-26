@@ -29,6 +29,7 @@ import { VoterProfile, BiometricEnrollmentStatus, ExceptionReasonCode } from '..
 import { isConstituencyInScope } from '../../types/permissions';
 import { cameraService } from '../../services/biometricService';
 import { voterApi } from '../../services/voterApi';
+import { AcademicSimulationNotice } from '../common/AcademicSimulationNotice';
 
 interface FaceEnrollmentScreenProps {
   voter: VoterProfile | null;
@@ -336,6 +337,9 @@ export const FaceEnrollmentScreen: React.FC<FaceEnrollmentScreenProps> = ({
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-12">
+      {/* Academic Simulation Notice */}
+      <AcademicSimulationNotice variant="card" />
+
       {/* Top Header & Breadcrumb */}
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">

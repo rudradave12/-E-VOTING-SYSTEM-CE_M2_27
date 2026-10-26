@@ -197,7 +197,9 @@ export async function verifyOfficerCredentials(
   providedPassword: string
 ): Promise<{ success: boolean; account?: AuthorityAccount; message?: string }> {
   const isProd = SERVER_CONFIG.NODE_ENV === 'production' || process.env.NODE_ENV === 'production';
-  if (isProd) {
+  const isHostedDemo = process.env.HOSTED_DEMO_ENABLED === 'true';
+
+  if (isProd && !isHostedDemo) {
     return {
       success: false,
       message: 'Access denied: Password authentication is disabled in production. Verified hardware/ID tokens required.',
@@ -247,8 +249,7 @@ export async function verifyOfficerCredentials(
     targetAccount = defaults[DEMO_OFFICER_IDENTIFIERS.PLATFORM_ADMIN];
     expectedPassword =
       getLocalConfigValue('DEMO_ADMIN_PASSWORD') ||
-      SERVER_CONFIG.DEMO_ADMIN_PASSWORD ||
-      'DemoAdminSecret2026!';
+      (!isProd ? (SERVER_CONFIG.DEMO_ADMIN_PASSWORD || 'DemoAdminSecret2026!') : '');
   }
 
   if (!targetAccount) {
@@ -264,7 +265,7 @@ export async function verifyOfficerCredentials(
       } else if (targetAccount.role === 'VOTER_REGISTRATION_OFFICER') {
         expectedPassword = getLocalConfigValue('OFFICER_VRO_PASSWORD') || (!isProd ? 'VroOfficer@2024!' : '');
       } else if (targetAccount.role === 'PLATFORM_ADMIN') {
-        expectedPassword = getLocalConfigValue('DEMO_ADMIN_PASSWORD') || SERVER_CONFIG.DEMO_ADMIN_PASSWORD;
+        expectedPassword = getLocalConfigValue('DEMO_ADMIN_PASSWORD') || (!isProd ? SERVER_CONFIG.DEMO_ADMIN_PASSWORD : '');
       }
     }
   }
@@ -399,4 +400,4 @@ export function requirePermission(permission: Permission) {
   }
 }
 
-export { isConstituencyInScope, isElectionInScope } from '../../../frontend/src/types/permissions';
+export { isConstituencyInScope, isElectionInScope, DEMO_OFFICER_IDENTIFIERS } from '../../../frontend/src/types/permissions';

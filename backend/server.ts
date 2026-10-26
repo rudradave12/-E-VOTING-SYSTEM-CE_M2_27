@@ -97,6 +97,9 @@ async function startServer() {
       contractSignerMatch: health.contractSignerMatch,
       firestoreDatabaseId: SERVER_CONFIG.FIRESTORE_DATABASE_ID,
       projectId: SERVER_CONFIG.PROJECT_ID,
+      hostedDemoEnabled: process.env.HOSTED_DEMO_ENABLED === 'true',
+      academicDisclaimer:
+        'BlockBallot — Academic Voting Simulation. Non-binding demonstration only. Not affiliated with or endorsed by the Election Commission of India or UIDAI.',
       errors: health.errors,
       warnings: health.warnings,
       timestamp: Date.now(),

@@ -21,6 +21,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { CivicEmblem } from '../CivicEmblem';
+import { AcademicSimulationNotice } from '../common/AcademicSimulationNotice';
 import { NavigationScreen, Election } from '../../types';
 import { useLanguage } from '../../context/LanguageContext';
 
@@ -43,21 +44,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-12">
       {/* Non-Affiliation Academic Disclaimer */}
-      <div className="rounded-xl border border-amber-300 bg-amber-50/90 p-4 text-amber-900 shadow-2xs">
-        <div className="flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
-          <div className="text-xs sm:text-sm space-y-1 leading-relaxed">
-            <p className="font-bold text-amber-950">
-              {language === 'hi' ? 'शैक्षणिक प्रोटोटाइप सूचना एवं अस्वीकरण' : 'Academic Prototype Notice & Disclaimer'}
-            </p>
-            <p className="text-amber-800">
-              {language === 'hi'
-                ? 'BlockBallot सत्यापन योग्य इलेक्ट्रॉनिक मतदान पर एक शैक्षणिक अनुसंधान प्रोटोटाइप है। यह भारत निर्वाचन आयोग (ECI) अथवा UIDAI की आधिकारिक सेवा नहीं है। परीक्षण केवल सिंथेटिक पहचानों पर आधारित है।'
-                : 'BlockBallot is an academic research prototype for verifiable blockchain e-voting. It is not affiliated with the live Election Commission of India (ECI) or UIDAI. Voting tests use synthetic elector records only.'}
-            </p>
-          </div>
-        </div>
-      </div>
+      <AcademicSimulationNotice variant="card" />
 
       {/* Hero Section */}
       <div className="text-center max-w-3xl mx-auto space-y-4">

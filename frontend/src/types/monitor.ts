@@ -9,7 +9,7 @@ import { ElectionStatus, NormalizedElectionStatus } from './index';
  * Statutory Non-Endorsement & Academic Simulation Disclaimer
  */
 export const MONITOR_NON_ENDORSEMENT_DISCLAIMER =
-  'ACADEMIC PROTOTYPE NOTICE: BlockBallot is an academic research prototype developed strictly for demonstrating secure decentralized e-voting concepts. It is not affiliated with, authorized by, or endorsed by the Election Commission of India (ECI) or any state election commission. Simulation elections reflect synthetic test data and local EVM testnet executions.';
+  'BlockBallot — Academic Voting Simulation. Non-binding demonstration only. Not affiliated with or endorsed by the Election Commission of India or UIDAI. (ACADEMIC PROTOTYPE NOTICE: Demonstration only).';
 
 /**
  * Critical Ballot Secrecy & Calldata Leakage Limitation Notice (Phase 09 Release Blocker)

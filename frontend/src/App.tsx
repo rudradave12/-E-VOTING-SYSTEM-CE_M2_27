@@ -740,10 +740,6 @@ export function AppInner() {
           />
         )}
 
-        {currentScreen === 'results' && (
-          <ElectionsResultsScreen />
-        )}
-
         {currentScreen === 'admin-login' && (
           <AdminLoginScreen
             onLoginSuccess={handleAdminLoginSuccess}

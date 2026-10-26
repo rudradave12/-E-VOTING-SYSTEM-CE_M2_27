@@ -185,8 +185,8 @@ const handleVoterVerify = async (req: Request, res: Response): Promise<void> => 
       status: voter.status,
     },
     // In academic demo/development mode, provide the synthetic test delivery code
-    // Strictly omitted in production configurations
-    ...(SERVER_CONFIG.NODE_ENV !== 'production' && {
+    // Strictly omitted in production configurations unless isolated hosted demonstration is enabled
+    ...((SERVER_CONFIG.NODE_ENV !== 'production' || process.env.HOSTED_DEMO_ENABLED === 'true') && {
       testDeliveryCode: otp,
       testNotice: 'Academic Demo: testDeliveryCode included because live SMS gateway is unconfigured.',
     }),
@@ -223,8 +223,8 @@ voterRouter.post('/verify-otp', async (req: Request, res: Response): Promise<voi
 
   const formattedEpic = epicId.trim().toUpperCase();
 
-  // Voter existence & deactivated/ineligible check
-  const voter = serverStore.findVoterByEpic(formattedEpic);
+  // Voter existence & deactivated/ineligible check (asynchronously queries Firestore & profile repository on cache miss)
+  const voter = (await serverStore.findVoterByEpicAsync(formattedEpic)) || serverStore.findVoterByEpic(formattedEpic);
   if (!voter) {
     res.status(404).json({
       success: false,

@@ -112,9 +112,13 @@ export function parseServiceAccountKey(raw: string): any {
  */
 export function isFirebaseConfigured(): boolean {
   if (testFirestore !== null) return true;
+  const saKey =
+    process.env.FIREBASE_SERVICE_ACCOUNT_KEY ||
+    process.env.FIREBASE_SERVICE_ACCOUNT_JSON ||
+    process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
   return Boolean(
     (process.env.FIRESTORE_EMULATOR_HOST && process.env.FIRESTORE_EMULATOR_HOST.trim().length > 0) ||
-    (process.env.FIREBASE_SERVICE_ACCOUNT_KEY && process.env.FIREBASE_SERVICE_ACCOUNT_KEY.trim().length > 0) ||
+    (saKey && saKey.trim().length > 0) ||
     (process.env.GOOGLE_APPLICATION_CREDENTIALS && process.env.GOOGLE_APPLICATION_CREDENTIALS.trim().length > 0)
   );
 }
@@ -131,7 +135,11 @@ export function getFirebaseDiagnostics(): {
   detail: string;
 } {
   const emulatorHost = process.env.FIRESTORE_EMULATOR_HOST?.trim();
-  const saKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY?.trim();
+  const saKey = (
+    process.env.FIREBASE_SERVICE_ACCOUNT_KEY ||
+    process.env.FIREBASE_SERVICE_ACCOUNT_JSON ||
+    process.env.FIREBASE_SERVICE_ACCOUNT_BASE64
+  )?.trim();
   const gCreds = process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim();
 
   if (emulatorHost) {
@@ -216,7 +224,11 @@ export function getFirebaseAdminApp(): App {
   if (!adminApp) {
     if (getApps().length === 0) {
       const emulatorHost = process.env.FIRESTORE_EMULATOR_HOST?.trim();
-      const saKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY?.trim();
+      const saKey = (
+        process.env.FIREBASE_SERVICE_ACCOUNT_KEY ||
+        process.env.FIREBASE_SERVICE_ACCOUNT_JSON ||
+        process.env.FIREBASE_SERVICE_ACCOUNT_BASE64
+      )?.trim();
       const gCreds = process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim();
 
       // Mode 1: Local Firestore Emulator

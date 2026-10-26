@@ -15,4 +15,15 @@ services:
         value: e-voting-system-india
       - key: FIRESTORE_DATABASE_ID
         value: (default)
+      - key: HOSTED_DEMO_ENABLED
+        value: "true"
+      # Secure Environment Secrets configured via Render Dashboard (never committed to Git):
+      # - FIREBASE_SERVICE_ACCOUNT_KEY: Firebase service account private key JSON or base64 string
+      # - SERVER_AUTHORIZATION_SIGNER_KEY: 0x-prefixed 32-byte private key for EIP-712 voting ticket signatures
+      # - SERVER_HMAC_SECRET: High-entropy secret for OTP HMAC challenges (>= 32 chars)
+      # - SERVER_COMMITMENT_SALT: High-entropy salt for voter nullifiers
+      # - APP_ENCRYPTION_KEY: 0x-prefixed 64-character hex key for field encryption
+      # - OFFICER_EO_PASSWORD: Demo Election Officer password for EO-SIM-001
+      # - OFFICER_VRO_PASSWORD: Demo Voter Registration Officer password for VRO-SIM-001
+      # - DEMO_ADMIN_PASSWORD: Demo Platform Administrator password for demo.admin@blockballot.local
 

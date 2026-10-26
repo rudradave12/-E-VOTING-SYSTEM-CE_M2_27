@@ -20,7 +20,7 @@ export const AcademicNoticeBanner: React.FC<AcademicNoticeBannerProps> = ({
           </span>
           <span className="text-slate-500 hidden sm:inline">|</span>
           <span className="text-slate-300">
-            Synthetic test records only · EIP-712 duplicate-vote protection · Not affiliated with live UIDAI/ECI systems
+            BlockBallot — Academic Voting Simulation. Non-binding demonstration only. Not affiliated with or endorsed by the Election Commission of India or UIDAI.
           </span>
         </div>
 

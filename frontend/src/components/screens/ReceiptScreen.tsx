@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { VoteReceipt } from '../../types';
 import { CivicEmblem } from '../CivicEmblem';
+import { AcademicSimulationNotice } from '../common/AcademicSimulationNotice';
 import { useLanguage } from '../../context/LanguageContext';
 import {
   CheckCircle2,
@@ -49,6 +50,9 @@ export const ReceiptScreen: React.FC<ReceiptScreenProps> = ({
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
+      {/* Prominent Academic Simulation Notice Banner */}
+      <AcademicSimulationNotice variant="card" />
+
       {/* Prominent Sandbox Notice Banner */}
       <div className="rounded-xl border-2 border-dashed border-orange-400 bg-orange-50 p-4 text-center text-orange-950 shadow-2xs">
         <span className="font-mono text-xs sm:text-sm font-extrabold uppercase tracking-widest block text-orange-900">
