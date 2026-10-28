@@ -2,7 +2,6 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createServer as createViteServer } from 'vite';
 import { SERVER_CONFIG, validateServerConfig } from './server/config';
 import { voterRouter } from './server/routes/voter';
 import { adminRouter } from './server/routes/admin';
@@ -167,22 +166,18 @@ async function startServer() {
     path.resolve(__dirname, '../frontend/dist'),
     path.resolve(process.cwd(), 'frontend/dist'),
   ];
-  let distDir = distCandidates.find((dir) => fs.existsSync(path.join(dir, 'index.html')));
+  const distDir = distCandidates.find((dir) => fs.existsSync(path.join(dir, 'index.html')));
 
-  // Self-healing fallback: if in production/Render or hosted mode and dist does not exist, run build
-  const isHosted = isProd || process.env.RENDER === 'true' || process.env.HOSTED_DEMO_ENABLED === 'true';
-  if (!distDir && isHosted) {
-    console.warn('[BlockBallot Server] Production build not found at startup. Executing self-healing frontend build...');
-    try {
-      const { execSync } = await import('child_process');
-      execSync('npm run build', { stdio: 'inherit', cwd: path.resolve(__dirname, '..') });
-      distDir = distCandidates.find((dir) => fs.existsSync(path.join(dir, 'index.html')));
-    } catch (buildErr: any) {
-      console.error('[BlockBallot Server] Self-healing build notice:', buildErr?.message);
+  if (isProd) {
+    if (!distDir) {
+      console.error(
+        '[BlockBallot Server] FATAL: Production frontend bundle not found. ' +
+        'Expected static assets at dist/index.html. ' +
+        'Ensure the build phase executed "npm run build" before server startup.'
+      );
+      process.exit(1);
     }
-  }
 
-  if (distDir && fs.existsSync(path.join(distDir, 'index.html'))) {
     console.log(`[BlockBallot Server] Serving static production bundle from: ${distDir}`);
     // Static assets with fingerprinted caching (1 year immutable)
     app.use(
@@ -202,21 +197,48 @@ async function startServer() {
         },
       })
     );
-    // SPA catch-all for client-side routing (excluding /api/*)
+    // SPA catch-all for client-side routing (strictly excluding /api/*)
     app.get('*', (_req, res, next) => {
       if (_req.path.startsWith('/api/')) return next();
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-      res.sendFile(path.join(distDir!, 'index.html'));
+      res.sendFile(path.join(distDir, 'index.html'));
     });
   } else {
-    console.warn('[BlockBallot Server] NOTICE: Vite dev server middleware active (local development only).');
-    const vite = await createViteServer({
-      configFile: path.resolve(__dirname, '../frontend/vite.config.ts'),
-      root: path.resolve(__dirname, '../frontend'),
-      server: { middlewareMode: true, allowedHosts: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
+    // Local development mode: serve pre-built dist if present, or Vite dev server middleware
+    if (distDir) {
+      console.log(`[BlockBallot Server] Serving pre-built bundle from: ${distDir}`);
+      app.use(
+        '/assets',
+        express.static(path.join(distDir, 'assets'), {
+          maxAge: '1y',
+          immutable: true,
+        })
+      );
+      app.use(
+        express.static(distDir, {
+          setHeaders: (res, filePath) => {
+            if (filePath.endsWith('index.html')) {
+              res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            }
+          },
+        })
+      );
+      app.get('*', (_req, res, next) => {
+        if (_req.path.startsWith('/api/')) return next();
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.sendFile(path.join(distDir, 'index.html'));
+      });
+    } else {
+      console.log('[BlockBallot Server] NOTICE: Vite dev server middleware active (local development only).');
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        configFile: path.resolve(__dirname, '../frontend/vite.config.ts'),
+        root: path.resolve(__dirname, '../frontend'),
+        server: { middlewareMode: true, allowedHosts: true },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+    }
   }
 
   // Centralized safe error handler: sanitizes errors in production to prevent stack trace disclosure
