@@ -17,9 +17,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 async function startServer() {
-  if (process.env.RENDER === 'true' && process.env.HOSTED_DEMO_ENABLED === undefined) {
-    process.env.HOSTED_DEMO_ENABLED = 'true';
-  }
   const isProd = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
 
   // 1. Production Fail-Closed Safeguard
@@ -52,27 +49,47 @@ async function startServer() {
   app.use((req, res, next) => {
     const origin = req.headers.origin;
     if (origin) {
+      let isAllowed = false;
+
       if (!isProd) {
         // In local development / test, allow loopback addresses and render domain
-        if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) || origin.includes('.onrender.com')) {
-          res.setHeader('Access-Control-Allow-Origin', origin);
-          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
-          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-          res.setHeader('Access-Control-Allow-Credentials', 'true');
+        if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) || origin.endsWith('.onrender.com')) {
+          isAllowed = true;
         }
       } else {
-        // In production, strictly restrict to configured APP_URL or same-origin
+        // In production:
+        // 1. Explicitly configured APP_URL
         const appUrl = process.env.APP_URL;
-        if (appUrl && origin === appUrl) {
-          res.setHeader('Access-Control-Allow-Origin', origin);
-          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
-          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-          res.setHeader('Access-Control-Allow-Credentials', 'true');
+        if (appUrl && (origin === appUrl || origin.replace(/\/$/, '') === appUrl.replace(/\/$/, ''))) {
+          isAllowed = true;
+        }
+        // 2. Render-injected external deployment URL
+        const renderUrl = process.env.RENDER_EXTERNAL_URL;
+        if (renderUrl && (origin === renderUrl || origin.replace(/\/$/, '') === renderUrl.replace(/\/$/, ''))) {
+          isAllowed = true;
+        }
+        // 3. Render hosted service domain
+        if (origin.endsWith('.onrender.com')) {
+          isAllowed = true;
+        }
+        // 4. Same-origin match with incoming Host header
+        const originHost = origin.replace(/^https?:\/\//, '').replace(/:\d+$/, '').toLowerCase();
+        const hostHeader = (req.get('host') || '').replace(/:\d+$/, '').toLowerCase();
+        if (originHost && hostHeader && originHost === hostHeader) {
+          isAllowed = true;
         }
       }
+
+      if (isAllowed) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+      }
     }
+
     if (req.method === 'OPTIONS') {
-      res.sendStatus(204);
+      res.status(204).end();
       return;
     }
     next();

@@ -343,13 +343,32 @@ export class VoterApiClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
+
+      let data: any;
+      try {
+        data = await res.json();
+      } catch {
+        return {
+          success: false,
+          message: `Server returned HTTP ${res.status} (${res.statusText || 'Unexpected error'}).`,
+        };
+      }
+
       if (data.success && data.token) {
         this.currentAdminToken = data.token;
       }
       return data;
     } catch (err: any) {
-      return { success: false, message: err.message };
+      const isNetworkError =
+        err?.name === 'TypeError' ||
+        err?.message === 'Failed to fetch' ||
+        err?.message?.includes('NetworkError');
+      return {
+        success: false,
+        message: isNetworkError
+          ? 'Unable to reach the authentication service. Please check your network connection and server status.'
+          : (err.message || 'An unexpected authentication error occurred.'),
+      };
     }
   }
 

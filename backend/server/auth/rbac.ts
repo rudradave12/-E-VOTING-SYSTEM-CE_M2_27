@@ -46,14 +46,15 @@ const revokedTokens = new Set<string>();
 const ENV_LOCAL_PATH = path.resolve(process.cwd(), '.env.local');
 
 /**
- * Reads a key from process.env or .env.local file if present
+ * Reads a key from process.env or .env.local file if present (in development only)
  */
 export function getLocalConfigValue(key: string): string {
   if (process.env[key]) {
     const val = process.env[key]!.trim().replace(/^["']|["']$/g, '');
     if (val.length > 0) return val;
   }
-  if (fs.existsSync(ENV_LOCAL_PATH)) {
+  const isProd = SERVER_CONFIG.NODE_ENV === 'production' || process.env.NODE_ENV === 'production';
+  if (!isProd && fs.existsSync(ENV_LOCAL_PATH)) {
     try {
       const content = fs.readFileSync(ENV_LOCAL_PATH, 'utf8');
       const match = content.match(new RegExp(`^${key}=(.*)$`, 'm'));
@@ -197,7 +198,7 @@ export async function verifyOfficerCredentials(
   providedPassword: string
 ): Promise<{ success: boolean; account?: AuthorityAccount; message?: string }> {
   const isProd = SERVER_CONFIG.NODE_ENV === 'production' || process.env.NODE_ENV === 'production';
-  const isHostedDemo = process.env.HOSTED_DEMO_ENABLED === 'true' || process.env.RENDER === 'true';
+  const isHostedDemo = process.env.HOSTED_DEMO_ENABLED === 'true';
 
   if (isProd && !isHostedDemo) {
     return {
@@ -226,8 +227,8 @@ export async function verifyOfficerCredentials(
   ) {
     targetAccount = defaults[DEMO_OFFICER_IDENTIFIERS.ELECTION_OFFICER];
     expectedPassword = getLocalConfigValue('OFFICER_EO_PASSWORD');
-    if ((!expectedPassword || trimmedPassword === 'Officer@2024!') && (!isProd || isHostedDemo)) {
-      expectedPassword = trimmedPassword === 'Officer@2024!' ? 'Officer@2024!' : (expectedPassword || 'Officer@2024!');
+    if (!expectedPassword && !isProd) {
+      expectedPassword = 'Officer@2024!';
     }
   }
   // 2. Voter Registration Officer check (VRO-SIM-001 or voter.registration@blockballot.local)
@@ -239,8 +240,8 @@ export async function verifyOfficerCredentials(
   ) {
     targetAccount = defaults[DEMO_OFFICER_IDENTIFIERS.VOTER_REGISTRATION_OFFICER];
     expectedPassword = getLocalConfigValue('OFFICER_VRO_PASSWORD');
-    if ((!expectedPassword || trimmedPassword === 'VroOfficer@2024!') && (!isProd || isHostedDemo)) {
-      expectedPassword = trimmedPassword === 'VroOfficer@2024!' ? 'VroOfficer@2024!' : (expectedPassword || 'VroOfficer@2024!');
+    if (!expectedPassword && !isProd) {
+      expectedPassword = 'VroOfficer@2024!';
     }
   }
   // 3. Platform Administrator check (demo.admin@blockballot.local or demo-admin-uid)
@@ -251,11 +252,9 @@ export async function verifyOfficerCredentials(
     cleanId === 'admin'
   ) {
     targetAccount = defaults[DEMO_OFFICER_IDENTIFIERS.PLATFORM_ADMIN];
-    expectedPassword =
-      getLocalConfigValue('DEMO_ADMIN_PASSWORD') ||
-      ((!isProd || isHostedDemo) ? (SERVER_CONFIG.DEMO_ADMIN_PASSWORD || 'DemoAdminSecret2026!') : '');
-    if ((!expectedPassword || trimmedPassword === 'DemoAdminSecret2026!') && (!isProd || isHostedDemo)) {
-      expectedPassword = trimmedPassword === 'DemoAdminSecret2026!' ? 'DemoAdminSecret2026!' : (expectedPassword || 'DemoAdminSecret2026!');
+    expectedPassword = getLocalConfigValue('DEMO_ADMIN_PASSWORD');
+    if (!expectedPassword && !isProd) {
+      expectedPassword = SERVER_CONFIG.DEMO_ADMIN_PASSWORD || 'DemoAdminSecret2026!';
     }
   }
 
@@ -272,7 +271,7 @@ export async function verifyOfficerCredentials(
       } else if (targetAccount.role === 'VOTER_REGISTRATION_OFFICER') {
         expectedPassword = getLocalConfigValue('OFFICER_VRO_PASSWORD') || (!isProd ? 'VroOfficer@2024!' : '');
       } else if (targetAccount.role === 'PLATFORM_ADMIN') {
-        expectedPassword = getLocalConfigValue('DEMO_ADMIN_PASSWORD') || (!isProd ? SERVER_CONFIG.DEMO_ADMIN_PASSWORD : '');
+        expectedPassword = getLocalConfigValue('DEMO_ADMIN_PASSWORD') || (!isProd ? (SERVER_CONFIG.DEMO_ADMIN_PASSWORD || 'DemoAdminSecret2026!') : '');
       }
     }
   }
@@ -283,6 +282,13 @@ export async function verifyOfficerCredentials(
 
   if (targetAccount.status !== 'ACTIVE') {
     return { success: false, message: `Access denied: Account '${targetAccount.id}' is ${targetAccount.status}.` };
+  }
+
+  if (isProd && (!expectedPassword || expectedPassword.length < 8)) {
+    return {
+      success: false,
+      message: 'Administrative credentials for this profile have not been configured in server environment variables.',
+    };
   }
 
   if (!expectedPassword || expectedPassword.length < 8 || trimmedPassword !== expectedPassword) {

@@ -730,4 +730,100 @@ test('BlockBallot — Phase 03: Two Officer Roles & Backend RBAC Test Suite', as
     assert.equal(combinedStr.includes('OFFICER_VRO_PASSWORD'), false);
     assert.equal(combinedStr.includes('demo.admin@blockballot.local'), false);
   });
+
+  // --------------------------------------------------------------------------
+  // Requirement 16: Hosted Demo & Production Credential Security Safeguards
+  // --------------------------------------------------------------------------
+  await t.test('16. Production officer authentication fails closed without hardcoded fallbacks', async () => {
+    const origNodeEnv = process.env.NODE_ENV;
+    const origHostedDemo = process.env.HOSTED_DEMO_ENABLED;
+    const origEoPass = process.env.OFFICER_EO_PASSWORD;
+    const origVroPass = process.env.OFFICER_VRO_PASSWORD;
+    const origAdminPass = process.env.DEMO_ADMIN_PASSWORD;
+
+    try {
+      process.env.NODE_ENV = 'production';
+      delete process.env.HOSTED_DEMO_ENABLED;
+      delete process.env.OFFICER_EO_PASSWORD;
+      delete process.env.OFFICER_VRO_PASSWORD;
+      delete process.env.DEMO_ADMIN_PASSWORD;
+
+      // 1. In production without HOSTED_DEMO_ENABLED, password login is strictly blocked
+      const blockedRes = await fetch(`${baseUrl}/api/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'EO-SIM-001', password: 'AnyPassword123!' }),
+      });
+      assert.equal(blockedRes.status, 403, 'Must return 403 when password auth is disabled in production');
+
+      // 2. In production with HOSTED_DEMO_ENABLED but no configured environment variable, fails closed
+      process.env.HOSTED_DEMO_ENABLED = 'true';
+      const noEnvPassRes = await fetch(`${baseUrl}/api/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'EO-SIM-001', password: 'Officer@2024!' }),
+      });
+      assert.equal(noEnvPassRes.status, 401, 'Must reject hardcoded default passwords in production');
+
+      // 3. In production with explicitly configured password secret, succeeds for all three profiles
+      const testSecretEO = 'SecureElectionOfficerSecret2026!';
+      const testSecretVRO = 'SecureVoterRegOfficerSecret2026!';
+      const testSecretAdmin = 'SecurePlatformAdminSecret2026!';
+
+      process.env.OFFICER_EO_PASSWORD = testSecretEO;
+      process.env.OFFICER_VRO_PASSWORD = testSecretVRO;
+      process.env.DEMO_ADMIN_PASSWORD = testSecretAdmin;
+
+      // Test Election Officer login
+      const eoLogin = await fetch(`${baseUrl}/api/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'EO-SIM-001', password: testSecretEO }),
+      });
+      assert.equal(eoLogin.status, 200);
+      const eoData = await eoLogin.json();
+      assert.equal(eoData.success, true);
+      assert.equal(eoData.user.role, 'ELECTION_OFFICER');
+
+      // Test Voter Registration Officer login
+      const vroLogin = await fetch(`${baseUrl}/api/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'VRO-SIM-001', password: testSecretVRO }),
+      });
+      assert.equal(vroLogin.status, 200);
+      const vroData = await vroLogin.json();
+      assert.equal(vroData.success, true);
+      assert.equal(vroData.user.role, 'VOTER_REGISTRATION_OFFICER');
+
+      // Test Platform Administrator login
+      const adminLogin = await fetch(`${baseUrl}/api/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'demo.admin@blockballot.local', password: testSecretAdmin }),
+      });
+      assert.equal(adminLogin.status, 200);
+      const adminData = await adminLogin.json();
+      assert.equal(adminData.success, true);
+      assert.equal(adminData.user.role, 'PLATFORM_ADMIN');
+
+      // Test wrong password rejected
+      const wrongPassRes = await fetch(`${baseUrl}/api/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'EO-SIM-001', password: 'WrongPassword999!' }),
+      });
+      assert.equal(wrongPassRes.status, 401);
+    } finally {
+      process.env.NODE_ENV = origNodeEnv;
+      if (origHostedDemo !== undefined) process.env.HOSTED_DEMO_ENABLED = origHostedDemo;
+      else delete process.env.HOSTED_DEMO_ENABLED;
+      if (origEoPass !== undefined) process.env.OFFICER_EO_PASSWORD = origEoPass;
+      else delete process.env.OFFICER_EO_PASSWORD;
+      if (origVroPass !== undefined) process.env.OFFICER_VRO_PASSWORD = origVroPass;
+      else delete process.env.OFFICER_VRO_PASSWORD;
+      if (origAdminPass !== undefined) process.env.DEMO_ADMIN_PASSWORD = origAdminPass;
+      else delete process.env.DEMO_ADMIN_PASSWORD;
+    }
+  });
 });

@@ -228,7 +228,7 @@ adminRouter.post('/login', async (req: Request, res: Response): Promise<void> =>
   // Flow B: Local Operational Officer & Demo Administrator login (strictly disabled in production unless HOSTED_DEMO_ENABLED)
   if (email && typeof email === 'string' && password && typeof password === 'string') {
     const isProd = SERVER_CONFIG.NODE_ENV === 'production' || process.env.NODE_ENV === 'production';
-    const isHostedDemo = process.env.HOSTED_DEMO_ENABLED === 'true' || process.env.RENDER === 'true';
+    const isHostedDemo = process.env.HOSTED_DEMO_ENABLED === 'true';
 
     if (isProd && !isHostedDemo) {
       res.status(403).json({

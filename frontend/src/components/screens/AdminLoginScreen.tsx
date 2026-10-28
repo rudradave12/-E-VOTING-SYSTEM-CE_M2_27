@@ -27,23 +27,29 @@ export const AdminLoginScreen: React.FC<AdminLoginScreenProps> = ({
     setError(null);
     if (roleId === 'EO') {
       setEmail('EO-SIM-001');
-      setPassword('Officer@2024!');
+      setPassword('');
     } else if (roleId === 'VRO') {
       setEmail('VRO-SIM-001');
-      setPassword('VroOfficer@2024!');
+      setPassword('');
     } else {
       setEmail('demo.admin@blockballot.local');
-      setPassword('DemoAdminSecret2026!');
+      setPassword('');
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setIsLoading(true);
 
     const trimmedEmail = email.trim();
     const trimmedPassword = password.trim();
+
+    if (!trimmedEmail || !trimmedPassword) {
+      setError('Please provide both your Staff ID/Email and password.');
+      return;
+    }
+
+    setIsLoading(true);
 
     try {
       // 1. Direct server-side authentication for operational officers and administrators
@@ -108,7 +114,7 @@ export const AdminLoginScreen: React.FC<AdminLoginScreenProps> = ({
               <KeyRound className="w-3.5 h-3.5 text-orange-600" />
               Demo Staff Accounts
             </span>
-            <span className="text-[10px] text-slate-600 font-medium">Click to fill</span>
+            <span className="text-[10px] text-slate-600 font-medium">Select to fill ID</span>
           </div>
 
           <div className="grid grid-cols-1 gap-2">
@@ -169,6 +175,9 @@ export const AdminLoginScreen: React.FC<AdminLoginScreenProps> = ({
               <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-600">Full Access</span>
             </button>
           </div>
+          <p className="text-[10px] text-slate-500 leading-tight">
+            Selecting a profile fills its ID. Enter the authorized password configured for this environment.
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -202,6 +211,9 @@ export const AdminLoginScreen: React.FC<AdminLoginScreenProps> = ({
               required
               disabled={isLoading}
             />
+            <p className="text-[10px] text-slate-500 mt-1">
+              Locally generated in <code className="font-mono text-slate-600">.env.local</code>. On hosted deployments, configured via server environment secrets.
+            </p>
           </div>
 
           {error && (

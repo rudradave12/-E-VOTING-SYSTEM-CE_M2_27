@@ -36,8 +36,8 @@ function readEnvLocal(): Record<string, string> {
 
 export function showDemoCredentials(): void {
   const env = process.env.NODE_ENV || 'development';
-  if (env === 'production' || process.env.APP_ENV === 'production') {
-    console.error('SECURITY VIOLATION: Displaying demo credentials is strictly prohibited in production mode.');
+  if (env === 'production' || process.env.APP_ENV === 'production' || process.env.RENDER === 'true') {
+    console.error('SECURITY VIOLATION: Displaying demo credentials is strictly prohibited in production or hosted mode.');
     process.exit(1);
   }
 
