@@ -81,6 +81,7 @@ test('BlockBallot — Phase 12: Comprehensive UI/UX Integration & Verification S
     clearOfficerSessionsForTesting();
     clearAdminSessionsForTesting();
     clearMonitorRateLimitsForTesting();
+    serverStore.resetDefaults();
 
     // 1. Create Authority Accounts
     const adminAccount: AuthorityAccount = {
