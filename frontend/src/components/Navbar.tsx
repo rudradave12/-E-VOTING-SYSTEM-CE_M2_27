@@ -20,7 +20,6 @@ import {
   RotateCcw,
   Database,
   Activity,
-  Info,
   ChevronDown,
 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
@@ -44,7 +43,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   voterName,
   onResetVoterSession,
 }) => {
-  const { language, toggleLanguage, t } = useLanguage();
+  const { language, toggleLanguage } = useLanguage();
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState<boolean>(false);
   const moreMenuRef = useRef<HTMLDivElement>(null);
@@ -109,7 +108,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     {
       id: 'elections-results',
       label: language === 'hi' ? 'परिणाम' : 'Results',
-      fullTitle: language === 'hi' ? 'पूर्व चुनाव एवं परिणाम' : 'Election Results',
+      fullTitle: language === 'hi' ? 'चुनाव परिणाम' : 'Election Results',
       icon: BarChart3,
     },
     {
@@ -139,12 +138,6 @@ export const Navbar: React.FC<NavbarProps> = ({
       label: language === 'hi' ? 'मार्गदर्शन' : 'How It Works',
       fullTitle: language === 'hi' ? 'मतदान कैसे काम करता है' : 'How Voting Works Guide',
       icon: HelpCircle,
-    },
-    {
-      id: 'about-project',
-      label: language === 'hi' ? 'परियोजना' : 'About Project',
-      fullTitle: language === 'hi' ? 'परियोजना का विवरण' : 'Project Information & Specs',
-      icon: Info,
     },
   ];
 
@@ -179,8 +172,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span className="text-base lg:text-lg font-bold tracking-tight text-slate-900 block leading-tight">
                   BlockBallot
                 </span>
-                <span className="hidden 2xl:block text-[9px] font-semibold text-slate-400 uppercase tracking-wider leading-none">
-                  Academic E-Voting Prototype
+                <span className="hidden sm:block text-[9px] font-semibold text-slate-500 uppercase tracking-wider leading-none">
+                  Digital Voting Portal
                 </span>
               </div>
             </button>
@@ -243,166 +236,153 @@ export const Navbar: React.FC<NavbarProps> = ({
               })}
             </div>
 
-            {/* 3. "More ▾" Dropdown: Visible ONLY at lg breakpoint (1024px to 1279px) */}
+            {/* 3. Secondary Items: Dropdown on compact desktop (1024px to 1279px) */}
             <div className="relative xl:hidden" ref={moreMenuRef}>
               <button
-                onClick={() => setMoreMenuOpen((prev) => !prev)}
-                title="Additional Navigation"
+                type="button"
+                onClick={() => setMoreMenuOpen(!moreMenuOpen)}
                 className={`h-8 px-2.5 rounded-lg flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap text-xs ${
                   isSecondaryActive || moreMenuOpen
                     ? 'bg-slate-100 text-slate-900 font-bold'
                     : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
                 }`}
+                aria-expanded={moreMenuOpen}
+                aria-haspopup="true"
               >
                 <span>{language === 'hi' ? 'अधिक' : 'More'}</span>
-                <ChevronDown className={`w-3.5 h-3.5 text-slate-500 transition-transform ${moreMenuOpen ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${moreMenuOpen ? 'rotate-180' : ''}`} />
               </button>
 
               {moreMenuOpen && (
-                <div className="absolute top-full left-0 mt-1 w-48 bg-white rounded-xl shadow-lg border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-150">
+                <div className="absolute right-0 mt-1.5 w-48 bg-white border border-slate-200 rounded-xl shadow-lg py-1.5 z-50 animate-in fade-in slide-in-from-top-1 duration-150">
                   {secondaryNavItems.map((item) => {
                     const Icon = item.icon;
                     const isActive = currentScreen === item.id;
+
                     return (
                       <button
                         key={item.id}
                         onClick={() => handleNavClick(item.id)}
                         className={`w-full px-3 py-2 text-left text-xs font-semibold flex items-center gap-2 transition-colors cursor-pointer ${
                           isActive
-                            ? 'bg-orange-50 text-orange-700 font-bold'
+                            ? 'bg-orange-50 text-orange-700'
                             : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'
                         }`}
                       >
-                        <Icon className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                        <span>{item.fullTitle || item.label}</span>
+                        <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-orange-600' : 'text-slate-500'}`} />
+                        <span>{item.fullTitle}</span>
                       </button>
                     );
                   })}
                 </div>
               )}
             </div>
-
-            {/* Admin Console Shortcut if Authenticated */}
-            {isAdminAuthenticated && (
-              <button
-                onClick={() => handleNavClick('admin-dashboard')}
-                title="Admin Management Console"
-                className={`h-8 px-2.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 text-xs ${
-                  currentScreen === 'admin-dashboard'
-                    ? 'bg-slate-900 text-white font-bold'
-                    : 'hover:text-slate-900 hover:bg-slate-50'
-                }`}
-              >
-                <Shield className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                <span>Admin</span>
-              </button>
-            )}
           </nav>
 
-          {/* Right Utility: Language Switcher, Active Voter Chip & Staff Login */}
+          {/* Right Action Controls */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* Active Practice Voter Session Chip */}
-            {voterName && isVoterFlow && (
-              <div className="hidden md:flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 shrink-0">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
-                <span className="font-semibold truncate max-w-[80px] lg:max-w-[100px]">{voterName}</span>
-                <button
-                  onClick={onResetVoterSession}
-                  title="Reset practice voter session"
-                  className="text-slate-400 hover:text-slate-700 ml-0.5 cursor-pointer"
-                >
-                  <RotateCcw className="w-3 h-3" />
-                </button>
+            {/* Active Voter Indicator */}
+            {voterName && (
+              <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-800 text-xs">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
+                <span className="font-medium truncate max-w-[110px]">{voterName}</span>
+                {onResetVoterSession && (
+                  <button
+                    onClick={onResetVoterSession}
+                    title="Exit Voter Session"
+                    className="ml-1 text-emerald-600 hover:text-emerald-900 cursor-pointer"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                  </button>
+                )}
               </div>
             )}
 
-            {/* Language Switcher (English / हिन्दी) */}
+            {/* Language Toggle */}
             <button
-              type="button"
               onClick={toggleLanguage}
-              aria-label={language === 'en' ? 'Switch to Hindi (हिन्दी)' : 'Switch to English'}
               className="h-8 px-2 sm:px-2.5 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors cursor-pointer flex items-center gap-1 sm:gap-1.5 shrink-0 focus:outline-none focus:ring-2 focus:ring-orange-500"
+              title={language === 'en' ? 'हिन्दी में बदलें' : 'Switch to English'}
+              aria-label={language === 'en' ? 'Switch to Hindi (हिन्दी)' : 'Switch to English'}
             >
-              <Languages className="w-3.5 h-3.5 text-slate-600 shrink-0" />
-              <span>{language === 'en' ? 'हिन्दी' : 'English'}</span>
+              <Languages className="w-3.5 h-3.5 text-slate-500" />
+              <span className="font-sans font-bold">{language === 'en' ? 'हिन्दी' : 'EN'}</span>
             </button>
 
-            {/* Staff / Admin Login Button */}
+            {/* Staff / Admin Login or Dashboard Button */}
             {isAdminAuthenticated ? (
-              <div className="flex items-center gap-1 sm:gap-1.5">
-                {adminUser?.role && (
-                  <span
-                    className="hidden 2xl:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-slate-100 text-slate-800 border border-slate-300"
-                    title={`Logged in as ${adminUser.displayName || adminUser.email} (${adminUser.role})`}
-                  >
-                    {adminUser.role === 'VOTER_REGISTRATION_OFFICER'
-                      ? 'VRO'
-                      : adminUser.role === 'ELECTION_OFFICER'
-                      ? 'EO'
-                      : 'ADMIN'}
-                  </span>
-                )}
+              <div className="flex items-center gap-1.5">
                 <button
-                  onClick={() => handleNavClick('admin-dashboard')}
-                  className="h-8 px-2.5 sm:px-3 text-xs font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-orange-500 shrink-0"
+                  onClick={() => onNavigate('admin-dashboard')}
+                  className={`h-8 px-2.5 sm:px-3 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+                    isAdminFlow
+                      ? 'bg-orange-50 text-orange-700 border-orange-200 shadow-2xs font-bold'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
                 >
-                  <Shield className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  <span className="hidden sm:inline">Admin</span>
+                  <Shield className="w-3.5 h-3.5 text-orange-600" />
+                  <span className="hidden sm:inline">
+                    {adminUser?.displayName ? adminUser.displayName.split(' ')[0] : 'Officer'}
+                  </span>
+                  <span className="sm:hidden">Officer</span>
                 </button>
                 <button
                   onClick={onAdminLogout}
-                  className="h-8 px-2 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-orange-500 shrink-0"
+                  title="Sign out of staff session"
+                  className="h-8 px-2 text-xs font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
                 >
-                  {t.logout}
+                  Sign Out
                 </button>
               </div>
             ) : (
               <button
-                onClick={() => handleNavClick('admin-login')}
+                onClick={() => onNavigate('admin-login')}
                 className={`hidden sm:flex h-8 px-2.5 sm:px-3 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap cursor-pointer items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-orange-500 shrink-0 ${
-                  isAdminFlow
-                    ? 'bg-slate-900 text-white border-slate-900'
+                  currentScreen === 'admin-login'
+                    ? 'bg-orange-50 text-orange-700 border-orange-200 font-bold'
                     : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                 }`}
               >
-                <Lock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                <span>{t.navStaffLogin}</span>
+                <Lock className="w-3.5 h-3.5 text-slate-500" />
+                <span>Staff Login</span>
               </button>
             )}
 
-            {/* Mobile & Tablet Hamburger Menu Toggle (< 1024px) */}
+            {/* Mobile Hamburger Menu Toggle */}
             <button
-              onClick={() => setMobileMenuOpen((prev) => !prev)}
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="lg:hidden h-8 w-8 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 flex items-center justify-center cursor-pointer focus-visible:ring-2 focus-visible:ring-orange-500 shrink-0 bb-touch-target"
+              aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
               aria-expanded={mobileMenuOpen}
               aria-controls="mobile-navigation-menu"
-              aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
-              className="lg:hidden h-8 w-8 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 flex items-center justify-center cursor-pointer focus-visible:ring-2 focus-visible:ring-orange-500 shrink-0 bb-touch-target"
             >
               {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
             </button>
           </div>
         </div>
+      </div>
 
-        {/* Mobile & Tablet Navigation Dropdown Drawer (< 1024px) */}
-        {mobileMenuOpen && (
-          <nav
-            id="mobile-navigation-menu"
-            aria-label="Mobile navigation"
-            className="lg:hidden py-3 border-t border-slate-200 space-y-1 animate-in fade-in duration-150"
-          >
-            {voterName && isVoterFlow && (
-              <div className="flex items-center justify-between px-3 py-2 mb-2 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">
+      {/* Mobile Menu Drawer */}
+      {mobileMenuOpen && (
+        <div id="mobile-navigation-menu" className="lg:hidden border-t border-slate-200 bg-white shadow-lg animate-in slide-in-from-top-2 duration-150">
+          <div className="max-w-7xl mx-auto px-4 py-3 space-y-1">
+            {voterName && (
+              <div className="flex items-center justify-between p-2.5 mb-2 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-800 text-xs">
                 <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                  <span className="font-semibold">Voter: {voterName}</span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
+                  <span className="font-semibold">{voterName}</span>
                 </div>
-                <button
-                  onClick={onResetVoterSession}
-                  className="text-slate-500 hover:text-slate-800 flex items-center gap-1 text-[11px] font-semibold cursor-pointer"
-                >
-                  <RotateCcw className="w-3 h-3" />
-                  <span>Reset</span>
-                </button>
+                {onResetVoterSession && (
+                  <button
+                    onClick={() => {
+                      onResetVoterSession();
+                      setMobileMenuOpen(false);
+                    }}
+                    className="text-xs text-emerald-700 font-semibold underline cursor-pointer"
+                  >
+                    Logout
+                  </button>
+                )}
               </div>
             )}
 
@@ -419,44 +399,60 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   key={item.id}
                   onClick={() => handleNavClick(item.id)}
-                  className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-2.5 text-xs font-semibold transition-colors cursor-pointer min-h-[44px] bb-touch-target focus-visible:ring-2 focus-visible:ring-orange-500 ${
+                  className={`w-full min-h-[44px] px-3 py-2 rounded-lg text-left text-xs font-semibold flex items-center gap-3 transition-colors cursor-pointer bb-touch-target ${
                     isActive
                       ? item.isHighlight
                         ? 'bg-orange-50 text-orange-700 font-bold'
                         : 'bg-slate-100 text-slate-900 font-bold'
                       : item.isHighlight
-                      ? 'text-orange-700'
-                      : 'text-slate-700 hover:bg-slate-50'
+                      ? 'text-orange-700 hover:bg-orange-50/70 font-semibold'
+                      : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'
                   }`}
                 >
-                  <Icon className="w-4 h-4 shrink-0 text-slate-500" />
-                  <span>{item.fullTitle || item.label}</span>
+                  <Icon className={`w-4 h-4 shrink-0 ${item.isHighlight ? 'text-orange-600' : 'text-slate-500'}`} />
+                  <span>{item.fullTitle}</span>
                 </button>
               );
             })}
 
-            <div className="pt-2 border-t border-slate-200 space-y-1">
+            {/* Mobile Staff Login / Officer Portal */}
+            <div className="pt-2 border-t border-slate-100">
               {isAdminAuthenticated ? (
-                <button
-                  onClick={() => handleNavClick('admin-dashboard')}
-                  className="w-full px-3 py-2.5 rounded-lg flex items-center gap-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer min-h-[44px] bb-touch-target focus-visible:ring-2 focus-visible:ring-orange-500"
-                >
-                  <Shield className="w-4 h-4 text-amber-500 shrink-0" />
-                  <span>Admin Console ({adminUser?.role || 'Authenticated'})</span>
-                </button>
+                <div className="space-y-1">
+                  <button
+                    onClick={() => handleNavClick('admin-dashboard')}
+                    className="w-full min-h-[44px] px-3 py-2 rounded-lg text-left text-xs font-semibold flex items-center gap-3 text-orange-700 bg-orange-50 cursor-pointer bb-touch-target"
+                  >
+                    <Shield className="w-4 h-4 text-orange-600" />
+                    <span>Officer Dashboard ({adminUser?.displayName || 'Officer'})</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      onAdminLogout();
+                      setMobileMenuOpen(false);
+                    }}
+                    className="w-full min-h-[44px] px-3 py-2 rounded-lg text-left text-xs font-medium text-slate-500 hover:text-slate-800 cursor-pointer bb-touch-target"
+                  >
+                    Sign Out of Officer Session
+                  </button>
+                </div>
               ) : (
                 <button
                   onClick={() => handleNavClick('admin-login')}
-                  className="w-full px-3 py-2.5 rounded-lg flex items-center gap-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer min-h-[44px] bb-touch-target focus-visible:ring-2 focus-visible:ring-orange-500 sm:hidden"
+                  className={`w-full min-h-[44px] px-3 py-2 rounded-lg text-left text-xs font-semibold flex items-center gap-3 cursor-pointer bb-touch-target ${
+                    currentScreen === 'admin-login'
+                      ? 'bg-orange-50 text-orange-700 font-bold'
+                      : 'text-slate-700 hover:bg-slate-50'
+                  }`}
                 >
-                  <Lock className="w-4 h-4 text-slate-500 shrink-0" />
-                  <span>{t.navStaffLogin}</span>
+                  <Lock className="w-4 h-4 text-slate-500" />
+                  <span>Staff Login</span>
                 </button>
               )}
             </div>
-          </nav>
-        )}
-      </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 };

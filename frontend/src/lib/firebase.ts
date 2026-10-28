@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+
 export const firebaseConfig = {
   projectId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_PROJECT_ID) || 'e-voting-system-india',
   appId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_APP_ID) || '1:93161223761:web:7452e6b2d925bbc227aa70',
@@ -12,9 +13,19 @@ export const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-// Initialize Cloud Firestore and Authentication
+// Initialize Cloud Firestore safely
 export const db = getFirestore(app);
-export const auth = getAuth(app);
+
+// Initialize Authentication safely (avoids throwing auth/invalid-api-key when client apiKey is unconfigured)
+let authInstance: any = null;
+try {
+  if (firebaseConfig.apiKey && firebaseConfig.apiKey.trim().length > 5) {
+    authInstance = getAuth(app);
+  }
+} catch (e) {
+  console.warn('[Firebase] Client auth initialization deferred:', e);
+}
+export const auth = authInstance;
 
 export enum OperationType {
   CREATE = 'create',
@@ -40,9 +51,9 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
+      userId: auth?.currentUser?.uid,
+      email: auth?.currentUser?.email,
+      emailVerified: auth?.currentUser?.emailVerified,
     },
     operationType,
     path,

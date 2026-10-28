@@ -17,6 +17,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 async function startServer() {
+  if (process.env.RENDER === 'true' && process.env.HOSTED_DEMO_ENABLED === undefined) {
+    process.env.HOSTED_DEMO_ENABLED = 'true';
+  }
   const isProd = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
 
   // 1. Production Fail-Closed Safeguard

@@ -40,7 +40,7 @@ import {
   CandidateAffidavitModal,
   CandidateAffidavitData,
 } from '../common/CandidateAffidavitModal';
-import { AcademicSimulationNotice } from '../common/AcademicSimulationNotice';
+
 
 interface ElectionsResultsScreenProps {
   elections?: Election[];
@@ -127,8 +127,6 @@ export const ElectionsResultsScreen: React.FC<ElectionsResultsScreenProps> = ({
   return (
     <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8">
       {/* Prominent Academic Simulation Notice */}
-      <AcademicSimulationNotice variant="card" />
-
       {/* Top Navigation Tabs */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
         <div>

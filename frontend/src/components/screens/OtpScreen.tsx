@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { VoterRecord } from '../../types';
 import { voterApi } from '../../services/voterApi';
-import { AcademicSimulationNotice } from '../common/AcademicSimulationNotice';
+
 import { KeyRound, Clock, ShieldAlert, ArrowRight, RotateCw, CheckCircle2 } from 'lucide-react';
 
 interface OtpScreenProps {
@@ -119,8 +119,6 @@ export const OtpScreen: React.FC<OtpScreenProps> = ({
 
   return (
     <div className="max-w-xl mx-auto px-3 sm:px-4 py-4 sm:py-8 space-y-4">
-      <AcademicSimulationNotice variant="card" />
-
       <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-8 shadow-xs">
         <div className="mb-6">
           <div className="flex items-center gap-2 text-xs font-semibold text-orange-700 uppercase tracking-widest mb-1">

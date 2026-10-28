@@ -21,7 +21,7 @@ import {
   Fingerprint,
   Info,
 } from 'lucide-react';
-import { AcademicSimulationNotice } from '../common/AcademicSimulationNotice';
+
 
 interface AdminVotersScreenProps {
   voters: VoterRecord[];
@@ -363,8 +363,6 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
   return (
     <div className="max-w-6xl mx-auto px-3 sm:px-6 py-4 sm:py-8">
       {/* Prominent Academic Simulation Notice */}
-      <AcademicSimulationNotice variant="card" className="mb-6" />
-
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
@@ -680,8 +678,6 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
               </span>
             </div>
 
-            <AcademicSimulationNotice variant="compact" className="mb-4" />
-
             <form onSubmit={handleAddSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
@@ -871,8 +867,6 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
             <p className="text-xs text-slate-500 mb-4">
               The elector profile has been permanently persisted in the simulated electoral roll.
             </p>
-
-            <AcademicSimulationNotice variant="compact" className="mb-4 text-left" />
 
             <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl mb-5 text-left space-y-2">
               <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">

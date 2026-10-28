@@ -42,9 +42,7 @@ import { ReviewScreen } from './components/screens/ReviewScreen';
 import { ReceiptScreen } from './components/screens/ReceiptScreen';
 
 // Secondary & Administrative Screens (Code-split for fast initial load)
-const AboutProjectScreen = React.lazy(() =>
-  import('./components/screens/AboutProjectScreen').then((m) => ({ default: m.AboutProjectScreen }))
-);
+
 const ElectionsResultsScreen = React.lazy(() =>
   import('./components/screens/ElectionsResultsScreen').then((m) => ({ default: m.ElectionsResultsScreen }))
 );
@@ -651,9 +649,7 @@ export function AppInner() {
             />
           )}
 
-          {currentScreen === 'about-project' && (
-            <AboutProjectScreen onNavigate={(screen) => setCurrentScreen(screen)} />
-          )}
+          
 
         {(currentScreen === 'available-elections' || currentScreen === 'vote') && (
           <AvailableElectionsScreen
@@ -906,7 +902,6 @@ export function AppInner() {
         {![
           'welcome',
           'home',
-          'about-project',
           'available-elections',
           'vote',
           'elections-results',
@@ -1144,8 +1139,8 @@ export function AppInner() {
       <footer className="border-t border-slate-200 bg-slate-900 text-slate-300 py-10 px-4 text-xs">
         <div className="max-w-7xl mx-auto space-y-8">
           {/* Top row: Project identity, Platform Navigation, and Links */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 border-b border-slate-800 pb-8">
-            {/* Col 1: Project Title & Description */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 border-b border-slate-800 pb-8">
+            {/* Col 1: Platform Branding & Overview */}
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-lg bg-orange-600 flex items-center justify-center font-black text-white text-xs shadow-md">
@@ -1153,24 +1148,12 @@ export function AppInner() {
                 </div>
                 <div>
                   <span className="font-bold text-white text-sm tracking-tight block">BlockBallot</span>
-                  <span className="text-[10px] text-orange-400 font-mono">Academic Research Prototype</span>
+                  <span className="text-[10px] text-slate-400 font-medium">Digital Voting Portal</span>
                 </div>
               </div>
               <p className="text-[11px] text-slate-400 leading-relaxed">
-                Academic research prototype exploring blockchain-based electronic voting workflows with EIP-712 typed authorizations, EVM smart contracts, and role-based officer controls.
+                Verifiable digital voting portal enabling registered voters to cast secure, verifiable ballots on an immutable ledger with instant cryptographic receipts.
               </p>
-              <div className="pt-1">
-                <button
-                  onClick={() => {
-                    setCurrentScreen('about-project');
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500/15 text-orange-300 hover:bg-orange-500/25 border border-orange-500/30 text-[11px] font-semibold transition-colors cursor-pointer"
-                >
-                  <Info className="w-3.5 h-3.5" />
-                  View Project Overview
-                </button>
-              </div>
             </div>
 
             {/* Col 2: Navigation Links */}
@@ -1182,13 +1165,12 @@ export function AppInner() {
                 <li>
                   <button
                     onClick={() => {
-                      setCurrentScreen('about-project');
+                      setCurrentScreen('available-elections');
                       window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}
-                    className="hover:text-orange-400 transition-colors cursor-pointer flex items-center gap-1.5"
+                    className="hover:text-white transition-colors cursor-pointer"
                   >
-                    <Info className="w-3 h-3 text-orange-400" />
-                    About Project & System Specs
+                    Available Elections
                   </button>
                 </li>
                 <li>
@@ -1216,12 +1198,12 @@ export function AppInner() {
                 <li>
                   <button
                     onClick={() => {
-                      setCurrentScreen('candidates-parties');
+                      setCurrentScreen('election-monitor');
                       window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}
                     className="hover:text-white transition-colors cursor-pointer"
                   >
-                    Party & Candidate Directory
+                    Public Election Monitor
                   </button>
                 </li>
                 <li>
@@ -1232,7 +1214,7 @@ export function AppInner() {
                     }}
                     className="hover:text-white transition-colors cursor-pointer"
                   >
-                    Party Preference Poll (Survey)
+                    Party Preference Poll
                   </button>
                 </li>
                 <li>
@@ -1243,16 +1225,16 @@ export function AppInner() {
                     }}
                     className="text-orange-400 hover:text-orange-300 font-medium transition-colors cursor-pointer"
                   >
-                    Officer / Admin Portal →
+                    Staff & Officer Portal →
                   </button>
                 </li>
               </ul>
             </div>
 
-            {/* Col 3: Links & Technical Verification */}
+            {/* Col 3: Useful Links & Verification */}
             <div className="space-y-3">
               <span className="font-bold text-white text-xs uppercase tracking-wider block">
-                Repository & Deployment
+                Deployment & Resources
               </span>
               <div className="space-y-2 text-[11px]">
                 <a
@@ -1262,7 +1244,7 @@ export function AppInner() {
                   className="inline-flex items-center gap-1.5 text-slate-300 hover:text-white transition-colors"
                 >
                   <Github className="w-3.5 h-3.5 text-slate-400" />
-                  <span>GitHub: rudradave12/CE_M2_27</span>
+                  <span>GitHub Repository</span>
                   <ExternalLink className="w-3 h-3 text-slate-500" />
                 </a>
                 <div className="block">
@@ -1277,27 +1259,15 @@ export function AppInner() {
                     <ExternalLink className="w-3 h-3 text-emerald-500" />
                   </a>
                 </div>
-                <div className="pt-2 text-[10px] font-mono text-slate-400 space-y-1 bg-slate-800/60 p-2.5 rounded-lg border border-slate-700/60">
-                  <div>Type: Academic Voting Prototype</div>
-                  <div>Stack: React 19 / Express / Solidity</div>
-                  <div>Auth: EIP-712 Typed Cryptographic Signatures</div>
-                </div>
               </div>
             </div>
           </div>
 
-          {/* Bottom row: Academic Disclaimer */}
+          {/* Bottom row: Academic Simulation Notice */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] text-slate-400">
             <p className="text-center sm:text-left leading-relaxed max-w-3xl">
-              <strong className="text-slate-300">Academic Simulation Disclaimer:</strong> BlockBallot is an academic research and engineering prototype exploring blockchain-based electronic voting workflows. It is not an official service of the Election Commission of India (ECI) or UIDAI. Not approved for legally binding public elections.
+              <strong className="text-slate-300">Notice:</strong> BlockBallot is an academic demonstration voting portal. Non-binding simulation only. Not affiliated with or endorsed by the Election Commission of India (ECI) or UIDAI.
             </p>
-            <div className="flex items-center gap-3 font-mono text-[10px] text-slate-400 whitespace-nowrap">
-              <span>Solidity 0.8.20</span>
-              <span>·</span>
-              <span>EIP-712</span>
-              <span>·</span>
-              <span>Local EVM: 31337</span>
-            </div>
           </div>
         </div>
       </footer>

@@ -31,7 +31,7 @@ import {
   SupportedFingerType,
 } from '../../services/biometricService';
 import { voterApi } from '../../services/voterApi';
-import { AcademicSimulationNotice } from '../common/AcademicSimulationNotice';
+
 
 interface FingerprintEnrollmentScreenProps {
   voter: VoterProfile | null;
@@ -286,8 +286,6 @@ export const FingerprintEnrollmentScreen: React.FC<FingerprintEnrollmentScreenPr
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-12">
       {/* Academic Simulation Notice */}
-      <AcademicSimulationNotice variant="card" />
-
       {/* Top Header & Breadcrumb */}
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">

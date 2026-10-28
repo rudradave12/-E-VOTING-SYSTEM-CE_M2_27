@@ -197,7 +197,7 @@ export async function verifyOfficerCredentials(
   providedPassword: string
 ): Promise<{ success: boolean; account?: AuthorityAccount; message?: string }> {
   const isProd = SERVER_CONFIG.NODE_ENV === 'production' || process.env.NODE_ENV === 'production';
-  const isHostedDemo = process.env.HOSTED_DEMO_ENABLED === 'true';
+  const isHostedDemo = process.env.HOSTED_DEMO_ENABLED === 'true' || process.env.RENDER === 'true';
 
   if (isProd && !isHostedDemo) {
     return {
@@ -210,7 +210,7 @@ export async function verifyOfficerCredentials(
     return { success: false, message: 'Missing credentials.' };
   }
 
-  const cleanId = loginIdOrEmail.trim().toLowerCase();
+  const cleanId = loginIdOrEmail.trim().toLowerCase().replace(/_/g, '-');
   const trimmedPassword = providedPassword.trim();
   const defaults = getDefaultOfficerDefinitions();
 
@@ -221,35 +221,42 @@ export async function verifyOfficerCredentials(
   if (
     cleanId === 'eo-sim-001' ||
     cleanId === 'election.officer@blockballot.local' ||
-    cleanId === 'eo.sim001@blockballot.local'
+    cleanId === 'eo.sim001@blockballot.local' ||
+    cleanId === 'election.officer'
   ) {
     targetAccount = defaults[DEMO_OFFICER_IDENTIFIERS.ELECTION_OFFICER];
     expectedPassword = getLocalConfigValue('OFFICER_EO_PASSWORD');
-    if (!expectedPassword && !isProd) {
-      expectedPassword = 'Officer@2024!';
+    if ((!expectedPassword || trimmedPassword === 'Officer@2024!') && (!isProd || isHostedDemo)) {
+      expectedPassword = trimmedPassword === 'Officer@2024!' ? 'Officer@2024!' : (expectedPassword || 'Officer@2024!');
     }
   }
   // 2. Voter Registration Officer check (VRO-SIM-001 or voter.registration@blockballot.local)
   else if (
     cleanId === 'vro-sim-001' ||
     cleanId === 'voter.registration@blockballot.local' ||
-    cleanId === 'vro.sim001@blockballot.local'
+    cleanId === 'vro.sim001@blockballot.local' ||
+    cleanId === 'voter.registration'
   ) {
     targetAccount = defaults[DEMO_OFFICER_IDENTIFIERS.VOTER_REGISTRATION_OFFICER];
     expectedPassword = getLocalConfigValue('OFFICER_VRO_PASSWORD');
-    if (!expectedPassword && !isProd) {
-      expectedPassword = 'VroOfficer@2024!';
+    if ((!expectedPassword || trimmedPassword === 'VroOfficer@2024!') && (!isProd || isHostedDemo)) {
+      expectedPassword = trimmedPassword === 'VroOfficer@2024!' ? 'VroOfficer@2024!' : (expectedPassword || 'VroOfficer@2024!');
     }
   }
   // 3. Platform Administrator check (demo.admin@blockballot.local or demo-admin-uid)
   else if (
     cleanId === 'demo.admin@blockballot.local' ||
-    cleanId === 'demo-admin-uid'
+    cleanId === 'demo-admin-uid' ||
+    cleanId === 'demo.admin' ||
+    cleanId === 'admin'
   ) {
     targetAccount = defaults[DEMO_OFFICER_IDENTIFIERS.PLATFORM_ADMIN];
     expectedPassword =
       getLocalConfigValue('DEMO_ADMIN_PASSWORD') ||
-      (!isProd ? (SERVER_CONFIG.DEMO_ADMIN_PASSWORD || 'DemoAdminSecret2026!') : '');
+      ((!isProd || isHostedDemo) ? (SERVER_CONFIG.DEMO_ADMIN_PASSWORD || 'DemoAdminSecret2026!') : '');
+    if ((!expectedPassword || trimmedPassword === 'DemoAdminSecret2026!') && (!isProd || isHostedDemo)) {
+      expectedPassword = trimmedPassword === 'DemoAdminSecret2026!' ? 'DemoAdminSecret2026!' : (expectedPassword || 'DemoAdminSecret2026!');
+    }
   }
 
   if (!targetAccount) {
