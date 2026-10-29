@@ -107,11 +107,11 @@ export const SERVER_CONFIG = {
   DEMO_ADMIN_EMAIL: 'demo.admin@blockballot.local',
   DEMO_ADMIN_DISPLAY_NAME: 'BlockBallot Demo Administrator',
   get DEMO_ADMIN_PASSWORD(): string {
-    if (process.env.NODE_ENV === 'production') return '';
+    if (process.env.NODE_ENV === 'production' && process.env.HOSTED_DEMO_ENABLED !== 'true') return '';
     return process.env.DEMO_ADMIN_PASSWORD || 'DemoAdminSecret2026!';
   },
   get DEMO_ADMIN_ENABLED(): boolean {
-    if (process.env.NODE_ENV === 'production') return false;
+    if (process.env.NODE_ENV === 'production' && process.env.HOSTED_DEMO_ENABLED !== 'true') return false;
     return true;
   },
 };
@@ -154,13 +154,14 @@ export interface ServerConfigValidationResult {
 export function validateServerConfig(customEnv?: NodeJS.ProcessEnv): ServerConfigValidationResult {
   const env = customEnv || process.env;
   const isProduction = (env.NODE_ENV || SERVER_CONFIG.NODE_ENV) === 'production';
+  const isHostedDemo = env.HOSTED_DEMO_ENABLED === 'true';
   const errors: string[] = [];
   const warnings: string[] = [];
 
   const rawSignerKey = env.SERVER_AUTHORIZATION_SIGNER_KEY;
 
-  if (isProduction) {
-    // 1. Production Signing Key Validation
+  if (isProduction && !isHostedDemo) {
+    // 1. Production Signing Key Validation (Strict Production)
     if (!rawSignerKey) {
       errors.push('CRITICAL: SERVER_AUTHORIZATION_SIGNER_KEY is missing in production environment.');
     } else {
@@ -220,8 +221,37 @@ export function validateServerConfig(customEnv?: NodeJS.ProcessEnv): ServerConfi
         'Neither FIREBASE_SERVICE_ACCOUNT_KEY nor GOOGLE_APPLICATION_CREDENTIALS is set. Firestore writes will fail unless using GCP Application Default Credentials.'
       );
     }
+  } else if (isHostedDemo) {
+    // Hosted Demonstration Mode (Permitted for academic evaluation on Render)
+    if (rawSignerKey) {
+      const trimmedKey = rawSignerKey.trim();
+      if (!derivePublicSignerAddress(trimmedKey)) {
+        errors.push(
+          'CRITICAL: SERVER_AUTHORIZATION_SIGNER_KEY is invalid (expected 66-character 0x-prefixed hex string).'
+        );
+      }
+    } else {
+      warnings.push(
+        'SERVER_AUTHORIZATION_SIGNER_KEY not set in environment; running with academic demo authorization key matching deployed contract manifest.'
+      );
+    }
+
+    if (!env.SERVER_HMAC_SECRET) {
+      warnings.push('SERVER_HMAC_SECRET not set in environment; using secure fallback key for hosted demo.');
+    }
+    if (!env.SERVER_COMMITMENT_SALT) {
+      warnings.push('SERVER_COMMITMENT_SALT not set in environment; using dedicated demo commitment salt.');
+    }
+    if (!env.APP_ENCRYPTION_KEY && !env.DATA_ENCRYPTION_KEY) {
+      warnings.push('APP_ENCRYPTION_KEY not set in environment; using dedicated demo encryption key.');
+    }
+    if (!env.FIREBASE_SERVICE_ACCOUNT_KEY && !env.GOOGLE_APPLICATION_CREDENTIALS && !env.FIRESTORE_EMULATOR_HOST) {
+      warnings.push(
+        'Neither FIREBASE_SERVICE_ACCOUNT_KEY nor GOOGLE_APPLICATION_CREDENTIALS is set in hosted demo. In-memory data repository will be used if Firestore is unreachable.'
+      );
+    }
   } else {
-    // Non-production advisories
+    // Non-production (development / test) advisories
     if (!env.SERVER_HMAC_SECRET) {
       warnings.push('SERVER_HMAC_SECRET not set in environment; using secure fallback key for academic demo.');
     }
@@ -233,14 +263,20 @@ export function validateServerConfig(customEnv?: NodeJS.ProcessEnv): ServerConfi
     }
   }
 
-  // Derive signer address
-  const activeKey = isProduction
-    ? (rawSignerKey && !KNOWN_TEST_SIGNING_KEYS.has(rawSignerKey.trim().toLowerCase()) ? rawSignerKey.trim() : undefined)
-    : (rawSignerKey?.trim() || DETERMINISTIC_DEV_SIGNING_KEY);
+  // Derive signer address:
+  // In hosted demo or non-production, fall back to DETERMINISTIC_DEV_SIGNING_KEY if rawSignerKey is omitted.
+  // In strict production, only use rawSignerKey if it is not a known test key.
+  const activeKey = (isHostedDemo || !isProduction)
+    ? (rawSignerKey?.trim() || DETERMINISTIC_DEV_SIGNING_KEY)
+    : (rawSignerKey && !KNOWN_TEST_SIGNING_KEYS.has(rawSignerKey.trim().toLowerCase()) ? rawSignerKey.trim() : undefined);
 
   const currentSigner = derivePublicSignerAddress(activeKey);
-  if (!currentSigner && !isProduction) {
-    warnings.push('SERVER_AUTHORIZATION_SIGNER_KEY is invalid; cannot derive public signer address.');
+  if (!currentSigner) {
+    if (isProduction && !isHostedDemo) {
+      // already caught in errors above
+    } else {
+      errors.push('CRITICAL: Unable to derive public signer address from configured SERVER_AUTHORIZATION_SIGNER_KEY.');
+    }
   }
 
   // 5. Contract Authorization Signer Alignment
@@ -257,11 +293,7 @@ export function validateServerConfig(customEnv?: NodeJS.ProcessEnv): ServerConfi
       if (manifest.authorizationSigner) {
         if (currentSigner && currentSigner.toLowerCase() !== manifest.authorizationSigner.toLowerCase()) {
           const mismatchMsg = `Signer address mismatch: Server is configured to sign with ${currentSigner}, but deployed contract expects ${manifest.authorizationSigner}.`;
-          if (isProduction) {
-            errors.push(`CRITICAL: ${mismatchMsg}`);
-          } else {
-            warnings.push(mismatchMsg);
-          }
+          errors.push(`CRITICAL: ${mismatchMsg}`);
           contractSignerMatch = false;
         } else {
           contractSignerMatch = true;
