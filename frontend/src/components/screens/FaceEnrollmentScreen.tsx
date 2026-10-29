@@ -31,16 +31,26 @@ import { cameraService } from '../../services/biometricService';
 import { voterApi } from '../../services/voterApi';
 
 
-interface FaceEnrollmentScreenProps {
+export interface FaceEnrollmentScreenProps {
   voter: VoterProfile | null;
   adminUser?: any;
   onBack: () => void;
+  isRegistrationFlow?: boolean;
+  pendingRegistration?: any;
+  onEnrollmentComplete?: (result: {
+    decision: 'APPROVED' | 'REJECTED';
+    verifiedAt: number;
+    officerId: string;
+  }) => void;
 }
 
 export const FaceEnrollmentScreen: React.FC<FaceEnrollmentScreenProps> = ({
   voter,
   adminUser,
   onBack,
+  isRegistrationFlow,
+  pendingRegistration,
+  onEnrollmentComplete,
 }) => {
   // Session & authorization checks
   const officerRole = adminUser?.role || 'VOTER_REGISTRATION_OFFICER';
@@ -50,8 +60,27 @@ export const FaceEnrollmentScreen: React.FC<FaceEnrollmentScreenProps> = ({
     officerRole === 'PLATFORM_ADMIN' ||
     adminUser?.permissions?.includes('BIOMETRIC_ENROLLMENT_START');
 
-  const isScopePermitted = voter
-    ? !officerScope || isConstituencyInScope(officerScope, voter.constituencyId)
+  const effectiveVoter = voter || (pendingRegistration ? {
+    id: pendingRegistration.pendingId,
+    simulationVoterId: pendingRegistration.pendingId,
+    fullName: pendingRegistration.fullName,
+    constituencyId: pendingRegistration.constituencyId,
+    dateOfBirth: pendingRegistration.dateOfBirth,
+    gender: pendingRegistration.gender,
+    state: pendingRegistration.state,
+    district: pendingRegistration.district,
+    pollingStation: pendingRegistration.pollingStation,
+    maskedMobile: pendingRegistration.maskedMobile,
+    registrationStatus: 'PENDING_VERIFICATION' as const,
+    eligibilityStatus: 'INELIGIBLE_BIOMETRIC_PENDING' as const,
+    lifecycleStatus: 'ACTIVE' as const,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    schemaVersion: '2.0' as const,
+  } : null);
+
+  const isScopePermitted = effectiveVoter
+    ? !officerScope || isConstituencyInScope(officerScope, effectiveVoter.constituencyId)
     : true;
 
   // Media stream & device state
@@ -314,7 +343,7 @@ export const FaceEnrollmentScreen: React.FC<FaceEnrollmentScreenProps> = ({
   }
 
   // Voter not selected fallback
-  if (!voter) {
+  if (!effectiveVoter) {
     return (
       <div className="max-w-4xl mx-auto py-12 px-4 text-center space-y-4">
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-6">
@@ -369,17 +398,17 @@ export const FaceEnrollmentScreen: React.FC<FaceEnrollmentScreenProps> = ({
           <div className="flex flex-wrap items-center gap-3 bg-slate-50 border border-slate-200 px-4 py-2.5 rounded-lg text-xs">
             <div>
               <span className="text-slate-400 block text-[10px] uppercase font-bold">Simulation ID</span>
-              <span className="font-mono font-bold text-slate-900">{voter.simulationVoterId}</span>
+              <span className="font-mono font-bold text-slate-900">{effectiveVoter.simulationVoterId}</span>
             </div>
             <div className="h-6 w-px bg-slate-200" />
             <div>
               <span className="text-slate-400 block text-[10px] uppercase font-bold">Elector Name</span>
-              <span className="font-semibold text-slate-800">{voter.fullName}</span>
+              <span className="font-semibold text-slate-800">{effectiveVoter.fullName}</span>
             </div>
             <div className="h-6 w-px bg-slate-200" />
             <div>
               <span className="text-slate-400 block text-[10px] uppercase font-bold">Constituency</span>
-              <span className="font-medium text-slate-700">{voter.constituencyId}</span>
+              <span className="font-medium text-slate-700">{effectiveVoter.constituencyId}</span>
             </div>
             <div className="h-6 w-px bg-slate-200" />
             <div>
@@ -705,6 +734,7 @@ export const FaceEnrollmentScreen: React.FC<FaceEnrollmentScreenProps> = ({
               {capturedBlobUrl && (
                 <>
                   <button
+                    type="button"
                     onClick={handleRetake}
                     className="flex-1 py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   >
@@ -712,14 +742,51 @@ export const FaceEnrollmentScreen: React.FC<FaceEnrollmentScreenProps> = ({
                     <span>Retake</span>
                   </button>
 
-                  <button
-                    onClick={handleSaveProgress}
-                    disabled={isSaving}
-                    className="flex-1 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    <Save className="w-3.5 h-3.5" />
-                    <span>{isSaving ? 'Recording...' : 'Save Progress'}</span>
-                  </button>
+                  {isRegistrationFlow ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (onEnrollmentComplete) {
+                            onEnrollmentComplete({
+                              decision: 'APPROVED',
+                              verifiedAt: Date.now(),
+                              officerId: adminUser?.id || 'VRO-SIM-001',
+                            });
+                          }
+                        }}
+                        className="flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>Approve Photo</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (onEnrollmentComplete) {
+                            onEnrollmentComplete({
+                              decision: 'REJECTED',
+                              verifiedAt: Date.now(),
+                              officerId: adminUser?.id || 'VRO-SIM-001',
+                            });
+                          }
+                        }}
+                        className="py-2.5 px-3 bg-red-100 hover:bg-red-200 text-red-700 font-medium rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                        <span>Reject</span>
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={handleSaveProgress}
+                      disabled={isSaving}
+                      className="flex-1 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span>{isSaving ? 'Recording...' : 'Save Progress'}</span>
+                    </button>
+                  )}
                 </>
               )}
 
@@ -1115,11 +1182,11 @@ export const FaceEnrollmentScreen: React.FC<FaceEnrollmentScreenProps> = ({
             <div className="bg-slate-50 p-3 rounded-lg text-xs space-y-1 border border-slate-200">
               <div className="flex justify-between">
                 <span className="text-slate-500">Elector Name:</span>
-                <span className="font-bold text-slate-900">{voter.fullName}</span>
+                <span className="font-bold text-slate-900">{effectiveVoter.fullName}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Simulation Voter ID:</span>
-                <span className="font-mono font-bold text-slate-800">{voter.simulationVoterId}</span>
+                <span className="font-mono font-bold text-slate-800">{effectiveVoter.simulationVoterId}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Modality:</span>

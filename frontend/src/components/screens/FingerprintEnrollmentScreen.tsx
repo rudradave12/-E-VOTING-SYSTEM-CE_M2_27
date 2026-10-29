@@ -33,16 +33,26 @@ import {
 import { voterApi } from '../../services/voterApi';
 
 
-interface FingerprintEnrollmentScreenProps {
+export interface FingerprintEnrollmentScreenProps {
   voter: VoterProfile | null;
   adminUser?: any;
   onBack: () => void;
+  isRegistrationFlow?: boolean;
+  pendingRegistration?: any;
+  onEnrollmentComplete?: (result: {
+    mode: 'HARDWARE_USB' | 'SIMULATED' | 'MANUAL_OFFICER_OVERRIDE';
+    verifiedAt: number;
+    officerId: string;
+  }) => void;
 }
 
 export const FingerprintEnrollmentScreen: React.FC<FingerprintEnrollmentScreenProps> = ({
   voter,
   adminUser,
   onBack,
+  isRegistrationFlow,
+  pendingRegistration,
+  onEnrollmentComplete,
 }) => {
   // Session & authorization checks
   const officerRole = adminUser?.role || 'VOTER_REGISTRATION_OFFICER';
@@ -52,8 +62,27 @@ export const FingerprintEnrollmentScreen: React.FC<FingerprintEnrollmentScreenPr
     officerRole === 'PLATFORM_ADMIN' ||
     adminUser?.permissions?.includes('BIOMETRIC_ENROLLMENT_START');
 
-  const isScopePermitted = voter
-    ? !officerScope || isConstituencyInScope(officerScope, voter.constituencyId)
+  const effectiveVoter = voter || (pendingRegistration ? {
+    id: pendingRegistration.pendingId,
+    simulationVoterId: pendingRegistration.pendingId,
+    fullName: pendingRegistration.fullName,
+    constituencyId: pendingRegistration.constituencyId,
+    dateOfBirth: pendingRegistration.dateOfBirth,
+    gender: pendingRegistration.gender,
+    state: pendingRegistration.state,
+    district: pendingRegistration.district,
+    pollingStation: pendingRegistration.pollingStation,
+    maskedMobile: pendingRegistration.maskedMobile,
+    registrationStatus: 'PENDING_VERIFICATION' as const,
+    eligibilityStatus: 'INELIGIBLE_BIOMETRIC_PENDING' as const,
+    lifecycleStatus: 'ACTIVE' as const,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    schemaVersion: '2.0' as const,
+  } : null);
+
+  const isScopePermitted = effectiveVoter
+    ? !officerScope || isConstituencyInScope(officerScope, effectiveVoter.constituencyId)
     : true;
 
   // Adapter mode: 'hardware' vs 'simulation'
@@ -262,7 +291,7 @@ export const FingerprintEnrollmentScreen: React.FC<FingerprintEnrollmentScreenPr
   }
 
   // Voter not selected fallback
-  if (!voter) {
+  if (!effectiveVoter) {
     return (
       <div className="max-w-4xl mx-auto py-12 px-4 text-center space-y-4">
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-6">
@@ -317,17 +346,17 @@ export const FingerprintEnrollmentScreen: React.FC<FingerprintEnrollmentScreenPr
           <div className="flex flex-wrap items-center gap-3 bg-slate-50 border border-slate-200 px-4 py-2.5 rounded-lg text-xs">
             <div>
               <span className="text-slate-400 block text-[10px] uppercase font-bold">Simulation ID</span>
-              <span className="font-mono font-bold text-slate-900">{voter.simulationVoterId}</span>
+              <span className="font-mono font-bold text-slate-900">{effectiveVoter.simulationVoterId}</span>
             </div>
             <div className="h-6 w-px bg-slate-200" />
             <div>
               <span className="text-slate-400 block text-[10px] uppercase font-bold">Elector Name</span>
-              <span className="font-semibold text-slate-800">{voter.fullName}</span>
+              <span className="font-semibold text-slate-800">{effectiveVoter.fullName}</span>
             </div>
             <div className="h-6 w-px bg-slate-200" />
             <div>
               <span className="text-slate-400 block text-[10px] uppercase font-bold">Constituency</span>
-              <span className="font-medium text-slate-700">{voter.constituencyId}</span>
+              <span className="font-medium text-slate-700">{effectiveVoter.constituencyId}</span>
             </div>
             <div className="h-6 w-px bg-slate-200" />
             <div>
@@ -458,25 +487,27 @@ export const FingerprintEnrollmentScreen: React.FC<FingerprintEnrollmentScreenPr
 
               {/* Status Pill */}
               <div className="flex items-center gap-1.5 text-[11px] font-semibold">
-                {deviceStatus === 'CONNECTED' && (
+                {adapterMode === 'simulation' ? (
+                  <span className="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1 rounded-full">
+                    <span className="w-2 h-2 rounded-full bg-blue-500" />
+                    <span>Academic Simulation Active</span>
+                  </span>
+                ) : deviceStatus === 'CONNECTED' ? (
                   <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full">
                     <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                    <span>Scanner Connected</span>
+                    <span>Hardware Scanner Connected</span>
                   </span>
-                )}
-                {deviceStatus === 'SCANNING' && (
+                ) : deviceStatus === 'SCANNING' ? (
                   <span className="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1 rounded-full">
                     <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
                     <span>Scanning...</span>
                   </span>
-                )}
-                {deviceStatus === 'NOT_DETECTED' && (
+                ) : deviceStatus === 'NOT_DETECTED' ? (
                   <span className="inline-flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-full">
                     <span className="w-2 h-2 rounded-full bg-amber-500" />
-                    <span>Not Detected</span>
+                    <span>No Supported Scanner Detected</span>
                   </span>
-                )}
-                {deviceStatus === 'ERROR' && (
+                ) : (
                   <span className="inline-flex items-center gap-1.5 bg-red-50 text-red-700 border border-red-200 px-2.5 py-1 rounded-full">
                     <span className="w-2 h-2 rounded-full bg-red-500" />
                     <span>Device Error</span>
@@ -511,16 +542,28 @@ export const FingerprintEnrollmentScreen: React.FC<FingerprintEnrollmentScreenPr
               </button>
             </div>
 
+            {/* Simulation Disclosure Banner */}
+            {adapterMode === 'simulation' && (
+              <div className="mb-4 p-3 bg-blue-50/80 border border-blue-200 rounded-lg text-xs text-blue-900 space-y-1">
+                <div className="font-bold flex items-center gap-1.5">
+                  <Info className="w-4 h-4 text-blue-600" />
+                  <span>Academic Simulation — No Physical Fingerprint Captured</span>
+                </div>
+                <p className="text-[11px] text-blue-700 leading-relaxed">
+                  Virtual device testbed active for demonstration. No physical fingerprint hardware attached or minutiae recorded.
+                </p>
+              </div>
+            )}
+
             {/* Hardware Not Found Notice if Physical Mode */}
             {adapterMode === 'hardware' && deviceStatus === 'NOT_DETECTED' && (
               <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 space-y-1">
                 <div className="font-semibold flex items-center gap-1.5">
                   <AlertTriangle className="w-4 h-4 text-amber-600" />
-                  <span>No Local RD Service Daemon Detected</span>
+                  <span>No Supported Scanner Detected</span>
                 </div>
                 <p className="text-[11px] text-amber-700 leading-relaxed">
-                  Web browsers require a local biometric daemon (such as Mantra / SecuGen RD Service on localhost:11100).
-                  Switch to <strong>Simulated Preview Mode</strong> to test the multi-impression capture flow.
+                  Checked USB RD Service daemon on port 11100. No certified scanner driver responded. Connect a supported device (Mantra / SecuGen) or switch to <strong>Simulated Preview Mode</strong>.
                 </p>
               </div>
             )}
@@ -693,14 +736,34 @@ export const FingerprintEnrollmentScreen: React.FC<FingerprintEnrollmentScreenPr
                 <span>Reset</span>
               </button>
 
-              <button
-                onClick={handleSaveProgress}
-                disabled={isSaving || impressions.length === 0}
-                className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <Save className="w-3.5 h-3.5" />
-                <span>{isSaving ? 'Recording...' : 'Save Fingerprint'}</span>
-              </button>
+              {isRegistrationFlow ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onEnrollmentComplete) {
+                      onEnrollmentComplete({
+                        mode: adapterMode === 'hardware' ? 'HARDWARE_USB' : 'SIMULATED',
+                        verifiedAt: Date.now(),
+                        officerId: adminUser?.id || 'VRO-SIM-001',
+                      });
+                    }
+                  }}
+                  disabled={impressions.length === 0}
+                  className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Confirm Biometrics & Continue</span>
+                </button>
+              ) : (
+                <button
+                  onClick={handleSaveProgress}
+                  disabled={isSaving || impressions.length === 0}
+                  className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{isSaving ? 'Recording...' : 'Save Fingerprint'}</span>
+                </button>
+              )}
 
               <button
                 onClick={onBack}
@@ -1053,11 +1116,11 @@ export const FingerprintEnrollmentScreen: React.FC<FingerprintEnrollmentScreenPr
             <div className="bg-slate-50 p-3 rounded-lg text-xs space-y-1 border border-slate-200">
               <div className="flex justify-between">
                 <span className="text-slate-500">Elector Name:</span>
-                <span className="font-bold text-slate-900">{voter.fullName}</span>
+                <span className="font-bold text-slate-900">{effectiveVoter.fullName}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Simulation Voter ID:</span>
-                <span className="font-mono font-bold text-slate-800">{voter.simulationVoterId}</span>
+                <span className="font-mono font-bold text-slate-800">{effectiveVoter.simulationVoterId}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Modality:</span>

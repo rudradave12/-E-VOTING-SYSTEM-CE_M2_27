@@ -39,6 +39,7 @@ import {
   FORBIDDEN_EXCEPTION_KEYS,
   validateManualIdException,
   SCHEMA_VERSION_CURRENT,
+  computeAuthoritativeEligibility,
 } from '../../../frontend/src/types/dataModel';
 import { getDataRepositories } from '../repositories';
 import { saveStaffCredential, getStaffCredential, clearStaffCredentialsForTesting } from '../auth/credentials';
@@ -1185,7 +1186,9 @@ adminRouter.post('/voters', requirePermission('VOTER_CREATE'), async (req: Reque
     pollingStation: pollingStation?.trim() || 'Civic Community Centre, Polling Booth 1',
     maskedMobile: maskedMobile?.trim() || '+91 ••••• •1122',
     registrationStatus: 'REGISTERED',
-    eligibilityStatus: 'ELIGIBLE',
+    eligibilityStatus: req.body.biometricsPending || req.body.eligibilityStatus === 'INELIGIBLE_BIOMETRIC_PENDING'
+      ? 'INELIGIBLE_BIOMETRIC_PENDING'
+      : 'ELIGIBLE',
     lifecycleStatus: 'ACTIVE',
     createdAt: now,
     updatedAt: now,
@@ -1250,7 +1253,7 @@ adminRouter.post('/voters', requirePermission('VOTER_CREATE'), async (req: Reque
     constituencyId: profile.constituencyId,
     pollingStation: profile.pollingStation,
     maskedMobile: profile.maskedMobile,
-    isEligible: true,
+    isEligible: !(req.body.biometricsPending || req.body.eligibilityStatus === 'INELIGIBLE_BIOMETRIC_PENDING'),
     status: 'ELIGIBLE',
   });
 
@@ -1362,7 +1365,23 @@ adminRouter.get('/voters', requirePermission('VOTER_READ'), async (req: Request,
     );
   }
 
-  res.status(200).json({ success: true, voters: profiles, count: profiles.length });
+  const resolvedProfiles = await Promise.all(
+    profiles.map(async (p) => {
+      const bioList = await repos.biometrics.listByVoter(p.id);
+      const face = bioList.find((b) => b.modality === 'FACE');
+      const fp = bioList.find((b) => b.modality === 'FINGERPRINT');
+      const auth = computeAuthoritativeEligibility(p, {
+        faceStatus: face?.status,
+        fingerprintStatus: fp?.status,
+      });
+      return {
+        ...p,
+        eligibilityStatus: auth.eligibilityStatus,
+      };
+    })
+  );
+
+  res.status(200).json({ success: true, voters: resolvedProfiles, count: resolvedProfiles.length });
 });
 
 /**
@@ -1424,6 +1443,11 @@ adminRouter.get('/voters/:id', requirePermission('VOTER_READ'), async (req: Requ
   const bioList = await repos.biometrics.listByVoter(profile.id);
   const face = bioList.find((b) => b.modality === 'FACE');
   const fp = bioList.find((b) => b.modality === 'FINGERPRINT');
+  const auth = computeAuthoritativeEligibility(profile, {
+    faceStatus: face?.status,
+    fingerprintStatus: fp?.status,
+  });
+  profile.eligibilityStatus = auth.eligibilityStatus;
 
   res.status(200).json({
     success: true,
@@ -1604,6 +1628,19 @@ adminRouter.patch('/voters/:id/biometrics', requirePermission('BIOMETRIC_ENROLLM
   };
 
   await repos.biometrics.saveMetadata(updatedMeta);
+
+  // Automatically re-evaluate voter eligibility based on updated biometrics
+  const allBio = await repos.biometrics.listByVoter(profile.id);
+  const currentFace = allBio.find((b) => b.modality === 'FACE');
+  const currentFp = allBio.find((b) => b.modality === 'FINGERPRINT');
+  const updatedAuth = computeAuthoritativeEligibility(profile, {
+    faceStatus: currentFace?.status,
+    fingerprintStatus: currentFp?.status,
+  });
+  profile.eligibilityStatus = updatedAuth.eligibilityStatus;
+  profile.updatedAt = now;
+  await repos.voterProfiles.save(profile);
+  await serverStore.setVoterEligibilityAsync(profile.id, updatedAuth.isEligible);
 
   // 6. Record structured audit event
   serverStore.recordAuditEvent({
@@ -2579,6 +2616,22 @@ adminRouter.post(
               schemaVersion: SCHEMA_VERSION_CURRENT,
             };
         await repos.biometrics.saveMetadata(bioRecord);
+
+        // Recompute voter eligibility when manual physical ID exception is approved
+        const allBio = await repos.biometrics.listByVoter(exception.voterId);
+        const currentFace = allBio.find((b) => b.modality === 'FACE');
+        const currentFp = allBio.find((b) => b.modality === 'FINGERPRINT');
+        const vProfile = await repos.voterProfiles.findById(exception.voterId);
+        if (vProfile) {
+          const auth = computeAuthoritativeEligibility(vProfile, {
+            faceStatus: currentFace?.status,
+            fingerprintStatus: currentFp?.status,
+          });
+          vProfile.eligibilityStatus = auth.eligibilityStatus;
+          vProfile.updatedAt = now;
+          await repos.voterProfiles.save(vProfile);
+          await serverStore.setVoterEligibilityAsync(vProfile.id, auth.isEligible);
+        }
       }
     } else if (exception.purpose === 'VOTING_SESSION') {
       // Re-verify voter is still active and eligible

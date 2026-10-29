@@ -20,6 +20,7 @@ import {
   getLocalConfigValue,
 } from '../backend/server/auth/rbac';
 import { clearStaffCredentialsForTesting } from '../backend/server/auth/credentials';
+import { getFingerprintScannerAdapter } from '../frontend/src/services/biometricService';
 
 test('BlockBallot — 3-Page Voter Registration, Simplified Voting UX & Staff Credential Management', async (t) => {
   let server: http.Server;
@@ -113,6 +114,7 @@ test('BlockBallot — 3-Page Voter Registration, Simplified Voting UX & Staff Cr
         dateOfBirth: '2015-01-01',
         gender: 'M',
         constituencyId: 'CONST-04-ND',
+        biometricsPending: true,
       }),
     });
     assert.equal(underageRes.status, 400);
@@ -505,6 +507,152 @@ test('BlockBallot — 3-Page Voter Registration, Simplified Voting UX & Staff Cr
     const newLoginData = await newLoginRes.json();
     assert.ok(newLoginData.token || newLoginData.sessionToken);
     assert.equal(newLoginData.user.id, 'VRO-SIM-001');
+  });
+
+  // --------------------------------------------------------------------------
+  // PART 6: Authoritative Biometric Integration & Eligibility Alignment
+  // --------------------------------------------------------------------------
+
+  await t.test('Hardware scanner disconnected honestly returns NOT_DETECTED; Simulation mode is distinct', async () => {
+    // 1. Hardware mode when RD service daemon is offline
+    const hwAdapter = getFingerprintScannerAdapter('hardware');
+    assert.equal(hwAdapter.isSimulation, false);
+    assert.equal(hwAdapter.captureMode, 'HARDWARE_USB');
+    const isHwConnected = await hwAdapter.isHardwareConnected();
+    assert.equal(isHwConnected, false, 'Hardware should not report connected without local daemon');
+    const hwResult = await hwAdapter.captureImpression(1);
+    assert.equal(hwResult.success, false);
+    assert.equal(hwResult.status, 'NOT_DETECTED');
+    assert.equal(hwResult.captureMode, 'HARDWARE_USB');
+    assert.ok(hwResult.message.includes('No supported scanner detected'));
+
+    // 2. Simulated mode is clearly distinct and labeled
+    const simAdapter = getFingerprintScannerAdapter('simulation');
+    assert.equal(simAdapter.isSimulation, true);
+    assert.equal(simAdapter.captureMode, 'SIMULATED');
+    const isSimHwConnected = await simAdapter.isHardwareConnected();
+    assert.equal(isSimHwConnected, false, 'Simulated mode must honestly report no physical hardware connected');
+    const simResult = await simAdapter.captureImpression(1);
+    assert.equal(simResult.success, true);
+    assert.equal(simResult.isSimulated, true);
+    assert.equal(simResult.captureMode, 'SIMULATED');
+    assert.ok(simResult.message.includes('Academic Simulation Mode'));
+  });
+
+  await t.test('Direct voter creation without completed biometrics leaves voter INELIGIBLE_BIOMETRIC_PENDING', async () => {
+    clearStaffCredentialsForTesting();
+    const vroToken = await loginAsVRO();
+
+    // 1. Create a voter directly via POST /api/admin/voters
+    const createRes = await fetch(`${baseUrl}/api/admin/voters`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${vroToken}`,
+      },
+      body: JSON.stringify({
+        fullName: 'Biometric Pending Test Voter',
+        dateOfBirth: '1992-06-20',
+        gender: 'M',
+        constituencyId: 'CONST-04-ND',
+        biometricsPending: true,
+      }),
+    });
+    assert.equal(createRes.status, 201);
+    const createdData = await createRes.json();
+    assert.equal(createdData.voter.eligibilityStatus, 'INELIGIBLE_BIOMETRIC_PENDING');
+
+    // 2. Query voter by ID: eligibilityStatus must be INELIGIBLE_BIOMETRIC_PENDING
+    const getRes = await fetch(`${baseUrl}/api/admin/voters/${createdData.voter.id}`, {
+      headers: { Authorization: `Bearer ${vroToken}` },
+    });
+    assert.equal(getRes.status, 200);
+    const getData = await getRes.json();
+    assert.equal(getData.voter.eligibilityStatus, 'INELIGIBLE_BIOMETRIC_PENDING');
+    assert.equal(getData.biometrics.faceStatus, 'NOT_STARTED');
+    assert.equal(getData.biometrics.fingerprintStatus, 'NOT_STARTED');
+
+    // 3. Voter verification must fail closed with 403 INELIGIBLE
+    const verifyRes = await fetch(`${baseUrl}/api/voter/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ epicId: createdData.voter.simulationVoterId }),
+    });
+    assert.equal(verifyRes.status, 403);
+    const verifyData = await verifyRes.json();
+    assert.equal(verifyData.status, 'INELIGIBLE');
+  });
+
+  await t.test('Completed 3-stage registration with verified biometrics grants ELIGIBLE status', async () => {
+    clearStaffCredentialsForTesting();
+    const vroToken = await loginAsVRO();
+
+    // 1. Initiate draft
+    const initRes = await fetch(`${baseUrl}/api/admin/voters/initiate-registration`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${vroToken}`,
+      },
+      body: JSON.stringify({
+        fullName: 'Fully Verified Citizen',
+        dateOfBirth: '1990-01-01',
+        gender: 'F',
+        constituencyId: 'CONST-04-ND',
+      }),
+    });
+    const { pendingId } = await initRes.json();
+
+    // 2. Verify fingerprint
+    const fpRes = await fetch(`${baseUrl}/api/admin/voters/verify-fingerprint`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${vroToken}`,
+      },
+      body: JSON.stringify({
+        pendingId,
+        officerConfirmation: true,
+        result: 'VERIFIED',
+      }),
+    });
+    assert.equal(fpRes.status, 200);
+
+    // 3. Verify photo
+    const photoRes = await fetch(`${baseUrl}/api/admin/voters/verify-photo`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${vroToken}`,
+      },
+      body: JSON.stringify({
+        pendingId,
+        decision: 'APPROVED',
+      }),
+    });
+    assert.equal(photoRes.status, 200);
+
+    // 4. Finalize registration
+    const finalRes = await fetch(`${baseUrl}/api/admin/voters/finalize-registration`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${vroToken}`,
+      },
+      body: JSON.stringify({ pendingId }),
+    });
+    assert.equal(finalRes.status, 201);
+    const finalData = await finalRes.json();
+    assert.equal(finalData.voter.eligibilityStatus, 'ELIGIBLE');
+
+    // 5. Query biometrics: both should be ENROLLED
+    const bioRes = await fetch(`${baseUrl}/api/admin/voters/${finalData.voter.id}/biometrics`, {
+      headers: { Authorization: `Bearer ${vroToken}` },
+    });
+    assert.equal(bioRes.status, 200);
+    const bioData = await bioRes.json();
+    assert.equal(bioData.face.status, 'ENROLLED');
+    assert.equal(bioData.fingerprint.status, 'ENROLLED');
   });
 
   await t.test('Unverified / pending voter cannot vote (verify/lookup fails closed)', async () => {

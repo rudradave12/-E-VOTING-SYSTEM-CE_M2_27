@@ -166,9 +166,20 @@ async function startServer() {
     path.resolve(__dirname, '../frontend/dist'),
     path.resolve(process.cwd(), 'frontend/dist'),
   ];
-  const distDir = distCandidates.find((dir) => fs.existsSync(path.join(dir, 'index.html')));
+  let distDir = distCandidates.find((dir) => fs.existsSync(path.join(dir, 'index.html')));
 
   if (isProd) {
+    if (!distDir) {
+      console.warn('[BlockBallot Server] NOTICE: Production frontend bundle not found. Attempting automatic build (npm run build)...');
+      try {
+        const { execSync } = await import('child_process');
+        execSync('npm run build', { stdio: 'inherit', cwd: process.cwd() });
+        distDir = distCandidates.find((dir) => fs.existsSync(path.join(dir, 'index.html')));
+      } catch (buildErr: any) {
+        console.error('[BlockBallot Server] On-demand frontend compilation failed:', buildErr?.message);
+      }
+    }
+
     if (!distDir) {
       console.error(
         '[BlockBallot Server] FATAL: Production frontend bundle not found. ' +
@@ -178,11 +189,12 @@ async function startServer() {
       process.exit(1);
     }
 
-    console.log(`[BlockBallot Server] Serving static production bundle from: ${distDir}`);
+    const prodDist = distDir!;
+    console.log(`[BlockBallot Server] Serving static production bundle from: ${prodDist}`);
     // Static assets with fingerprinted caching (1 year immutable)
     app.use(
       '/assets',
-      express.static(path.join(distDir, 'assets'), {
+      express.static(path.join(prodDist, 'assets'), {
         maxAge: '1y',
         immutable: true,
       })
@@ -201,7 +213,7 @@ async function startServer() {
     app.get('*', (_req, res, next) => {
       if (_req.path.startsWith('/api/')) return next();
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-      res.sendFile(path.join(distDir, 'index.html'));
+      res.sendFile(path.join(distDir!, 'index.html'));
     });
   } else {
     // Local development mode: serve pre-built dist if present, or Vite dev server middleware
@@ -209,7 +221,7 @@ async function startServer() {
       console.log(`[BlockBallot Server] Serving pre-built bundle from: ${distDir}`);
       app.use(
         '/assets',
-        express.static(path.join(distDir, 'assets'), {
+        express.static(path.join(distDir!, 'assets'), {
           maxAge: '1y',
           immutable: true,
         })
@@ -226,7 +238,7 @@ async function startServer() {
       app.get('*', (_req, res, next) => {
         if (_req.path.startsWith('/api/')) return next();
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-        res.sendFile(path.join(distDir, 'index.html'));
+        res.sendFile(path.join(distDir!, 'index.html'));
       });
     } else {
       console.log('[BlockBallot Server] NOTICE: Vite dev server middleware active (local development only).');

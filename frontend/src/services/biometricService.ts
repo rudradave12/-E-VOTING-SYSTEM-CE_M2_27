@@ -212,6 +212,8 @@ export type ScannerDeviceStatus = 'CONNECTED' | 'NOT_DETECTED' | 'SCANNING' | 'E
 
 export type SupportedFingerType = 'THUMB' | 'INDEX' | 'MIDDLE' | 'RING' | 'LITTLE';
 
+export type BiometricCaptureMode = 'HARDWARE_USB' | 'SIMULATED' | 'MANUAL_OFFICER_OVERRIDE';
+
 export interface FingerprintScanResult {
   success: boolean;
   impressionIndex: number; // 1 to 4
@@ -219,12 +221,14 @@ export interface FingerprintScanResult {
   status: ScannerDeviceStatus;
   message: string;
   isSimulated: boolean;
+  captureMode: BiometricCaptureMode;
 }
 
 export interface IFingerprintScannerAdapter {
   readonly name: string;
   readonly provider: string;
   readonly isSimulation: boolean;
+  readonly captureMode: BiometricCaptureMode;
   getStatus(): Promise<ScannerDeviceStatus>;
   isHardwareConnected(): Promise<boolean>;
   captureImpression(impressionIndex: number, fingerType?: SupportedFingerType): Promise<FingerprintScanResult>;
@@ -241,6 +245,7 @@ export class PhysicalScannerSdkAdapter implements IFingerprintScannerAdapter {
   public readonly name = 'Standard USB Biometric RD Service';
   public readonly provider = 'UIDAI/ECI Compatible Hardware Client';
   public readonly isSimulation = false;
+  public readonly captureMode: BiometricCaptureMode = 'HARDWARE_USB';
   private readonly daemonEndpoint = 'http://127.0.0.1:11100';
 
   public async getStatus(): Promise<ScannerDeviceStatus> {
@@ -279,8 +284,9 @@ export class PhysicalScannerSdkAdapter implements IFingerprintScannerAdapter {
         qualityScore: 0,
         status: 'NOT_DETECTED',
         message:
-          'No physical fingerprint scanner SDK or local RD service detected on port 11100. Connect a supported device driver or use Simulated Preview Mode.',
+          'No supported scanner detected (Checked USB RD Service on port 11100). No physical fingerprint scanner SDK / driver daemon is currently responding. Connect a compatible local driver/SDK daemon or switch to Academic Simulation Mode.',
         isSimulated: false,
+        captureMode: 'HARDWARE_USB',
       };
     }
 
@@ -291,6 +297,7 @@ export class PhysicalScannerSdkAdapter implements IFingerprintScannerAdapter {
       status: 'ERROR',
       message: 'Physical scanner driver handshake returned no biometric response.',
       isSimulated: false,
+      captureMode: 'HARDWARE_USB',
     };
   }
 
@@ -308,6 +315,7 @@ export class SimulatedPreviewScannerAdapter implements IFingerprintScannerAdapte
   public readonly name = 'Simulated Scanner Preview Adapter';
   public readonly provider = 'BlockBallot Academic Testbed';
   public readonly isSimulation = true;
+  public readonly captureMode: BiometricCaptureMode = 'SIMULATED';
   private status: ScannerDeviceStatus = 'CONNECTED';
 
   public async getStatus(): Promise<ScannerDeviceStatus> {
@@ -315,7 +323,7 @@ export class SimulatedPreviewScannerAdapter implements IFingerprintScannerAdapte
   }
 
   public async isHardwareConnected(): Promise<boolean> {
-    return true; // Virtual device is available for demonstration
+    return false; // Truthful: Virtual testbed only, no physical hardware connected
   }
 
   public async captureImpression(
@@ -334,8 +342,9 @@ export class SimulatedPreviewScannerAdapter implements IFingerprintScannerAdapte
       impressionIndex,
       qualityScore: 88 + Math.floor(Math.random() * 8), // 88 - 95 score
       status: 'CONNECTED',
-      message: `Impression ${impressionIndex} captured in demonstration mode. Clear ridges detected.`,
+      message: `Impression ${impressionIndex} captured in Academic Simulation Mode (simulated quality score: clear ridges).`,
       isSimulated: true,
+      captureMode: 'SIMULATED',
     };
   }
 

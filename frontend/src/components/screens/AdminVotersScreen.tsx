@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { VoterRecord, Constituency } from '../../types';
 import { VoterProfile } from '../../types/dataModel';
 import { voterApi } from '../../services/voterApi';
+import { FingerprintEnrollmentScreen } from './FingerprintEnrollmentScreen';
+import { FaceEnrollmentScreen } from './FaceEnrollmentScreen';
 import {
   Users,
   ArrowLeft,
@@ -665,7 +667,10 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
                 {profiles.map((voter) => {
                   const constObj = constituencies.find((c) => c.id === voter.constituencyId);
                   const isDeactivated = voter.registrationStatus === 'DE_REGISTERED' || voter.lifecycleStatus === 'ARCHIVED';
-                  const isEligible = voter.eligibilityStatus === 'ELIGIBLE' && !isDeactivated;
+                  const bioMeta = voterBiometricsMap[voter.id] || { faceStatus: 'NOT_STARTED', fingerprintStatus: 'NOT_STARTED' };
+                  const fpDone = bioMeta.fingerprintStatus === 'COMPLETED' || bioMeta.fingerprintStatus === 'EXEMPTED';
+                  const faceDone = bioMeta.faceStatus === 'COMPLETED' || bioMeta.faceStatus === 'VERIFIED' || bioMeta.faceStatus === 'EXEMPTED';
+                  const isEligible = voter.eligibilityStatus === 'ELIGIBLE' && !isDeactivated && fpDone && faceDone;
 
                   return (
                     <tr key={voter.id} className="hover:bg-slate-50/70 transition-colors">
@@ -734,20 +739,48 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
                         <div className="flex flex-col gap-1 items-start">
                           <span
                             className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 ${
-                              isEligible
+                              isDeactivated
+                                ? 'bg-red-100 text-red-800'
+                                : voter.eligibilityStatus === 'INELIGIBLE_DISQUALIFIED'
+                                ? 'bg-red-100 text-red-800'
+                                : isEligible
                                 ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-red-100 text-red-800'
+                                : !fpDone && (bioMeta.fingerprintStatus === 'NOT_STARTED' || bioMeta.fingerprintStatus === 'PENDING')
+                                ? 'bg-amber-100 text-amber-800'
+                                : !faceDone && (bioMeta.faceStatus === 'NOT_STARTED' || bioMeta.faceStatus === 'PENDING')
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-slate-100 text-slate-800'
                             }`}
                           >
-                            {isEligible ? (
+                            {isDeactivated ? (
+                              <>
+                                <ShieldAlert className="w-3 h-3 text-red-600" />
+                                <span>DEACTIVATED</span>
+                              </>
+                            ) : voter.eligibilityStatus === 'INELIGIBLE_DISQUALIFIED' ? (
+                              <>
+                                <ShieldAlert className="w-3 h-3 text-red-600" />
+                                <span>DISQUALIFIED</span>
+                              </>
+                            ) : isEligible ? (
                               <>
                                 <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                                <span>ELIGIBLE</span>
+                                <span>VERIFIED & ELIGIBLE</span>
+                              </>
+                            ) : !fpDone ? (
+                              <>
+                                <Fingerprint className="w-3 h-3 text-amber-600" />
+                                <span>FP PENDING</span>
+                              </>
+                            ) : !faceDone ? (
+                              <>
+                                <Camera className="w-3 h-3 text-blue-600" />
+                                <span>PHOTO PENDING</span>
                               </>
                             ) : (
                               <>
-                                <ShieldAlert className="w-3 h-3 text-red-600" />
-                                <span>{isDeactivated ? 'DEACTIVATED' : 'DISQUALIFIED'}</span>
+                                <AlertCircle className="w-3 h-3 text-slate-600" />
+                                <span>{voter.eligibilityStatus}</span>
                               </>
                             )}
                           </span>
@@ -806,7 +839,7 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
       {/* Add Voter Multi-Step Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl border border-slate-200 p-6 max-w-xl w-full shadow-2xl max-h-[92vh] overflow-y-auto">
+          <div className={`bg-white rounded-xl border border-slate-200 p-6 ${registrationStep > 1 ? 'max-w-5xl' : 'max-w-xl'} w-full shadow-2xl max-h-[92vh] overflow-y-auto`}>
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
               <div>
@@ -1027,271 +1060,41 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
               </form>
             )}
 
-            {/* STAGE 2: Dedicated Compulsory Fingerprint Check */}
+            {/* STAGE 2: Authoritative Shared Fingerprint Interface */}
             {registrationStep === 2 && pendingRegistration && (
               <div className="space-y-4">
-                {/* Draft Summary Card */}
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-900">{pendingRegistration.fullName}</span>
-                    <span className="font-mono text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded">
-                      Draft: {pendingRegistration.pendingId}
-                    </span>
-                  </div>
-                  <div className="text-slate-500 text-[11px]">
-                    Constituency: {pendingRegistration.constituencyId} • Age: {pendingRegistration.age} yrs • Gender: {pendingRegistration.gender}
-                  </div>
-                  <div className="text-amber-800 font-medium text-[11px] pt-1 border-t border-slate-200/60">
-                    Draft Status: Identity recorded. No Voter ID issued yet.
-                  </div>
-                </div>
-
-                {/* Biometric Safety Notice */}
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-900 flex items-start gap-2">
-                  <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold">Biometric Safety & Prototype Disclosure:</span>
-                    <p className="mt-0.5 leading-relaxed">
-                      Academic simulation only. Raw biometric templates, physical fingerprint scans, and min-hashes are never collected or stored on-chain. This step confirms officer-supervised physical verification.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Fingerprint Status Panel */}
-                <div className="p-5 border-2 rounded-xl text-center space-y-3 bg-slate-50/70 border-slate-200">
-                  <div className="w-16 h-16 rounded-full mx-auto flex items-center justify-center bg-white shadow-xs border border-slate-200">
-                    <Fingerprint className={`w-10 h-10 ${
-                      fingerprintStatus === 'VERIFIED'
-                        ? 'text-emerald-600'
-                        : fingerprintStatus === 'UNSUCCESSFUL'
-                        ? 'text-red-500'
-                        : fingerprintStatus === 'IN_PROGRESS'
-                        ? 'text-blue-500 animate-pulse'
-                        : 'text-slate-400'
-                    }`} />
-                  </div>
-
-                  <div>
-                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500 block">
-                      Fingerprint Verification Status
-                    </span>
-                    <span className={`text-sm font-bold block mt-0.5 ${
-                      fingerprintStatus === 'VERIFIED'
-                        ? 'text-emerald-700'
-                        : fingerprintStatus === 'UNSUCCESSFUL'
-                        ? 'text-red-700'
-                        : 'text-slate-700'
-                    }`}>
-                      {fingerprintStatus === 'NOT_VERIFIED' && 'Awaiting Officer Verification'}
-                      {fingerprintStatus === 'IN_PROGRESS' && 'Biometric Scan in Progress...'}
-                      {fingerprintStatus === 'VERIFIED' && 'Fingerprint Successfully Verified ✓'}
-                      {fingerprintStatus === 'UNSUCCESSFUL' && 'Verification Check Failed / Mismatch'}
-                    </span>
-                    {fingerprintStatus === 'VERIFIED' && fingerprintOfficer && (
-                      <p className="text-[11px] text-emerald-800 font-mono mt-1">
-                        Verified by Officer: {fingerprintOfficer} at {new Date(fingerprintTimestamp || Date.now()).toLocaleTimeString()}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Officer Actions for Fingerprint */}
-                  <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-2">
-                    <button
-                      type="button"
-                      disabled={isSubmitting || fingerprintStatus === 'VERIFIED'}
-                      onClick={() => handleFingerprintCheck(true)}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Confirm Officer Fingerprint Match</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={isSubmitting}
-                      onClick={() => handleFingerprintCheck(false)}
-                      className="px-3 py-2 bg-white border border-red-200 hover:bg-red-50 text-red-700 font-medium rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-                    >
-                      <XCircle className="w-3.5 h-3.5" />
-                      <span>Simulate Scanner Mismatch / Fail</span>
-                    </button>
-                  </div>
-                </div>
-
-                {formError && (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-start gap-2">
-                    <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                    <span>{formError}</span>
-                  </div>
-                )}
-
-                {/* Footer Navigation */}
-                <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => setRegistrationStep(1)}
-                    disabled={isSubmitting}
-                    className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 cursor-pointer disabled:opacity-50"
-                  >
-                    ← Edit Personal Details
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={isSubmitting || fingerprintStatus !== 'VERIFIED'}
-                    onClick={() => {
-                      setFormError(null);
-                      setRegistrationStep(3);
-                    }}
-                    className="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-semibold rounded-lg text-xs cursor-pointer flex items-center gap-1.5 transition-colors disabled:cursor-not-allowed"
-                  >
-                    <span>Continue to Photo Verification</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                <FingerprintEnrollmentScreen
+                  voter={null}
+                  pendingRegistration={pendingRegistration}
+                  adminUser={adminUser}
+                  isRegistrationFlow={true}
+                  onBack={() => setRegistrationStep(1)}
+                  onEnrollmentComplete={async () => {
+                    await handleFingerprintCheck(true);
+                    setRegistrationStep(3);
+                  }}
+                />
               </div>
             )}
 
-            {/* STAGE 3: Photo Verification */}
+            {/* STAGE 3: Authoritative Shared Camera / Photo Interface */}
             {registrationStep === 3 && pendingRegistration && (
               <div className="space-y-4">
-                {/* Draft Summary Card */}
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-900">{pendingRegistration.fullName}</span>
-                    <span className="font-mono text-[10px] text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded font-semibold">
-                      Fingerprint Verified ✓
-                    </span>
-                  </div>
-                  <div className="text-slate-500 text-[11px]">
-                    Constituency: {pendingRegistration.constituencyId} • Polling Station: {pendingRegistration.pollingStation}
-                  </div>
-                </div>
-
-                {/* Photo Inspection Panel */}
-                <div className="p-5 border-2 rounded-xl text-center space-y-3 bg-slate-50/70 border-slate-200">
-                  <div className="w-32 h-36 mx-auto rounded-lg bg-slate-200 border-2 border-dashed border-slate-300 flex flex-col items-center justify-center relative overflow-hidden">
-                    <Camera className="w-8 h-8 text-slate-400 mb-1" />
-                    <span className="text-[10px] text-slate-500 font-semibold uppercase">Elector Portrait</span>
-                    <span className="text-[9px] text-slate-400">{pendingRegistration.fullName.split(' ')[0]}</span>
-                    {photoStatus === 'APPROVED' && (
-                      <div className="absolute inset-0 bg-emerald-500/10 border-2 border-emerald-500 flex items-center justify-center">
-                        <span className="bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow">
-                          APPROVED ✓
-                        </span>
-                      </div>
-                    )}
-                    {photoStatus === 'REJECTED' && (
-                      <div className="absolute inset-0 bg-red-500/10 border-2 border-red-500 flex items-center justify-center">
-                        <span className="bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow">
-                          REJECTED ✗
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500 block">
-                      Photo Verification Status
-                    </span>
-                    <span className={`text-sm font-bold block mt-0.5 ${
-                      photoStatus === 'APPROVED'
-                        ? 'text-emerald-700'
-                        : photoStatus === 'REJECTED'
-                        ? 'text-red-700'
-                        : photoStatus === 'RETAKE_REQUESTED'
-                        ? 'text-amber-700'
-                        : 'text-slate-700'
-                    }`}>
-                      {photoStatus === 'AWAITING_INSPECTION' && 'Awaiting Officer Inspection'}
-                      {photoStatus === 'APPROVED' && 'Photo Verified & Approved ✓'}
-                      {photoStatus === 'REJECTED' && 'Photo Rejected (Compliance Issue)'}
-                      {photoStatus === 'RETAKE_REQUESTED' && 'Retake Requested (New Portrait Required)'}
-                    </span>
-                    {photoStatus === 'APPROVED' && photoOfficer && (
-                      <p className="text-[11px] text-emerald-800 font-mono mt-1">
-                        Approved by Officer: {photoOfficer} at {new Date(photoTimestamp || Date.now()).toLocaleTimeString()}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Officer Actions for Photo */}
-                  <div className="pt-2 flex flex-wrap items-center justify-center gap-2">
-                    <button
-                      type="button"
-                      disabled={isSubmitting || photoStatus === 'APPROVED'}
-                      onClick={() => handlePhotoVerification('APPROVE')}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Approve Photo</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={isSubmitting}
-                      onClick={() => handlePhotoVerification('REJECT')}
-                      className="px-3 py-2 bg-white border border-red-200 hover:bg-red-50 text-red-700 font-medium rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-                    >
-                      <XCircle className="w-3.5 h-3.5" />
-                      <span>Reject Photo</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={isSubmitting}
-                      onClick={() => handlePhotoVerification('RETAKE')}
-                      className="px-3 py-2 bg-white border border-amber-200 hover:bg-amber-50 text-amber-800 font-medium rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      <span>Retake Photo</span>
-                    </button>
-                  </div>
-
-                  {photoStatus === 'REJECTED' && (
-                    <p className="text-[11px] text-red-600 mt-1 leading-snug">
-                      Photo does not meet standards. Click &quot;Retake Photo&quot; to correct without restarting registration.
-                    </p>
-                  )}
-                </div>
-
-                {formError && (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-start gap-2">
-                    <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                    <span>{formError}</span>
-                  </div>
-                )}
-
-                {/* Footer Navigation */}
-                <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => setRegistrationStep(2)}
-                    disabled={isSubmitting}
-                    className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 cursor-pointer disabled:opacity-50"
-                  >
-                    ← Back to Fingerprint Check
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={isSubmitting || photoStatus !== 'APPROVED'}
-                    onClick={handleFinalizeRegistration}
-                    className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold rounded-lg text-xs cursor-pointer flex items-center gap-1.5 transition-colors disabled:cursor-not-allowed shadow-xs"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>Finalizing & Generating Voter ID...</span>
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>Complete Registration & Issue Voter ID</span>
-                      </>
-                    )}
-                  </button>
-                </div>
+                <FaceEnrollmentScreen
+                  voter={null}
+                  pendingRegistration={pendingRegistration}
+                  adminUser={adminUser}
+                  isRegistrationFlow={true}
+                  onBack={() => setRegistrationStep(2)}
+                  onEnrollmentComplete={async (result) => {
+                    if (result.decision === 'APPROVED') {
+                      await handlePhotoVerification('APPROVE');
+                      await handleFinalizeRegistration();
+                    } else {
+                      await handlePhotoVerification('REJECT');
+                    }
+                  }}
+                />
               </div>
             )}
           </div>

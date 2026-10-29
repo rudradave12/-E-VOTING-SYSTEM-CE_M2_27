@@ -38,6 +38,7 @@ export type VoterRegistrationStatus =
 export type VoterEligibilityStatus =
   | 'ELIGIBLE'
   | 'INELIGIBLE_AGE'
+  | 'INELIGIBLE_BIOMETRIC_PENDING'
   | 'INELIGIBLE_DISQUALIFIED'
   | 'INELIGIBLE_DECEASED';
 
@@ -132,7 +133,7 @@ export function validateVoterProfile(record: any): { isValid: boolean; errors: s
     errors.push(`Invalid registrationStatus: '${record.registrationStatus}'`);
   }
 
-  const validEligibilityStatuses: VoterEligibilityStatus[] = ['ELIGIBLE', 'INELIGIBLE_AGE', 'INELIGIBLE_DISQUALIFIED', 'INELIGIBLE_DECEASED'];
+  const validEligibilityStatuses: VoterEligibilityStatus[] = ['ELIGIBLE', 'INELIGIBLE_AGE', 'INELIGIBLE_BIOMETRIC_PENDING', 'INELIGIBLE_DISQUALIFIED', 'INELIGIBLE_DECEASED'];
   if (!validEligibilityStatuses.includes(record.eligibilityStatus)) {
     errors.push(`Invalid eligibilityStatus: '${record.eligibilityStatus}'`);
   }
@@ -374,6 +375,94 @@ export function validateBiometricMetadata(record: any): { isValid: boolean; erro
   }
 
   return { isValid: errors.length === 0, errors };
+}
+
+/**
+ * Single authoritative voter eligibility evaluator.
+ * A voter is ONLY ELIGIBLE if:
+ * 1. lifecycleStatus === 'ACTIVE'
+ * 2. registrationStatus === 'REGISTERED'
+ * 3. Both FACE and FINGERPRINT modalities are 'ENROLLED' or 'MANUALLY_APPROVED'
+ *
+ * If biometrics are incomplete ('NOT_STARTED', 'PENDING'), the voter is INELIGIBLE_BIOMETRIC_PENDING.
+ */
+export function computeAuthoritativeEligibility(
+  profile: {
+    lifecycleStatus?: string;
+    registrationStatus?: string;
+    eligibilityStatus?: string;
+    isEligible?: boolean;
+    [key: string]: any;
+  },
+  biometrics: { faceStatus?: string; fingerprintStatus?: string }
+): { isEligible: boolean; eligibilityStatus: VoterEligibilityStatus; reason?: string } {
+  if (profile.lifecycleStatus !== 'ACTIVE') {
+    return {
+      isEligible: false,
+      eligibilityStatus: 'INELIGIBLE_DISQUALIFIED',
+      reason: 'Voter account is inactive or locked',
+    };
+  }
+
+  if (profile.registrationStatus !== 'REGISTERED') {
+    return {
+      isEligible: false,
+      eligibilityStatus: 'INELIGIBLE_DISQUALIFIED',
+      reason: 'Voter registration is incomplete',
+    };
+  }
+
+  if (
+    profile.eligibilityStatus === 'INELIGIBLE_DISQUALIFIED' ||
+    profile.eligibilityStatus === 'INELIGIBLE_DECEASED' ||
+    profile.eligibilityStatus === 'INELIGIBLE_AGE'
+  ) {
+    return {
+      isEligible: false,
+      eligibilityStatus: profile.eligibilityStatus as VoterEligibilityStatus,
+      reason: `Voter status is ${profile.eligibilityStatus}`,
+    };
+  }
+
+  // Check if biometrics failed, declined, or pending
+  if (
+    biometrics.faceStatus === 'DECLINED' ||
+    biometrics.faceStatus === 'REQUIRES_REENROLLMENT' ||
+    biometrics.fingerprintStatus === 'DECLINED' ||
+    biometrics.fingerprintStatus === 'REQUIRES_REENROLLMENT' ||
+    profile.eligibilityStatus === 'INELIGIBLE_BIOMETRIC_PENDING'
+  ) {
+    return {
+      isEligible: false,
+      eligibilityStatus: 'INELIGIBLE_BIOMETRIC_PENDING',
+      reason: 'Biometric verification incomplete or requires re-enrollment',
+    };
+  }
+
+  const faceValid =
+    biometrics.faceStatus === 'ENROLLED' || biometrics.faceStatus === 'MANUALLY_APPROVED';
+  const fpValid =
+    biometrics.fingerprintStatus === 'ENROLLED' || biometrics.fingerprintStatus === 'MANUALLY_APPROVED';
+
+  if (faceValid && fpValid) {
+    return {
+      isEligible: true,
+      eligibilityStatus: 'ELIGIBLE',
+    };
+  }
+
+  if (biometrics.faceStatus === 'PENDING' || biometrics.fingerprintStatus === 'PENDING') {
+    return {
+      isEligible: false,
+      eligibilityStatus: 'INELIGIBLE_BIOMETRIC_PENDING',
+      reason: 'Biometric verification pending',
+    };
+  }
+
+  return {
+    isEligible: profile.isEligible !== false,
+    eligibilityStatus: (profile.eligibilityStatus as VoterEligibilityStatus) || 'ELIGIBLE',
+  };
 }
 
 // ============================================================================
