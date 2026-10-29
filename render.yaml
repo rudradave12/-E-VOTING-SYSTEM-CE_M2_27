@@ -15,6 +15,8 @@ services:
         value: e-voting-system-india
       - key: FIRESTORE_DATABASE_ID
         value: (default)
+      - key: APP_URL
+        value: https://blockballot-e-voting-system.onrender.com
       - key: HOSTED_DEMO_ENABLED
         value: "true"
       # Secure Environment Secrets configured via Render Dashboard (never committed to Git):
