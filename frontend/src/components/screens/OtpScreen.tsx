@@ -11,15 +11,13 @@ interface OtpScreenProps {
   testDeliveryCode?: string;
 }
 
-const DEMO_OTP = '481920';
-
 export const OtpScreen: React.FC<OtpScreenProps> = ({
   voter,
   onOtpVerified,
   onBack,
   testDeliveryCode,
 }) => {
-  const [currentCode, setCurrentCode] = useState<string>(testDeliveryCode || DEMO_OTP);
+  const [currentCode, setCurrentCode] = useState<string>(testDeliveryCode || '');
   const [otp, setOtp] = useState<string>('');
   const [attemptsRemaining, setAttemptsRemaining] = useState<number>(3);
   const [timeLeft, setTimeLeft] = useState<number>(180); // 180 seconds (3 mins as per research report)
@@ -150,12 +148,12 @@ export const OtpScreen: React.FC<OtpScreenProps> = ({
           </div>
         </div>
 
-        {/* Demo Helper Box */}
+        {currentCode && (
         <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-lg text-xs text-amber-900 mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <KeyRound className="w-4 h-4 text-amber-600 shrink-0" />
             <span>
-              Academic Test Code: <span className="font-mono font-bold tracking-wider text-amber-950 text-sm">{currentCode}</span>
+              Demo verification code: <span className="font-mono font-bold tracking-wider text-amber-950 text-sm">{currentCode}</span>
             </span>
           </div>
           <button
@@ -169,6 +167,7 @@ export const OtpScreen: React.FC<OtpScreenProps> = ({
             Auto-fill
           </button>
         </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>

@@ -262,8 +262,7 @@ export type NavigationScreen =
   | 'face-enrollment'
   | 'fingerprint-enrollment'
   | 'historical-archive'
-  | 'election-monitor'
-  | 'about-project';
+  | 'election-monitor';
 
 export interface PreferencePollConfig {
   id: string;

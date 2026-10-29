@@ -114,8 +114,6 @@ import {
   Maximize2,
   X,
   CheckCircle2,
-  ExternalLink,
-  Github,
   Info,
 } from 'lucide-react';
 
@@ -133,7 +131,7 @@ export function AppInner() {
   const [lockedReason, setLockedReason] = useState<string>('');
   const [showSupervisorModal, setShowSupervisorModal] = useState<boolean>(false);
   const [supervisorEmail, setSupervisorEmail] = useState<string>('eo.sim001@blockballot.local');
-  const [supervisorPassword, setSupervisorPassword] = useState<string>('Officer@2024!');
+  const [supervisorPassword, setSupervisorPassword] = useState<string>('');
   const [supervisorReason, setSupervisorReason] = useState<string>('Accidental kiosk focus loss; elector verified in person.');
   const [supervisorError, setSupervisorError] = useState<string>('');
   const [supervisorLoading, setSupervisorLoading] = useState<boolean>(false);
@@ -162,7 +160,7 @@ export function AppInner() {
     (c) => c.constituencyId === (currentVoter?.constituencyId || constituencies[0].id)
   );
 
-  const [activeTestCode, setActiveTestCode] = useState<string>('481920');
+  const [activeTestCode, setActiveTestCode] = useState<string>('');
 
   const handleVoterIdentified = (voter: VoterRecord, testCode?: string) => {
     setCurrentVoter(voter);
@@ -1139,7 +1137,7 @@ export function AppInner() {
       <footer className="border-t border-slate-200 bg-slate-900 text-slate-300 py-10 px-4 text-xs">
         <div className="max-w-7xl mx-auto space-y-8">
           {/* Top row: Project identity, Platform Navigation, and Links */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 border-b border-slate-800 pb-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-8 border-b border-slate-800 pb-8">
             {/* Col 1: Platform Branding & Overview */}
             <div className="space-y-3">
               <div className="flex items-center gap-2">
@@ -1152,7 +1150,7 @@ export function AppInner() {
                 </div>
               </div>
               <p className="text-[11px] text-slate-400 leading-relaxed">
-                Verifiable digital voting portal enabling registered voters to cast secure, verifiable ballots on an immutable ledger with instant cryptographic receipts.
+                A simple portal for registered voters to explore elections and participate in a controlled demonstration.
               </p>
             </div>
 
@@ -1192,7 +1190,7 @@ export function AppInner() {
                     }}
                     className="hover:text-white transition-colors cursor-pointer"
                   >
-                    2024 Sourced Results Archive
+                    Historical Election Results
                   </button>
                 </li>
                 <li>
@@ -1231,36 +1229,6 @@ export function AppInner() {
               </ul>
             </div>
 
-            {/* Col 3: Useful Links & Verification */}
-            <div className="space-y-3">
-              <span className="font-bold text-white text-xs uppercase tracking-wider block">
-                Deployment & Resources
-              </span>
-              <div className="space-y-2 text-[11px]">
-                <a
-                  href="https://github.com/rudradave12/-E-VOTING-SYSTEM-CE_M2_27"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-slate-300 hover:text-white transition-colors"
-                >
-                  <Github className="w-3.5 h-3.5 text-slate-400" />
-                  <span>GitHub Repository</span>
-                  <ExternalLink className="w-3 h-3 text-slate-500" />
-                </a>
-                <div className="block">
-                  <a
-                    href="https://blockballot-e-voting-system.onrender.com/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 transition-colors"
-                  >
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>Live Render Deployment</span>
-                    <ExternalLink className="w-3 h-3 text-emerald-500" />
-                  </a>
-                </div>
-              </div>
-            </div>
           </div>
 
           {/* Bottom row: Academic Simulation Notice */}
