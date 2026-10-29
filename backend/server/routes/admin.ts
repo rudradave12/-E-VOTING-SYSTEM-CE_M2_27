@@ -49,6 +49,7 @@ import {
   isValidSimulationVoterId,
 } from '../utils/voterId';
 import { validateNoProhibitedFields, sanitizeLogData, maskMobile } from '../security';
+import { normalizePhoneNumber } from '../utils/phoneNormalization';
 
 
 export interface PendingVoterRegistration {
@@ -62,17 +63,18 @@ export interface PendingVoterRegistration {
     constituencyId: string;
     pollingStation: string;
     maskedMobile: string;
+    normalizedMobile?: string;
     age: number;
   };
   fingerprintVerification: {
-    status: 'NOT_VERIFIED' | 'VERIFIED' | 'UNSUCCESSFUL';
+    status: 'NOT_VERIFIED' | 'VERIFIED' | 'UNSUCCESSFUL' | 'CANCELLED';
     verifiedByOfficerId?: string;
     verifiedAt?: number;
     notes?: string;
     attempts: number;
   };
   photoVerification: {
-    status: 'NOT_VERIFIED' | 'APPROVED' | 'REJECTED';
+    status: 'NOT_VERIFIED' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
     verifiedByOfficerId?: string;
     verifiedAt?: number;
     photoUrl?: string;
@@ -82,6 +84,10 @@ export interface PendingVoterRegistration {
   createdAt: number;
   updatedAt: number;
   isFinalized: boolean;
+  status: 'PENDING' | 'VERIFICATION_IN_PROGRESS' | 'CANCELLED' | 'FINALIZED' | 'EXPIRED';
+  cancelledAt?: number;
+  cancelledByOfficerId?: string;
+  cancellationReason?: string;
 }
 
 export const pendingRegistrations = new Map<string, PendingVoterRegistration>();
@@ -3217,14 +3223,34 @@ adminRouter.post('/voters/initiate-registration', requirePermission('VOTER_CREAT
     return;
   }
 
-  // Duplicate Check
+  // Phone number normalization
+  const rawMobile = maskedMobile || (req.body as any).mobile || (req.body as any).phone;
+  let normalizedPhone = '';
+  let displayMaskedPhone = maskedMobile?.trim() || '+91 ••••• •1122';
+
+  if (rawMobile) {
+    const phoneNorm = normalizePhoneNumber(rawMobile);
+    if (!phoneNorm.isValid) {
+      res.status(400).json({
+        success: false,
+        message: phoneNorm.error || 'Invalid mobile phone number provided for registration.',
+      });
+      return;
+    }
+    normalizedPhone = phoneNorm.normalized;
+    displayMaskedPhone = phoneNorm.displayMasked;
+  }
+
+  // 1. Authoritative Duplicate Check against Registered Electors
   const allVoters = await repos.voterProfiles.list({ constituencyId });
   const isDuplicate = allVoters.some(
     (v) =>
-      v.fullName.trim().toLowerCase() === fullName.trim().toLowerCase() &&
-      v.dateOfBirth === dateOfBirth &&
-      v.registrationStatus !== 'DE_REGISTERED' &&
-      v.lifecycleStatus === 'ACTIVE'
+      (v.fullName.trim().toLowerCase() === fullName.trim().toLowerCase() &&
+       v.dateOfBirth === dateOfBirth &&
+       v.registrationStatus !== 'DE_REGISTERED' &&
+       v.lifecycleStatus === 'ACTIVE') ||
+      (normalizedPhone && (v as any).normalizedMobile && (v as any).normalizedMobile === normalizedPhone &&
+       v.registrationStatus !== 'DE_REGISTERED' && v.lifecycleStatus === 'ACTIVE')
   );
 
   const storeVoters = serverStore.getAllVoters();
@@ -3235,24 +3261,6 @@ adminRouter.post('/voters/initiate-registration', requirePermission('VOTER_CREAT
       v.isEligible
   );
 
-  // Check if a pending draft already exists for this elector
-  for (const pending of pendingRegistrations.values()) {
-    if (
-      !pending.isFinalized &&
-      pending.details.constituencyId === constituencyId &&
-      ((pending.details.fullName.trim().toLowerCase() === fullName.trim().toLowerCase() &&
-        pending.details.dateOfBirth === dateOfBirth) ||
-       (maskedMobile && pending.details.maskedMobile && pending.details.maskedMobile === maskedMobile.trim()))
-    ) {
-      res.status(409).json({
-        success: false,
-        code: 'DUPLICATE_REGISTRATION',
-        message: `Duplicate voter registration draft already in progress for '${fullName.trim()}' in constituency '${constituencyId}'.`,
-      });
-      return;
-    }
-  }
-
   if (isDuplicate || isDuplicateStore) {
     res.status(409).json({
       success: false,
@@ -3260,6 +3268,41 @@ adminRouter.post('/voters/initiate-registration', requirePermission('VOTER_CREAT
       message: `Duplicate voter detected: An active elector named '${fullName.trim()}' with date of birth ${dateOfBirth} is already registered in constituency '${constituencyId}'.`,
     });
     return;
+  }
+
+  // 2. Check active in-progress drafts (safely ignoring CANCELLED, EXPIRED, and FINALIZED drafts)
+  for (const pending of pendingRegistrations.values()) {
+    if (
+      pending.status === 'CANCELLED' ||
+      pending.status === 'EXPIRED' ||
+      pending.isFinalized ||
+      pending.status === 'FINALIZED'
+    ) {
+      continue;
+    }
+
+    // Auto-expire abandoned drafts older than 2 hours
+    if (Date.now() - pending.createdAt > 2 * 60 * 60 * 1000) {
+      pending.status = 'EXPIRED';
+      continue;
+    }
+
+    const sameConstituency = pending.details.constituencyId === constituencyId;
+    const sameNameAndDob =
+      pending.details.fullName.trim().toLowerCase() === fullName.trim().toLowerCase() &&
+      pending.details.dateOfBirth === dateOfBirth;
+    const samePhone =
+      (normalizedPhone && pending.details.normalizedMobile && pending.details.normalizedMobile === normalizedPhone) ||
+      (displayMaskedPhone && pending.details.maskedMobile && pending.details.maskedMobile === displayMaskedPhone.trim());
+
+    if (sameConstituency && (sameNameAndDob || samePhone)) {
+      res.status(409).json({
+        success: false,
+        code: 'DUPLICATE_REGISTRATION',
+        message: `Duplicate voter registration draft already in progress for '${fullName.trim()}' in constituency '${constituencyId}'.`,
+      });
+      return;
+    }
   }
 
   const pendingId = `preg_${crypto.randomBytes(16).toString('hex')}`;
@@ -3275,7 +3318,8 @@ adminRouter.post('/voters/initiate-registration', requirePermission('VOTER_CREAT
       district: district?.trim() || 'New Delhi',
       constituencyId,
       pollingStation: pollingStation?.trim() || 'Civic Community Centre, Polling Booth 1',
-      maskedMobile: maskedMobile?.trim() || '+91 ••••• •1122',
+      maskedMobile: displayMaskedPhone,
+      normalizedMobile: normalizedPhone,
       age,
     },
     fingerprintVerification: {
@@ -3289,6 +3333,7 @@ adminRouter.post('/voters/initiate-registration', requirePermission('VOTER_CREAT
     createdAt: now,
     updatedAt: now,
     isFinalized: false,
+    status: 'PENDING',
   };
 
   pendingRegistrations.set(pendingId, pendingRegistration);
@@ -3331,10 +3376,17 @@ adminRouter.post('/voters/verify-fingerprint', requirePermission('BIOMETRIC_ENRO
     return;
   }
 
-  if (reg.isFinalized) {
+  if (reg.status === 'CANCELLED' || reg.status === 'EXPIRED') {
+    res.status(400).json({ success: false, message: 'Cannot verify fingerprint: Registration draft has been cancelled or expired.' });
+    return;
+  }
+
+  if (reg.isFinalized || reg.status === 'FINALIZED') {
     res.status(409).json({ success: false, message: 'Registration record is already finalized.' });
     return;
   }
+
+  reg.status = 'VERIFICATION_IN_PROGRESS';
 
   if (session && !isConstituencyInScope(session.assignmentScope, reg.details.constituencyId)) {
     res.status(403).json({ success: false, message: 'Scope violation: Elector constituency is outside authorized scope.' });
@@ -3422,7 +3474,12 @@ adminRouter.post('/voters/verify-photo', requirePermission('BIOMETRIC_ENROLLMENT
     return;
   }
 
-  if (reg.isFinalized) {
+  if (reg.status === 'CANCELLED' || reg.status === 'EXPIRED') {
+    res.status(400).json({ success: false, message: 'Cannot verify photo: Registration draft has been cancelled or expired.' });
+    return;
+  }
+
+  if (reg.isFinalized || reg.status === 'FINALIZED') {
     res.status(409).json({ success: false, message: 'Registration record is already finalized.' });
     return;
   }
@@ -3521,7 +3578,12 @@ adminRouter.post('/voters/finalize-registration', requirePermission('VOTER_CREAT
     return;
   }
 
-  if (reg.isFinalized) {
+  if (reg.status === 'CANCELLED' || reg.status === 'EXPIRED') {
+    res.status(400).json({ success: false, message: 'Cannot finalize or issue voter ID for a cancelled or expired registration draft.' });
+    return;
+  }
+
+  if (reg.isFinalized || reg.status === 'FINALIZED') {
     res.status(409).json({ success: false, message: 'Registration has already been finalized.' });
     return;
   }
@@ -3642,7 +3704,11 @@ adminRouter.post('/voters/finalize-registration', requirePermission('VOTER_CREAT
   });
 
   // Mark finalized
+  reg.status = 'FINALIZED';
   reg.isFinalized = true;
+  if (reg.details.normalizedMobile) {
+    (profile as any).normalizedMobile = reg.details.normalizedMobile;
+  }
 
   // 8. Audit event
   serverStore.recordAuditEvent({
@@ -3665,6 +3731,141 @@ adminRouter.post('/voters/finalize-registration', requirePermission('VOTER_CREAT
  * GET /api/admin/voters/pending/:pendingId
  * Retrieves current pending registration status and verification checkpoints.
  */
+
+/**
+ * POST /api/admin/voters/cancel-registration
+ * Cancels an in-progress voter registration draft safely.
+ * Releases temporary identity reservations so the operator can retry with the same phone number.
+ * Cannot cancel already-finalized registrations (completed voters).
+ * Idempotent: Repeated cancellations return 200 without side effects.
+ */
+adminRouter.post('/voters/cancel-registration', requirePermission('VOTER_CREATE'), async (req: Request, res: Response): Promise<void> => {
+  const session = (req as any).officer as OfficerSession;
+  const { pendingId, reason } = req.body;
+
+  if (!pendingId || typeof pendingId !== 'string') {
+    res.status(400).json({ success: false, message: 'Missing pendingId parameter.' });
+    return;
+  }
+
+  const reg = pendingRegistrations.get(pendingId.trim());
+  if (!reg) {
+    res.status(404).json({ success: false, message: 'Pending registration draft not found.' });
+    return;
+  }
+
+  // Guard: Completed registrations cannot be cancelled via draft cancellation
+  if (reg.isFinalized || reg.status === 'FINALIZED') {
+    res.status(409).json({
+      success: false,
+      code: 'CANNOT_CANCEL_FINALIZED',
+      message: 'Cannot cancel a finalized voter registration. Completed voter profiles must be managed via authorized voter deactivation.',
+    });
+    return;
+  }
+
+  // Idempotent: If already cancelled, return success cleanly
+  if (reg.status === 'CANCELLED') {
+    res.status(200).json({
+      success: true,
+      message: 'Registration draft is already cancelled. Identity reservation is released.',
+      pendingId: reg.pendingId,
+      status: 'CANCELLED',
+    });
+    return;
+  }
+
+  const now = Date.now();
+  reg.status = 'CANCELLED';
+  reg.isFinalized = false;
+  reg.cancelledAt = now;
+  reg.cancelledByOfficerId = session?.accountId || 'VRO-SIM-001';
+  reg.cancellationReason = typeof reason === 'string' && reason.trim() ? reason.trim() : 'Operator cancelled registration wizard';
+  reg.fingerprintVerification.status = 'CANCELLED';
+  reg.photoVerification.status = 'CANCELLED';
+  reg.updatedAt = now;
+
+  serverStore.recordAuditEvent({
+    id: `audit-preg-cancel-${now}-${Math.random().toString(36).substring(2, 6)}`,
+    timestamp: now,
+    type: 'ADMIN_ACTION',
+    description: `Voter registration draft '${pendingId}' safely cancelled by officer '${session?.accountId}' (Reason: ${reg.cancellationReason})`,
+    electionId: 1,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: 'Registration draft cancelled successfully. Identity reservation has been released.',
+    pendingId: reg.pendingId,
+    status: 'CANCELLED',
+  });
+});
+
+/**
+ * DELETE /api/admin/voters/pending/:pendingId
+ * RESTful alias for cancelling a pending registration draft.
+ */
+adminRouter.delete('/voters/pending/:pendingId', requirePermission('VOTER_CREATE'), async (req: Request, res: Response): Promise<void> => {
+  const session = (req as any).officer as OfficerSession;
+  const { pendingId } = req.params;
+  const reason = (req.query?.reason as string) || (req.body?.reason as string) || 'DELETE requested by officer';
+
+  if (!pendingId || typeof pendingId !== 'string') {
+    res.status(400).json({ success: false, message: 'Missing pendingId parameter.' });
+    return;
+  }
+
+  const reg = pendingRegistrations.get(pendingId.trim());
+  if (!reg) {
+    res.status(404).json({ success: false, message: 'Pending registration draft not found.' });
+    return;
+  }
+
+  if (reg.isFinalized || reg.status === 'FINALIZED') {
+    res.status(409).json({
+      success: false,
+      code: 'CANNOT_CANCEL_FINALIZED',
+      message: 'Cannot cancel a finalized voter registration. Completed voter profiles must be managed via authorized voter deactivation.',
+    });
+    return;
+  }
+
+  if (reg.status === 'CANCELLED') {
+    res.status(200).json({
+      success: true,
+      message: 'Registration draft is already cancelled. Identity reservation is released.',
+      pendingId: reg.pendingId,
+      status: 'CANCELLED',
+    });
+    return;
+  }
+
+  const now = Date.now();
+  reg.status = 'CANCELLED';
+  reg.isFinalized = false;
+  reg.cancelledAt = now;
+  reg.cancelledByOfficerId = session?.accountId || 'VRO-SIM-001';
+  reg.cancellationReason = reason;
+  reg.fingerprintVerification.status = 'CANCELLED';
+  reg.photoVerification.status = 'CANCELLED';
+  reg.updatedAt = now;
+
+  serverStore.recordAuditEvent({
+    id: `audit-preg-del-${now}-${Math.random().toString(36).substring(2, 6)}`,
+    timestamp: now,
+    type: 'ADMIN_ACTION',
+    description: `Voter registration draft '${pendingId}' deleted/cancelled by officer '${session?.accountId}'`,
+    electionId: 1,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: 'Registration draft cancelled successfully. Identity reservation has been released.',
+    pendingId: reg.pendingId,
+    status: 'CANCELLED',
+  });
+});
+
 adminRouter.get('/voters/pending/:pendingId', requirePermission('VOTER_READ'), async (req: Request, res: Response): Promise<void> => {
   const { pendingId } = req.params;
   const reg = pendingRegistrations.get(pendingId.trim());

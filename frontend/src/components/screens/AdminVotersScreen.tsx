@@ -26,6 +26,7 @@ import {
   CheckCircle2,
   XCircle,
   UserCheck,
+  X,
 } from 'lucide-react';
 
 
@@ -78,6 +79,7 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
   >({});
   const [loading, setLoading] = useState<boolean>(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Filters & search
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -114,6 +116,34 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
   const [photoStatus, setPhotoStatus] = useState<'AWAITING_INSPECTION' | 'APPROVED' | 'REJECTED' | 'RETAKE_REQUESTED'>('AWAITING_INSPECTION');
   const [photoOfficer, setPhotoOfficer] = useState<string>('');
   const [photoTimestamp, setPhotoTimestamp] = useState<number | null>(null);
+
+  // Handler to cancel an in-progress registration draft safely
+  const handleCancelRegistration = async (reason?: string) => {
+    if (pendingRegistration?.pendingId) {
+      setIsSubmitting(true);
+      try {
+        const res = await voterApi.cancelVoterRegistration({
+          pendingId: pendingRegistration.pendingId,
+          reason: reason || 'Operator cancelled registration wizard',
+        });
+        if (res.success) {
+          setToastMessage('Registration draft cancelled safely. The elector phone number and identity reservation have been released for re-registration.');
+          setTimeout(() => setToastMessage(null), 6000);
+        }
+      } catch (err) {
+        console.warn('[AdminVoters] Notice cancelling registration draft:', err);
+      } finally {
+        setIsSubmitting(false);
+      }
+    }
+    // Clean all draft state
+    setPendingRegistration(null);
+    setRegistrationStep(1);
+    setFingerprintStatus('NOT_VERIFIED');
+    setPhotoStatus('AWAITING_INSPECTION');
+    setFormError(null);
+    setShowAddModal(false);
+  };
 
   // Helper to open registration modal clean
   const handleOpenAddModal = () => {
@@ -852,9 +882,19 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
                   Compulsory 3-stage validation required prior to simulation voter ID issuance.
                 </p>
               </div>
-              <span className="text-[10px] font-mono font-bold bg-orange-100 text-orange-800 px-2 py-0.5 rounded">
-                VRO Scope
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono font-bold bg-orange-100 text-orange-800 px-2 py-0.5 rounded">
+                  VRO Scope
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleCancelRegistration('Operator closed modal')}
+                  title="Cancel and Close Registration"
+                  className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             {/* Stepper Progress Bar */}
@@ -1033,7 +1073,7 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
                 <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
                   <button
                     type="button"
-                    onClick={() => setShowAddModal(false)}
+                    onClick={() => handleCancelRegistration('Operator cancelled before fingerprint')}
                     disabled={isSubmitting}
                     className="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-900 cursor-pointer disabled:opacity-50"
                   >
@@ -1069,6 +1109,7 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
                   adminUser={adminUser}
                   isRegistrationFlow={true}
                   onBack={() => setRegistrationStep(1)}
+                  onCancel={() => handleCancelRegistration('Operator cancelled during fingerprint check')}
                   onEnrollmentComplete={async () => {
                     await handleFingerprintCheck(true);
                     setRegistrationStep(3);
@@ -1086,6 +1127,7 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
                   adminUser={adminUser}
                   isRegistrationFlow={true}
                   onBack={() => setRegistrationStep(2)}
+                  onCancel={() => handleCancelRegistration('Operator cancelled during photo verification')}
                   onEnrollmentComplete={async (result) => {
                     if (result.decision === 'APPROVED') {
                       await handlePhotoVerification('APPROVE');

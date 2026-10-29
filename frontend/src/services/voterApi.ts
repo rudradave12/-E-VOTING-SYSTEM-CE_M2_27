@@ -1583,6 +1583,35 @@ export class VoterApiClient {
     }
   }
 
+
+  /**
+   * POST /api/admin/voters/cancel-registration
+   * Safely cancels an in-progress voter registration draft and releases temporary identity reservations.
+   */
+  public async cancelVoterRegistration(data: {
+    pendingId: string;
+    reason?: string;
+  }): Promise<{
+    success: boolean;
+    message?: string;
+    pendingId?: string;
+    status?: string;
+  }> {
+    try {
+      const res = await fetch('/api/admin/voters/cancel-registration', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+        body: JSON.stringify(data),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error cancelling voter registration.' };
+    }
+  }
+
   /**
    * GET /api/admin/voters/pending/:pendingId
    */

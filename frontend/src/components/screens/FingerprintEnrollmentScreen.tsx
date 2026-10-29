@@ -37,6 +37,7 @@ export interface FingerprintEnrollmentScreenProps {
   voter: VoterProfile | null;
   adminUser?: any;
   onBack: () => void;
+  onCancel?: () => void;
   isRegistrationFlow?: boolean;
   pendingRegistration?: any;
   onEnrollmentComplete?: (result: {
@@ -50,6 +51,7 @@ export const FingerprintEnrollmentScreen: React.FC<FingerprintEnrollmentScreenPr
   voter,
   adminUser,
   onBack,
+  onCancel,
   isRegistrationFlow,
   pendingRegistration,
   onEnrollmentComplete,
@@ -766,12 +768,22 @@ export const FingerprintEnrollmentScreen: React.FC<FingerprintEnrollmentScreenPr
               )}
 
               <button
-                onClick={onBack}
+                onClick={onCancel || onBack}
                 className="py-2.5 px-3 border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" />
-                <span>Cancel</span>
+                <span>{isRegistrationFlow ? 'Cancel Registration' : 'Cancel'}</span>
               </button>
+              {isRegistrationFlow && (
+                <button
+                  type="button"
+                  onClick={onBack}
+                  className="py-2.5 px-3 border border-slate-200 hover:bg-slate-50 text-slate-600 font-medium rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Back to Details</span>
+                </button>
+              )}
             </div>
 
             <p className="text-[11px] text-slate-400 text-center">
