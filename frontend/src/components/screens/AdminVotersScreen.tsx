@@ -1110,8 +1110,14 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
                   isRegistrationFlow={true}
                   onBack={() => setRegistrationStep(1)}
                   onCancel={() => handleCancelRegistration('Operator cancelled during fingerprint check')}
-                  onEnrollmentComplete={async () => {
-                    await handleFingerprintCheck(true);
+                  onEnrollmentComplete={async (result) => {
+                    if (result?.mode !== 'MANUAL_OFFICER_OVERRIDE') {
+                      await handleFingerprintCheck(true);
+                    } else {
+                      setFingerprintStatus('VERIFIED');
+                      setFingerprintOfficer(result.officerId || 'EO-SIM-001');
+                      setFingerprintTimestamp(result.verifiedAt || Date.now());
+                    }
                     setRegistrationStep(3);
                   }}
                 />
@@ -1130,7 +1136,13 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
                   onCancel={() => handleCancelRegistration('Operator cancelled during photo verification')}
                   onEnrollmentComplete={async (result) => {
                     if (result.decision === 'APPROVED') {
-                      await handlePhotoVerification('APPROVE');
+                      if ((result as any)?.mode !== 'MANUAL_OFFICER_OVERRIDE') {
+                        await handlePhotoVerification('APPROVE');
+                      } else {
+                        setPhotoStatus('APPROVED');
+                        setPhotoOfficer((result as any).officerId || 'EO-SIM-001');
+                        setPhotoTimestamp((result as any).verifiedAt || Date.now());
+                      }
                       await handleFinalizeRegistration();
                     } else {
                       await handlePhotoVerification('REJECT');

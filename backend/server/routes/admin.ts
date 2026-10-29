@@ -67,14 +67,14 @@ export interface PendingVoterRegistration {
     age: number;
   };
   fingerprintVerification: {
-    status: 'NOT_VERIFIED' | 'VERIFIED' | 'UNSUCCESSFUL' | 'CANCELLED';
+    status: 'NOT_VERIFIED' | 'VERIFIED' | 'UNSUCCESSFUL' | 'CANCELLED' | 'PENDING_MANUAL_REVIEW';
     verifiedByOfficerId?: string;
     verifiedAt?: number;
     notes?: string;
     attempts: number;
   };
   photoVerification: {
-    status: 'NOT_VERIFIED' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+    status: 'NOT_VERIFIED' | 'APPROVED' | 'REJECTED' | 'CANCELLED' | 'PENDING_MANUAL_REVIEW';
     verifiedByOfficerId?: string;
     verifiedAt?: number;
     photoUrl?: string;
@@ -2161,16 +2161,55 @@ adminRouter.post(
       return;
     }
 
-    // 4. Resolve voter
+    // 4. Resolve voter (support registered electors and in-progress registration drafts)
     if (!voterId || typeof voterId !== 'string') {
       res.status(400).json({ success: false, message: 'Missing voterId.' });
       return;
     }
 
-    const voter =
+    let voter =
       (await repos.voterProfiles.findById(voterId)) ||
       (await repos.voterProfiles.findBySimulationId(voterId)) ||
       (await repos.voterProfiles.findByLegacyEpic(voterId));
+
+    let pendingDraft: PendingVoterRegistration | undefined;
+    if (!voter) {
+      pendingDraft = pendingRegistrations.get(voterId.trim());
+      if (pendingDraft) {
+        if (pendingDraft.status === 'CANCELLED' || pendingDraft.status === 'EXPIRED') {
+          res.status(400).json({
+            success: false,
+            message: 'Cannot request exception: Registration draft has been cancelled or expired.',
+          });
+          return;
+        }
+        if (pendingDraft.isFinalized || pendingDraft.status === 'FINALIZED') {
+          res.status(409).json({
+            success: false,
+            message: 'Registration record is already finalized.',
+          });
+          return;
+        }
+        voter = {
+          id: pendingDraft.pendingId,
+          simulationVoterId: pendingDraft.pendingId,
+          fullName: pendingDraft.details.fullName,
+          constituencyId: pendingDraft.details.constituencyId,
+          dateOfBirth: pendingDraft.details.dateOfBirth,
+          gender: pendingDraft.details.gender,
+          state: pendingDraft.details.state,
+          district: pendingDraft.details.district,
+          pollingStation: pendingDraft.details.pollingStation,
+          maskedMobile: pendingDraft.details.maskedMobile,
+          registrationStatus: 'PENDING_VERIFICATION' as const,
+          eligibilityStatus: 'INELIGIBLE_BIOMETRIC_PENDING' as const,
+          lifecycleStatus: 'ACTIVE' as const,
+          createdAt: pendingDraft.createdAt,
+          updatedAt: pendingDraft.updatedAt,
+          schemaVersion: SCHEMA_VERSION_CURRENT,
+        };
+      }
+    }
 
     if (!voter) {
       res.status(404).json({ success: false, message: `Voter record '${voterId}' not found.` });
@@ -2322,6 +2361,24 @@ adminRouter.post(
 
     // 9. If enrollment-time exception, update biometric metadata to PENDING_MANUAL_REVIEW
     if (purpose === 'ENROLLMENT' && modality) {
+      if (pendingDraft) {
+        pendingDraft.status = 'VERIFICATION_IN_PROGRESS';
+        if (modality === 'FINGERPRINT') {
+          pendingDraft.fingerprintVerification = {
+            ...pendingDraft.fingerprintVerification,
+            status: 'PENDING_MANUAL_REVIEW',
+            notes: `Manual physical-ID exception requested (${exceptionId}): ${reasonCode}`,
+          };
+        } else if (modality === 'FACE') {
+          pendingDraft.photoVerification = {
+            ...pendingDraft.photoVerification,
+            status: 'PENDING_MANUAL_REVIEW',
+            notes: `Manual physical-ID exception requested (${exceptionId}): ${reasonCode}`,
+          };
+        }
+        pendingDraft.updatedAt = now;
+      }
+
       const existingBio = await repos.biometrics.getMetadata(voter.id, modality);
       const bioMeta: BiometricEnrollmentMetadata = existingBio
         ? {
@@ -2593,6 +2650,29 @@ adminRouter.post(
 
       await repos.exceptions.update(exception);
 
+      // Check if this exception belongs to an in-progress voter registration draft
+      const pendingDraft = pendingRegistrations.get(exception.voterId);
+      if (pendingDraft) {
+        if (exception.modality === 'FINGERPRINT') {
+          pendingDraft.fingerprintVerification = {
+            status: 'VERIFIED',
+            verifiedByOfficerId: session?.accountId || 'EO-SIM-001',
+            verifiedAt: now,
+            notes: `Manual physical-ID exception approved by ${session?.accountId || 'EO-SIM-001'}: ${decisionReason.trim()}`,
+            attempts: (pendingDraft.fingerprintVerification?.attempts || 0) + 1,
+          };
+        } else if (exception.modality === 'FACE') {
+          pendingDraft.photoVerification = {
+            status: 'APPROVED',
+            verifiedByOfficerId: session?.accountId || 'EO-SIM-001',
+            verifiedAt: now,
+            photoUrl: 'manual_physical_id_verified',
+            notes: `Manual physical-ID exception approved by ${session?.accountId || 'EO-SIM-001'}: ${decisionReason.trim()}`,
+          };
+        }
+        pendingDraft.updatedAt = now;
+      }
+
       // Update biometric metadata record: Set status to MANUALLY_APPROVED with isManualException=true
       // NEVER set to ENROLLED or claim a biometric match!
       if (exception.modality) {
@@ -2801,6 +2881,27 @@ adminRouter.post(
     exception.updatedAt = now;
 
     await repos.exceptions.update(exception);
+
+    const pendingDraft = pendingRegistrations.get(exception.voterId);
+    if (pendingDraft) {
+      if (exception.modality === 'FINGERPRINT') {
+        pendingDraft.fingerprintVerification = {
+          status: 'UNSUCCESSFUL',
+          verifiedByOfficerId: session?.accountId || 'EO-SIM-001',
+          verifiedAt: now,
+          notes: `Manual physical-ID exception declined: ${decisionReason.trim()}`,
+          attempts: (pendingDraft.fingerprintVerification?.attempts || 0) + 1,
+        };
+      } else if (exception.modality === 'FACE') {
+        pendingDraft.photoVerification = {
+          status: 'REJECTED',
+          verifiedByOfficerId: session?.accountId || 'EO-SIM-001',
+          verifiedAt: now,
+          notes: `Manual physical-ID exception declined: ${decisionReason.trim()}`,
+        };
+      }
+      pendingDraft.updatedAt = now;
+    }
 
     if (exception.purpose === 'ENROLLMENT' && exception.modality) {
       const existingBio = await repos.biometrics.getMetadata(exception.voterId, exception.modality);
@@ -3655,14 +3756,17 @@ adminRouter.post('/voters/finalize-registration', requirePermission('VOTER_CREAT
 
   // 6. Persist Biometric Metadata
   try {
+    const isFpManual = Boolean(reg.fingerprintVerification.notes?.includes('Manual physical-ID exception approved'));
+    const isPhotoManual = Boolean(reg.photoVerification.notes?.includes('Manual physical-ID exception approved'));
+
     const faceMeta: BiometricEnrollmentMetadata = {
       id: `bio_${profile.id}_face`,
       voterId: profile.id,
       modality: 'FACE',
-      status: 'ENROLLED',
-      biometricReferenceId: `photo_verified_${Date.now()}`,
-      qualityCheckStatus: 'PASSED',
-      isManualException: false,
+      status: isPhotoManual ? 'MANUALLY_APPROVED' : 'ENROLLED',
+      biometricReferenceId: isPhotoManual ? `manual_id_exempted_${profile.id}` : `photo_verified_${Date.now()}`,
+      qualityCheckStatus: isPhotoManual ? 'EXEMPTED' : 'PASSED',
+      isManualException: isPhotoManual,
       enrollingOfficerId: reg.photoVerification.verifiedByOfficerId || session?.accountId,
       enrolledAt: reg.photoVerification.verifiedAt || now,
       createdAt: now,
@@ -3673,10 +3777,10 @@ adminRouter.post('/voters/finalize-registration', requirePermission('VOTER_CREAT
       id: `bio_${profile.id}_fingerprint`,
       voterId: profile.id,
       modality: 'FINGERPRINT',
-      status: 'ENROLLED',
-      biometricReferenceId: `fp_verified_${Date.now()}`,
-      qualityCheckStatus: 'PASSED',
-      isManualException: false,
+      status: isFpManual ? 'MANUALLY_APPROVED' : 'ENROLLED',
+      biometricReferenceId: isFpManual ? `manual_id_exempted_${profile.id}` : `fp_verified_${Date.now()}`,
+      qualityCheckStatus: isFpManual ? 'EXEMPTED' : 'PASSED',
+      isManualException: isFpManual,
       enrollingOfficerId: reg.fingerprintVerification.verifiedByOfficerId || session?.accountId,
       enrolledAt: reg.fingerprintVerification.verifiedAt || now,
       createdAt: now,

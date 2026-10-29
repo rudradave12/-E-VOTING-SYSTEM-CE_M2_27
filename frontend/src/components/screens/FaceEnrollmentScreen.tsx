@@ -24,6 +24,9 @@ import {
   Check,
   ChevronRight,
   FileCheck,
+  Loader2,
+  RefreshCw,
+  Clock,
 } from 'lucide-react';
 import { VoterProfile, BiometricEnrollmentStatus, ExceptionReasonCode } from '../../types/dataModel';
 import { isConstituencyInScope } from '../../types/permissions';
@@ -110,6 +113,7 @@ export const FaceEnrollmentScreen: React.FC<FaceEnrollmentScreenProps> = ({
   const [exceptionNote, setExceptionNote] = useState<string>('');
   const [isSubmittingException, setIsSubmittingException] = useState<boolean>(false);
   const [exceptionFeedback, setExceptionFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [activeExceptionRecord, setActiveExceptionRecord] = useState<any>(null);
 
   // Interactive guidance demo prompt
   const livenessPrompts = [
@@ -146,28 +150,48 @@ export const FaceEnrollmentScreen: React.FC<FaceEnrollmentScreenProps> = ({
     };
   }, [capturedBlobUrl]);
 
-  // Load backend biometric status
-  useEffect(() => {
-    let isMounted = true;
-    async function fetchBiometrics() {
-      if (!voter) return;
-      setLoadingMetadata(true);
-      try {
+  // Load authoritative biometric and exception verification status
+  const fetchStatus = async () => {
+    if (!effectiveVoter) {
+      setLoadingMetadata(false);
+      return;
+    }
+    setLoadingMetadata(true);
+    try {
+      if (voter) {
         const res = await voterApi.adminGetVoterBiometrics(voter.id);
-        if (isMounted && res.success && res.face) {
+        if (res.success && res.face) {
           setCurrentStatus(res.face.status);
         }
-      } catch {
-        // Fallback to initial
-      } finally {
-        if (isMounted) setLoadingMetadata(false);
       }
+
+      // Check if there is an active exception request for this voter or registration draft
+      const excRes = await voterApi.adminListExceptions({ voterId: effectiveVoter.id });
+      if (excRes.success && excRes.exceptions && excRes.exceptions.length > 0) {
+        const faceExc = excRes.exceptions.find((e: any) => e.modality === 'FACE');
+        if (faceExc) {
+          setActiveExceptionRecord(faceExc);
+          if (faceExc.status === 'PENDING') {
+            setCurrentStatus('PENDING_MANUAL_REVIEW');
+          } else if (faceExc.status === 'APPROVED') {
+            setCurrentStatus('MANUALLY_APPROVED');
+          } else if (faceExc.status === 'DECLINED') {
+            setCurrentStatus('DECLINED');
+          }
+        }
+      } else if (pendingRegistration?.photoVerification?.status === 'APPROVED') {
+        setCurrentStatus('ENROLLED');
+      }
+    } catch {
+      // Fallback to initial
+    } finally {
+      setLoadingMetadata(false);
     }
-    fetchBiometrics();
-    return () => {
-      isMounted = false;
-    };
-  }, [voter]);
+  };
+
+  useEffect(() => {
+    fetchStatus();
+  }, [voter, pendingRegistration]);
 
   // Start Camera handler
   const handleStartCamera = async () => {
@@ -282,12 +306,12 @@ export const FaceEnrollmentScreen: React.FC<FaceEnrollmentScreenProps> = ({
 
   // Handle Request Manual Exception (Phase 06)
   const handleRequestException = async () => {
-    if (!voter) return;
+    if (!effectiveVoter || isSubmittingException) return;
     setIsSubmittingException(true);
     setExceptionFeedback(null);
     try {
       const res = await voterApi.adminCreateExceptionRequest({
-        voterId: voter.id,
+        voterId: effectiveVoter.id,
         purpose: 'ENROLLMENT',
         modality: 'FACE',
         reasonCode: exceptionReason,
@@ -295,6 +319,9 @@ export const FaceEnrollmentScreen: React.FC<FaceEnrollmentScreenProps> = ({
       });
       if (res.success) {
         setCurrentStatus('PENDING_MANUAL_REVIEW');
+        if (res.exception) {
+          setActiveExceptionRecord(res.exception);
+        }
         setExceptionFeedback({
           type: 'success',
           text: `Manual physical-ID exception requested (${res.exception?.id || 'Submitted'}). Awaiting Election Officer review.`,
@@ -417,12 +444,16 @@ export const FaceEnrollmentScreen: React.FC<FaceEnrollmentScreenProps> = ({
               <span className="text-slate-400 block text-[10px] uppercase font-bold">Face Status</span>
               <span
                 className={`font-mono font-bold px-1.5 py-0.5 rounded text-[10px] ${
-                  currentStatus === 'ENROLLED'
+                  loadingMetadata
+                    ? 'bg-slate-200 text-slate-700'
+                    : currentStatus === 'ENROLLED'
                     ? 'bg-emerald-100 text-emerald-800'
                     : currentStatus === 'MANUALLY_APPROVED'
                     ? 'bg-purple-100 text-purple-800'
                     : currentStatus === 'PENDING_MANUAL_REVIEW'
                     ? 'bg-amber-100 text-amber-800'
+                    : currentStatus === 'DECLINED'
+                    ? 'bg-red-100 text-red-800'
                     : currentStatus === 'PENDING'
                     ? 'bg-blue-100 text-blue-800'
                     : 'bg-slate-200 text-slate-700'
@@ -432,6 +463,12 @@ export const FaceEnrollmentScreen: React.FC<FaceEnrollmentScreenProps> = ({
                   ? '...'
                   : currentStatus === 'MANUALLY_APPROVED'
                   ? 'MANUAL_PHYSICAL_ID_APPROVED'
+                  : currentStatus === 'PENDING_MANUAL_REVIEW'
+                  ? 'PENDING_MANUAL_REVIEW'
+                  : currentStatus === 'DECLINED'
+                  ? 'DECLINED'
+                  : currentStatus === 'ENROLLED'
+                  ? 'VERIFIED'
                   : currentStatus}
               </span>
             </div>
@@ -836,25 +873,105 @@ export const FaceEnrollmentScreen: React.FC<FaceEnrollmentScreenProps> = ({
 
               {currentStatus === 'MANUALLY_APPROVED' ? (
                 <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg text-xs space-y-1.5">
-                  <div className="font-bold flex items-center gap-1.5 text-purple-900">
-                    <CheckCircle2 className="w-4 h-4 text-purple-600 shrink-0" />
-                    <span>MANUAL_PHYSICAL_ID_APPROVED</span>
+                  <div className="font-bold flex items-center justify-between text-purple-900">
+                    <div className="flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-purple-600 shrink-0" />
+                      <span>MANUAL_PHYSICAL_ID_APPROVED</span>
+                    </div>
+                    <span className="text-[10px] bg-purple-200/80 text-purple-900 font-semibold px-2 py-0.5 rounded-full">
+                      Approved
+                    </span>
                   </div>
                   <p className="text-[11px] text-purple-800 leading-relaxed">
                     Election Officer physically inspected voter credential and granted manual exception approval.
                     <br />
                     <strong className="text-purple-950 font-semibold">Important:</strong> Modality is not recorded as a biometric match or enrolled specimen.
                   </p>
+                  {activeExceptionRecord && (
+                    <div className="pt-1.5 border-t border-purple-200/60 text-[11px] text-purple-900 space-y-0.5">
+                      <div><strong>Approved By:</strong> {activeExceptionRecord.reviewedByOfficerId || 'Election Officer'}</div>
+                      {activeExceptionRecord.decisionReason && (
+                        <div><strong>Decision Note:</strong> {activeExceptionRecord.decisionReason}</div>
+                      )}
+                    </div>
+                  )}
+                  {isRegistrationFlow && onEnrollmentComplete && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onEnrollmentComplete({
+                          decision: 'APPROVED',
+                          verifiedAt: activeExceptionRecord?.reviewedAt || Date.now(),
+                          officerId: activeExceptionRecord?.reviewedByOfficerId || adminUser?.id || 'EO-SIM-001',
+                        })
+                      }
+                      className="mt-2 w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Finalize Registration with Approved Exception</span>
+                    </button>
+                  )}
                 </div>
               ) : currentStatus === 'PENDING_MANUAL_REVIEW' ? (
                 <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs space-y-1.5">
-                  <div className="font-bold flex items-center gap-1.5 text-amber-900">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                    <span>Pending Manual Review</span>
+                  <div className="font-bold flex items-center justify-between text-amber-900">
+                    <div className="flex items-center gap-1.5">
+                      <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>PENDING_MANUAL_REVIEW</span>
+                    </div>
+                    <span className="text-[10px] bg-amber-200/80 text-amber-900 font-semibold px-2 py-0.5 rounded-full">
+                      Under Review
+                    </span>
                   </div>
                   <p className="text-[11px] text-amber-800 leading-relaxed">
-                    Manual physical-ID exception request has been submitted. An authorized Election Officer will review the physical credential in the review queue.
+                    Manual physical-ID exception request has been submitted. An authorized Election Officer will inspect physical credentials and render a decision in the review queue.
                   </p>
+                  {activeExceptionRecord && (
+                    <div className="pt-1.5 border-t border-amber-200/60 text-[11px] text-amber-900 space-y-0.5">
+                      <div><strong>Request ID:</strong> <span className="font-mono">{activeExceptionRecord.id}</span></div>
+                      <div><strong>Reason:</strong> {activeExceptionRecord.reasonCode}</div>
+                      <div><strong>Requested By:</strong> {activeExceptionRecord.requestedByOfficerId}</div>
+                      {activeExceptionRecord.requestedAt && (
+                        <div><strong>Submitted At:</strong> {new Date(activeExceptionRecord.requestedAt).toLocaleTimeString()}</div>
+                      )}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={fetchStatus}
+                    className="mt-2 w-full py-1.5 px-2 bg-amber-100 hover:bg-amber-200 text-amber-900 font-semibold rounded text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Refresh Verification Status</span>
+                  </button>
+                </div>
+              ) : currentStatus === 'DECLINED' ? (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs space-y-1.5">
+                  <div className="font-bold flex items-center justify-between text-red-900">
+                    <div className="flex items-center gap-1.5">
+                      <XCircle className="w-4 h-4 text-red-600 shrink-0" />
+                      <span>MANUAL_PHYSICAL_ID_DECLINED</span>
+                    </div>
+                    <span className="text-[10px] bg-red-200/80 text-red-900 font-semibold px-2 py-0.5 rounded-full">
+                      Declined
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-red-800 leading-relaxed">
+                    Election Officer declined the manual physical-ID exception request following physical credential inspection.
+                  </p>
+                  {activeExceptionRecord?.decisionReason && (
+                    <div className="pt-1.5 border-t border-red-200/60 text-[11px] text-red-900">
+                      <strong>Officer Reason:</strong> {activeExceptionRecord.decisionReason}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowExceptionModal(true)}
+                    className="mt-2 w-full py-1.5 px-2 bg-red-100 hover:bg-red-200 text-red-900 font-semibold rounded text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <FileCheck className="w-3.5 h-3.5" />
+                    <span>Submit New Exception Request</span>
+                  </button>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -869,10 +986,20 @@ export const FaceEnrollmentScreen: React.FC<FaceEnrollmentScreenProps> = ({
 
                   <button
                     onClick={() => setShowExceptionModal(true)}
-                    className="w-full py-2 px-3 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                    disabled={isSubmittingException}
+                    className="w-full py-2 px-3 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
                   >
-                    <FileCheck className="w-4 h-4" />
-                    <span>Request Manual Verification</span>
+                    {isSubmittingException ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Submitting Request...</span>
+                      </>
+                    ) : (
+                      <>
+                        <FileCheck className="w-4 h-4" />
+                        <span>Request Manual Verification</span>
+                      </>
+                    )}
                   </button>
                 </div>
               )}
@@ -1172,7 +1299,7 @@ export const FaceEnrollmentScreen: React.FC<FaceEnrollmentScreenProps> = ({
       )}
 
       {/* Manual Exception Request Modal */}
-      {showExceptionModal && voter && (
+      {showExceptionModal && effectiveVoter && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -1268,9 +1395,19 @@ export const FaceEnrollmentScreen: React.FC<FaceEnrollmentScreenProps> = ({
               <button
                 onClick={handleRequestException}
                 disabled={isSubmittingException}
-                className="px-4 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                className="px-4 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-1.5"
               >
-                {isSubmittingException ? 'Submitting...' : 'Submit Request'}
+                {isSubmittingException ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Submitting Request...</span>
+                  </>
+                ) : (
+                  <>
+                    <FileCheck className="w-3.5 h-3.5" />
+                    <span>Submit Exception Request</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
