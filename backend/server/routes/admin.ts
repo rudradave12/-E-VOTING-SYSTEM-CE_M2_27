@@ -41,12 +41,71 @@ import {
   SCHEMA_VERSION_CURRENT,
 } from '../../../frontend/src/types/dataModel';
 import { getDataRepositories } from '../repositories';
+import { saveStaffCredential, getStaffCredential, clearStaffCredentialsForTesting } from '../auth/credentials';
 import {
   generateUniqueSimulationVoterId,
   calculateAgeFromDob,
   isValidSimulationVoterId,
 } from '../utils/voterId';
 import { validateNoProhibitedFields, sanitizeLogData, maskMobile } from '../security';
+
+
+export interface PendingVoterRegistration {
+  pendingId: string;
+  details: {
+    fullName: string;
+    dateOfBirth: string;
+    gender: 'M' | 'F' | 'O';
+    state: string;
+    district: string;
+    constituencyId: string;
+    pollingStation: string;
+    maskedMobile: string;
+    age: number;
+  };
+  fingerprintVerification: {
+    status: 'NOT_VERIFIED' | 'VERIFIED' | 'UNSUCCESSFUL';
+    verifiedByOfficerId?: string;
+    verifiedAt?: number;
+    notes?: string;
+    attempts: number;
+  };
+  photoVerification: {
+    status: 'NOT_VERIFIED' | 'APPROVED' | 'REJECTED';
+    verifiedByOfficerId?: string;
+    verifiedAt?: number;
+    photoUrl?: string;
+    notes?: string;
+  };
+  createdByOfficerId: string;
+  createdAt: number;
+  updatedAt: number;
+  isFinalized: boolean;
+}
+
+export const pendingRegistrations = new Map<string, PendingVoterRegistration>();
+
+export function clearPendingRegistrationsForTesting(): void {
+  pendingRegistrations.clear();
+}
+
+// Rate-limiting map for staff password changes
+const passwordChangeAttempts = new Map<string, { count: number; resetAt: number }>();
+
+function checkPasswordChangeRateLimit(accountId: string): { allowed: boolean; remainingSec: number } {
+  const now = Date.now();
+  const entry = passwordChangeAttempts.get(accountId);
+  if (!entry || now > entry.resetAt) {
+    passwordChangeAttempts.set(accountId, { count: 1, resetAt: now + 15 * 60 * 1000 });
+    return { allowed: true, remainingSec: 0 };
+  }
+  if (entry.count >= 5) {
+    const remainingSec = Math.max(1, Math.ceil((entry.resetAt - now) / 1000));
+    return { allowed: false, remainingSec };
+  }
+  entry.count++;
+  return { allowed: true, remainingSec: 0 };
+}
 
 export const adminRouter = Router();
 
@@ -986,6 +1045,15 @@ adminRouter.post('/voters', requirePermission('VOTER_CREATE'), async (req: Reque
       });
       return;
     }
+  }
+
+  if (req.body.bypassFingerprint || req.body.skipFingerprint || req.body.bypassPhoto || req.body.skipPhoto) {
+    res.status(400).json({
+      success: false,
+      code: 'BIOMETRIC_VERIFICATION_REQUIRED',
+      message: 'Compulsory biometric verification cannot be bypassed. Complete the 3-stage registration flow.',
+    });
+    return;
   }
 
   const prohibitedCheck = validateNoProhibitedFields(req.body);
@@ -2920,4 +2988,637 @@ adminRouter.post(
   }
 );
 
+/**
+ * POST /api/admin/profile/change-password
+ * Allows an authenticated staff officer or administrator to change their own password.
+ * Hashes passwords with scrypt, persists hash to credential store, rotates session,
+ * and records audit events.
+ */
+adminRouter.post('/profile/change-password', async (req: Request, res: Response): Promise<void> => {
+  const token = extractSessionToken(req);
+  if (!token) {
+    res.status(401).json({ success: false, message: 'Authentication required: missing Bearer token.' });
+    return;
+  }
+  const session = getOfficerSession(token);
+  if (!session) {
+    res.status(401).json({ success: false, message: 'Invalid or expired officer session.' });
+    return;
+  }
+
+  const rateCheck = checkPasswordChangeRateLimit(session.accountId);
+  if (!rateCheck.allowed) {
+    res.status(429).json({
+      success: false,
+      message: `Rate limit exceeded: Please wait ${rateCheck.remainingSec} seconds before attempting another password change.`,
+    });
+    return;
+  }
+
+  const { currentPassword, newPassword, confirmPassword } = req.body;
+
+  if (!currentPassword || typeof currentPassword !== 'string') {
+    res.status(400).json({ success: false, message: 'Current password is required.' });
+    return;
+  }
+  if (!newPassword || typeof newPassword !== 'string') {
+    res.status(400).json({ success: false, message: 'New password is required.' });
+    return;
+  }
+  if (newPassword.length < 8) {
+    res.status(400).json({
+      success: false,
+      message: 'Password strength requirement: New password must be at least 8 characters long.',
+    });
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    res.status(400).json({
+      success: false,
+      message: 'Password confirmation mismatch: New password and confirmation password do not match.',
+    });
+    return;
+  }
+  if (newPassword === currentPassword) {
+    res.status(400).json({
+      success: false,
+      message: 'New password must be different from current password.',
+    });
+    return;
+  }
+
+  // 1. Verify current password
+  const verifyRes = await verifyOfficerCredentials(session.accountId, currentPassword);
+  if (!verifyRes.success || !verifyRes.account) {
+    res.status(401).json({ success: false, message: 'Current password verification failed. Please check your credentials.' });
+    return;
+  }
+
+  // 2. Persist new scrypt password hash
+  try {
+    const saveRes = await saveStaffCredential(session.accountId, newPassword);
+
+    // 3. Rotate session
+    const newSession = createOfficerSession(verifyRes.account);
+    revokeOfficerSession(token);
+
+    // 4. Audit logging
+    serverStore.recordAuditEvent({
+      id: `audit-pass-change-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: Date.now(),
+      type: 'ADMIN_ACTION',
+      description: `Staff password changed successfully for account '${session.accountId}' (${session.role})`,
+      electionId: 1,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Password updated successfully. Please use your new password for all subsequent logins.',
+      token: newSession.token,
+      isPersistent: saveRes.isPersistent,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: `Password update error: ${err.message}` });
+  }
+});
+
+/**
+ * POST /api/admin/voters/initiate-registration
+ * Stage 1 of the 3-Page Registration Flow:
+ * Validates personal details, age requirement (>= 18), constituency scope,
+ * and checks for duplicate registrations. Does NOT issue final voter ID.
+ * Returns pending registration reference token.
+ */
+adminRouter.post('/voters/initiate-registration', requirePermission('VOTER_CREATE'), async (req: Request, res: Response): Promise<void> => {
+  const session = (req as any).officer as OfficerSession;
+  const repos = getDataRepositories();
+
+  const {
+    fullName,
+    dateOfBirth,
+    gender,
+    constituencyId,
+    state,
+    district,
+    pollingStation,
+    maskedMobile,
+  } = req.body;
+
+  // Validation
+  if (!fullName || typeof fullName !== 'string' || fullName.trim().length < 2) {
+    res.status(400).json({
+      success: false,
+      message: 'Missing or invalid fullName: Elector full name must be at least 2 characters.',
+    });
+    return;
+  }
+
+  if (!dateOfBirth || !/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) {
+    res.status(400).json({
+      success: false,
+      message: 'Missing or invalid dateOfBirth: Format must be YYYY-MM-DD.',
+    });
+    return;
+  }
+
+  const age = calculateAgeFromDob(dateOfBirth);
+  if (age < 18) {
+    res.status(400).json({
+      success: false,
+      code: 'UNDERAGE',
+      message: `Underage violation: Elector is ${age} years old. Minimum statutory voting age in India is 18.`,
+    });
+    return;
+  }
+
+  if (!gender || !['M', 'F', 'O'].includes(gender)) {
+    res.status(400).json({
+      success: false,
+      message: "Invalid gender: Must be 'M', 'F', or 'O'.",
+    });
+    return;
+  }
+
+  if (!constituencyId || typeof constituencyId !== 'string') {
+    res.status(400).json({
+      success: false,
+      message: 'Missing constituencyId: Elector must be assigned to an active constituency.',
+    });
+    return;
+  }
+
+  const validConstituency = serverStore.getAllConstituencies().some((c) => c.id === constituencyId);
+  if (!validConstituency) {
+    res.status(400).json({
+      success: false,
+      message: `Invalid geographic assignment: Constituency '${constituencyId}' does not exist in the electoral registry.`,
+    });
+    return;
+  }
+
+  if (session && !isConstituencyInScope(session.assignmentScope, constituencyId)) {
+    res.status(403).json({
+      success: false,
+      message: `Scope violation: Constituency '${constituencyId}' is outside officer's authorized assignment scope.`,
+    });
+    return;
+  }
+
+  // Duplicate Check
+  const allVoters = await repos.voterProfiles.list({ constituencyId });
+  const isDuplicate = allVoters.some(
+    (v) =>
+      v.fullName.trim().toLowerCase() === fullName.trim().toLowerCase() &&
+      v.dateOfBirth === dateOfBirth &&
+      v.registrationStatus !== 'DE_REGISTERED' &&
+      v.lifecycleStatus === 'ACTIVE'
+  );
+
+  const storeVoters = serverStore.getAllVoters();
+  const isDuplicateStore = storeVoters.some(
+    (v) =>
+      v.name.trim().toLowerCase() === fullName.trim().toLowerCase() &&
+      v.constituencyId === constituencyId &&
+      v.isEligible
+  );
+
+  // Check if a pending draft already exists for this elector
+  for (const pending of pendingRegistrations.values()) {
+    if (
+      !pending.isFinalized &&
+      pending.details.constituencyId === constituencyId &&
+      ((pending.details.fullName.trim().toLowerCase() === fullName.trim().toLowerCase() &&
+        pending.details.dateOfBirth === dateOfBirth) ||
+       (maskedMobile && pending.details.maskedMobile && pending.details.maskedMobile === maskedMobile.trim()))
+    ) {
+      res.status(409).json({
+        success: false,
+        code: 'DUPLICATE_REGISTRATION',
+        message: `Duplicate voter registration draft already in progress for '${fullName.trim()}' in constituency '${constituencyId}'.`,
+      });
+      return;
+    }
+  }
+
+  if (isDuplicate || isDuplicateStore) {
+    res.status(409).json({
+      success: false,
+      code: 'DUPLICATE_REGISTRATION',
+      message: `Duplicate voter detected: An active elector named '${fullName.trim()}' with date of birth ${dateOfBirth} is already registered in constituency '${constituencyId}'.`,
+    });
+    return;
+  }
+
+  const pendingId = `preg_${crypto.randomBytes(16).toString('hex')}`;
+  const now = Date.now();
+
+  const pendingRegistration: PendingVoterRegistration = {
+    pendingId,
+    details: {
+      fullName: fullName.trim(),
+      dateOfBirth,
+      gender,
+      state: state?.trim() || 'NCT of Delhi',
+      district: district?.trim() || 'New Delhi',
+      constituencyId,
+      pollingStation: pollingStation?.trim() || 'Civic Community Centre, Polling Booth 1',
+      maskedMobile: maskedMobile?.trim() || '+91 ••••• •1122',
+      age,
+    },
+    fingerprintVerification: {
+      status: 'NOT_VERIFIED',
+      attempts: 0,
+    },
+    photoVerification: {
+      status: 'NOT_VERIFIED',
+    },
+    createdByOfficerId: session?.accountId || 'VRO-SIM-001',
+    createdAt: now,
+    updatedAt: now,
+    isFinalized: false,
+  };
+
+  pendingRegistrations.set(pendingId, pendingRegistration);
+
+  serverStore.recordAuditEvent({
+    id: `audit-preg-init-${now}-${Math.random().toString(36).substring(2, 6)}`,
+    timestamp: now,
+    type: 'ADMIN_ACTION',
+    description: `Initiated voter registration draft '${pendingId}' for '${fullName.trim()}' by officer '${session?.accountId}'`,
+    electionId: 1,
+  });
+
+  res.status(201).json({
+    success: true,
+    message: 'Elector details reviewed and saved. Proceed to mandatory fingerprint verification.',
+    pendingId,
+    registrationStep: 2,
+    voterDraft: pendingRegistration.details,
+  });
+});
+
+/**
+ * POST /api/admin/voters/verify-fingerprint
+ * Stage 2 of the 3-Page Registration Flow:
+ * Confirms mandatory fingerprint verification by authorized officer.
+ * Cannot proceed to photo approval or voter ID issuance without successful check.
+ */
+adminRouter.post('/voters/verify-fingerprint', requirePermission('BIOMETRIC_ENROLLMENT_START'), async (req: Request, res: Response): Promise<void> => {
+  const session = (req as any).officer as OfficerSession;
+  const { pendingId, officerConfirmation, result, notes } = req.body;
+
+  if (!pendingId || typeof pendingId !== 'string') {
+    res.status(400).json({ success: false, message: 'Missing pendingId parameter.' });
+    return;
+  }
+
+  const reg = pendingRegistrations.get(pendingId.trim());
+  if (!reg) {
+    res.status(404).json({ success: false, message: 'Pending registration record not found or expired.' });
+    return;
+  }
+
+  if (reg.isFinalized) {
+    res.status(409).json({ success: false, message: 'Registration record is already finalized.' });
+    return;
+  }
+
+  if (session && !isConstituencyInScope(session.assignmentScope, reg.details.constituencyId)) {
+    res.status(403).json({ success: false, message: 'Scope violation: Elector constituency is outside authorized scope.' });
+    return;
+  }
+
+  const now = Date.now();
+
+  if (result === 'VERIFIED') {
+    if (officerConfirmation !== true) {
+      res.status(400).json({
+        success: false,
+        message: 'Explicit officer confirmation is mandatory to confirm physical fingerprint verification.',
+      });
+      return;
+    }
+
+    reg.fingerprintVerification = {
+      status: 'VERIFIED',
+      verifiedByOfficerId: session?.accountId || 'VRO-SIM-001',
+      verifiedAt: now,
+      notes: notes?.trim() || 'Verified by authorized registration officer inspection',
+      attempts: reg.fingerprintVerification.attempts + 1,
+    };
+    reg.updatedAt = now;
+
+    serverStore.recordAuditEvent({
+      id: `audit-bio-fp-${now}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: now,
+      type: 'ADMIN_ACTION',
+      description: `Fingerprint verification confirmed for draft '${pendingId}' by officer '${session?.accountId}'`,
+      electionId: 1,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Fingerprint verification successfully confirmed by registration officer.',
+      fingerprintStatus: 'VERIFIED',
+      verifiedBy: session?.accountId || 'VRO-SIM-001',
+      verifiedAt: now,
+      nextStep: 'photo',
+    });
+  } else {
+    // Unsuccessful attempt
+    reg.fingerprintVerification.status = 'UNSUCCESSFUL';
+    reg.fingerprintVerification.attempts += 1;
+    reg.fingerprintVerification.notes = notes?.trim() || 'Unsuccessful fingerprint check attempt';
+    reg.updatedAt = now;
+
+    serverStore.recordAuditEvent({
+      id: `audit-bio-fp-fail-${now}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: now,
+      type: 'ADMIN_ACTION',
+      description: `Fingerprint verification unsuccessful for draft '${pendingId}' (attempt #${reg.fingerprintVerification.attempts})`,
+      electionId: 1,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Fingerprint verification marked unsuccessful. Officer may retry or correct the check.',
+      fingerprintStatus: 'UNSUCCESSFUL',
+      attempts: reg.fingerprintVerification.attempts,
+    });
+  }
+});
+
+/**
+ * POST /api/admin/voters/verify-photo
+ * Stage 3 of the 3-Page Registration Flow:
+ * Requires prior successful fingerprint verification.
+ * Confirms or rejects elector photograph inspection.
+ */
+adminRouter.post('/voters/verify-photo', requirePermission('BIOMETRIC_ENROLLMENT_START'), async (req: Request, res: Response): Promise<void> => {
+  const session = (req as any).officer as OfficerSession;
+  const { pendingId, decision, photoUrl, notes } = req.body;
+
+  if (!pendingId || typeof pendingId !== 'string') {
+    res.status(400).json({ success: false, message: 'Missing pendingId parameter.' });
+    return;
+  }
+
+  const reg = pendingRegistrations.get(pendingId.trim());
+  if (!reg) {
+    res.status(404).json({ success: false, message: 'Pending registration record not found or expired.' });
+    return;
+  }
+
+  if (reg.isFinalized) {
+    res.status(409).json({ success: false, message: 'Registration record is already finalized.' });
+    return;
+  }
+
+  // Pre-requisite check: Fingerprint MUST be verified first
+  if (reg.fingerprintVerification.status !== 'VERIFIED') {
+    res.status(400).json({
+      success: false,
+      message: 'Prerequisite violation: Mandatory fingerprint verification must be completed and verified before photo verification can proceed.',
+    });
+    return;
+  }
+
+  if (session && !isConstituencyInScope(session.assignmentScope, reg.details.constituencyId)) {
+    res.status(403).json({ success: false, message: 'Scope violation: Elector constituency is outside authorized scope.' });
+    return;
+  }
+
+  const now = Date.now();
+
+  if (decision === 'APPROVED') {
+    reg.photoVerification = {
+      status: 'APPROVED',
+      verifiedByOfficerId: session?.accountId || 'VRO-SIM-001',
+      verifiedAt: now,
+      photoUrl: photoUrl?.trim() || 'elector_portrait_verified',
+      notes: notes?.trim() || 'Elector photograph inspected and approved by registration officer',
+    };
+    reg.updatedAt = now;
+
+    serverStore.recordAuditEvent({
+      id: `audit-photo-app-${now}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: now,
+      type: 'ADMIN_ACTION',
+      description: `Photo verification approved for draft '${pendingId}' by officer '${session?.accountId}'`,
+      electionId: 1,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Elector photograph successfully verified and approved by registration officer.',
+      photoStatus: 'APPROVED',
+      verifiedBy: session?.accountId || 'VRO-SIM-001',
+      verifiedAt: now,
+      readyForFinalization: true,
+    });
+  } else {
+    // Rejection
+    reg.photoVerification = {
+      status: 'REJECTED',
+      verifiedByOfficerId: session?.accountId || 'VRO-SIM-001',
+      verifiedAt: now,
+      notes: notes?.trim() || 'Elector photograph rejected by registration officer',
+    };
+    reg.updatedAt = now;
+
+    serverStore.recordAuditEvent({
+      id: `audit-photo-rej-${now}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: now,
+      type: 'ADMIN_ACTION',
+      description: `Photo verification rejected for draft '${pendingId}' by officer '${session?.accountId}'`,
+      electionId: 1,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Elector photograph rejected by officer. Officer may retake photo and repeat verification.',
+      photoStatus: 'REJECTED',
+    });
+  }
+});
+
+/**
+ * POST /api/admin/voters/finalize-registration
+ * Final Step of Voter Registration Flow:
+ * Server validates that all 3 registration stages are successfully completed:
+ * 1. Personal details validated & pending draft exists.
+ * 2. Fingerprint verification is VERIFIED.
+ * 3. Photo verification is APPROVED.
+ * Only then generates collision-resistant unique simulation voter ID, saves
+ * authoritative record, persists biometrics, and synchronizes electoral roll.
+ */
+adminRouter.post('/voters/finalize-registration', requirePermission('VOTER_CREATE'), async (req: Request, res: Response): Promise<void> => {
+  const session = (req as any).officer as OfficerSession;
+  const repos = getDataRepositories();
+  const { pendingId } = req.body;
+
+  if (!pendingId || typeof pendingId !== 'string') {
+    res.status(400).json({ success: false, message: 'Missing pendingId parameter.' });
+    return;
+  }
+
+  const reg = pendingRegistrations.get(pendingId.trim());
+  if (!reg) {
+    res.status(404).json({ success: false, message: 'Pending registration record not found or expired.' });
+    return;
+  }
+
+  if (reg.isFinalized) {
+    res.status(409).json({ success: false, message: 'Registration has already been finalized.' });
+    return;
+  }
+
+  // 1. Mandatory Fingerprint Check Guard
+  if (reg.fingerprintVerification.status !== 'VERIFIED') {
+    res.status(400).json({
+      success: false,
+      code: 'BIOMETRIC_CHECK_INCOMPLETE',
+      message: 'Cannot issue voter ID: Mandatory fingerprint verification is incomplete or unverified.',
+    });
+    return;
+  }
+
+  // 2. Mandatory Photo Verification Guard
+  if (reg.photoVerification.status !== 'APPROVED') {
+    res.status(400).json({
+      success: false,
+      message: 'Cannot issue voter ID: Mandatory photo verification has not been approved.',
+    });
+    return;
+  }
+
+  // 3. Scope Guard
+  if (session && !isConstituencyInScope(session.assignmentScope, reg.details.constituencyId)) {
+    res.status(403).json({ success: false, message: 'Scope violation: Constituency is outside officer scope.' });
+    return;
+  }
+
+  // 4. Generate Unique Collision-Resistant Simulation Voter ID
+  let simulationVoterId = '';
+  try {
+    simulationVoterId = await generateUniqueSimulationVoterId(repos.voterProfiles);
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: `Failed generating unique voter ID: ${err.message}` });
+    return;
+  }
+
+  const internalId = `vpr_${crypto.randomUUID()}`;
+  const now = Date.now();
+
+  const profile: VoterProfile = {
+    id: internalId,
+    simulationVoterId,
+    fullName: reg.details.fullName,
+    dateOfBirth: reg.details.dateOfBirth,
+    gender: reg.details.gender,
+    state: reg.details.state,
+    district: reg.details.district,
+    constituencyId: reg.details.constituencyId,
+    pollingStation: reg.details.pollingStation,
+    maskedMobile: reg.details.maskedMobile,
+    registrationStatus: 'REGISTERED',
+    eligibilityStatus: 'ELIGIBLE',
+    lifecycleStatus: 'ACTIVE',
+    createdAt: now,
+    updatedAt: now,
+    createdByOfficerId: session?.accountId || 'VRO-SIM-001',
+    schemaVersion: SCHEMA_VERSION_CURRENT,
+  };
+
+  // 5. Persist Voter Profile
+  try {
+    await repos.voterProfiles.save(profile);
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: `Persistence failure: ${err.message}` });
+    return;
+  }
+
+  // 6. Persist Biometric Metadata
+  try {
+    const faceMeta: BiometricEnrollmentMetadata = {
+      id: `bio_${profile.id}_face`,
+      voterId: profile.id,
+      modality: 'FACE',
+      status: 'ENROLLED',
+      biometricReferenceId: `photo_verified_${Date.now()}`,
+      qualityCheckStatus: 'PASSED',
+      isManualException: false,
+      enrollingOfficerId: reg.photoVerification.verifiedByOfficerId || session?.accountId,
+      enrolledAt: reg.photoVerification.verifiedAt || now,
+      createdAt: now,
+      updatedAt: now,
+      schemaVersion: SCHEMA_VERSION_CURRENT,
+    };
+    const fpMeta: BiometricEnrollmentMetadata = {
+      id: `bio_${profile.id}_fingerprint`,
+      voterId: profile.id,
+      modality: 'FINGERPRINT',
+      status: 'ENROLLED',
+      biometricReferenceId: `fp_verified_${Date.now()}`,
+      qualityCheckStatus: 'PASSED',
+      isManualException: false,
+      enrollingOfficerId: reg.fingerprintVerification.verifiedByOfficerId || session?.accountId,
+      enrolledAt: reg.fingerprintVerification.verifiedAt || now,
+      createdAt: now,
+      updatedAt: now,
+      schemaVersion: SCHEMA_VERSION_CURRENT,
+    };
+    await repos.biometrics.saveMetadata(faceMeta);
+    await repos.biometrics.saveMetadata(fpMeta);
+  } catch (err: any) {
+    console.warn('[VoterRegistry] Notice saving verified biometric metadata:', err.message);
+  }
+
+  // 7. Synchronize with runtime store
+  serverStore.setVoterRecord({
+    id: profile.id,
+    epicId: profile.simulationVoterId,
+    name: profile.fullName,
+    gender: profile.gender,
+    age: reg.details.age,
+    constituencyId: profile.constituencyId,
+    pollingStation: profile.pollingStation,
+    maskedMobile: profile.maskedMobile,
+    isEligible: true,
+    status: 'ELIGIBLE',
+  });
+
+  // Mark finalized
+  reg.isFinalized = true;
+
+  // 8. Audit event
+  serverStore.recordAuditEvent({
+    id: `audit-reg-final-${now}-${Math.random().toString(36).substring(2, 6)}`,
+    timestamp: now,
+    type: 'ADMIN_ACTION',
+    description: `Voter successfully registered: '${simulationVoterId}' (Fingerprint & Photo Verified) by officer '${session?.accountId}'`,
+    electionId: 1,
+  });
+
+  res.status(201).json({
+    success: true,
+    message: 'Voter registration successfully completed. Unique simulation voter ID assigned.',
+    simulationVoterId,
+    voter: profile,
+  });
+});
+
+/**
+ * GET /api/admin/voters/pending/:pendingId
+ * Retrieves current pending registration status and verification checkpoints.
+ */
+adminRouter.get('/voters/pending/:pendingId', requirePermission('VOTER_READ'), async (req: Request, res: Response): Promise<void> => {
+  const { pendingId } = req.params;
+  const reg = pendingRegistrations.get(pendingId.trim());
+  if (!reg) {
+    res.status(404).json({ success: false, message: 'Pending registration not found.' });
+    return;
+  }
+  res.status(200).json({ success: true, pendingRegistration: reg, pending: reg });
+});
 

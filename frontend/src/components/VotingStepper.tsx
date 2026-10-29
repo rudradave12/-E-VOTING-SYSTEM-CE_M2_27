@@ -12,7 +12,7 @@ const STEPS = [
   { id: 'constituency', label: '3. Constituency', title: 'Constituency Roll' },
   { id: 'candidates', label: '4. Candidate Choice', title: 'Candidate Choice' },
   { id: 'review', label: '5. Ballot Review', title: 'Ballot Review' },
-  { id: 'metamask', label: '6. Web3 Sign-off', title: 'Web3 Sign-off' },
+  { id: 'metamask', label: '6. Cast Ballot', title: 'Cast Ballot' },
   { id: 'receipt', label: '7. Receipt', title: 'Ballot Receipt' },
 ];
 

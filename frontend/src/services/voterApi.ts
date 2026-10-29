@@ -1428,6 +1428,181 @@ export class VoterApiClient {
       return { success: false, message: err.message || 'Network error fetching published results.' };
     }
   }
+
+  /**
+   * POST /api/admin/profile/change-password
+   */
+  public async changeStaffPassword(data: {
+    currentPassword: string;
+    newPassword: string;
+    confirmPassword: string;
+  }): Promise<{ success: boolean; message?: string; token?: string; isPersistent?: boolean }> {
+    try {
+      const res = await fetch('/api/admin/profile/change-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+        body: JSON.stringify(data),
+      });
+      const resData = await res.json();
+      if (resData.success && resData.token) {
+        this.currentAdminToken = resData.token;
+      }
+      return resData;
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error updating password.' };
+    }
+  }
+
+  /**
+   * POST /api/admin/voters/initiate-registration
+   * Stage 1: Reviews and saves voter personal details draft.
+   */
+  public async initiateVoterRegistration(data: {
+    fullName: string;
+    dateOfBirth: string;
+    gender: 'M' | 'F' | 'O';
+    constituencyId: string;
+    state?: string;
+    district?: string;
+    pollingStation?: string;
+    maskedMobile?: string;
+  }): Promise<{
+    success: boolean;
+    message?: string;
+    pendingId?: string;
+    registrationStep?: number;
+    voterDraft?: any;
+  }> {
+    try {
+      const res = await fetch('/api/admin/voters/initiate-registration', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+        body: JSON.stringify(data),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error initiating voter registration.' };
+    }
+  }
+
+  /**
+   * POST /api/admin/voters/verify-fingerprint
+   * Stage 2: Confirms mandatory physical fingerprint verification by registration officer.
+   */
+  public async verifyFingerprint(data: {
+    pendingId: string;
+    officerConfirmation: boolean;
+    result: 'VERIFIED' | 'UNSUCCESSFUL';
+    notes?: string;
+  }): Promise<{
+    success: boolean;
+    message?: string;
+    fingerprintStatus?: string;
+    verifiedBy?: string;
+    verifiedAt?: number;
+    nextStep?: string;
+    attempts?: number;
+  }> {
+    try {
+      const res = await fetch('/api/admin/voters/verify-fingerprint', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+        body: JSON.stringify(data),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error submitting fingerprint verification.' };
+    }
+  }
+
+  /**
+   * POST /api/admin/voters/verify-photo
+   * Stage 3: Approves or rejects elector photograph inspection.
+   */
+  public async verifyPhoto(data: {
+    pendingId: string;
+    decision: 'APPROVED' | 'REJECTED';
+    photoUrl?: string;
+    notes?: string;
+  }): Promise<{
+    success: boolean;
+    message?: string;
+    photoStatus?: string;
+    verifiedBy?: string;
+    verifiedAt?: number;
+    readyForFinalization?: boolean;
+  }> {
+    try {
+      const res = await fetch('/api/admin/voters/verify-photo', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+        body: JSON.stringify(data),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error verifying elector photograph.' };
+    }
+  }
+
+  /**
+   * POST /api/admin/voters/finalize-registration
+   * Final step: Validates both fingerprint & photo stages, assigns unique simulation voter ID.
+   */
+  public async finalizeVoterRegistration(data: {
+    pendingId: string;
+  }): Promise<{
+    success: boolean;
+    message?: string;
+    simulationVoterId?: string;
+    voter?: any;
+  }> {
+    try {
+      const res = await fetch('/api/admin/voters/finalize-registration', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+        body: JSON.stringify(data),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error finalizing registration.' };
+    }
+  }
+
+  /**
+   * GET /api/admin/voters/pending/:pendingId
+   */
+  public async getPendingRegistration(pendingId: string): Promise<{
+    success: boolean;
+    pendingRegistration?: any;
+    message?: string;
+  }> {
+    try {
+      const res = await fetch(`/api/admin/voters/pending/${encodeURIComponent(pendingId)}`, {
+        headers: {
+          ...(this.currentAdminToken && { Authorization: `Bearer ${this.currentAdminToken}` }),
+        },
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error retrieving pending registration.' };
+    }
+  }
+
 }
 
 export const voterApi = VoterApiClient.getInstance();

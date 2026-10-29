@@ -20,6 +20,10 @@ import {
   Camera,
   Fingerprint,
   Info,
+  ChevronRight,
+  CheckCircle2,
+  XCircle,
+  UserCheck,
 } from 'lucide-react';
 
 
@@ -98,6 +102,30 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
   const [maskedMobile, setMaskedMobile] = useState<string>('+91 ••••• •1122');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // 3-Stage Registration Multi-Step Modal State
+  const [registrationStep, setRegistrationStep] = useState<1 | 2 | 3>(1);
+  const [pendingRegistration, setPendingRegistration] = useState<any | null>(null);
+  const [fingerprintStatus, setFingerprintStatus] = useState<'NOT_VERIFIED' | 'IN_PROGRESS' | 'VERIFIED' | 'UNSUCCESSFUL'>('NOT_VERIFIED');
+  const [fingerprintOfficer, setFingerprintOfficer] = useState<string>('');
+  const [fingerprintTimestamp, setFingerprintTimestamp] = useState<number | null>(null);
+  const [photoStatus, setPhotoStatus] = useState<'AWAITING_INSPECTION' | 'APPROVED' | 'REJECTED' | 'RETAKE_REQUESTED'>('AWAITING_INSPECTION');
+  const [photoOfficer, setPhotoOfficer] = useState<string>('');
+  const [photoTimestamp, setPhotoTimestamp] = useState<number | null>(null);
+
+  // Helper to open registration modal clean
+  const handleOpenAddModal = () => {
+    setRegistrationStep(1);
+    setPendingRegistration(null);
+    setFingerprintStatus('NOT_VERIFIED');
+    setFingerprintOfficer('');
+    setFingerprintTimestamp(null);
+    setPhotoStatus('AWAITING_INSPECTION');
+    setPhotoOfficer('');
+    setPhotoTimestamp(null);
+    setFormError(null);
+    setShowAddModal(true);
+  };
 
   // Edit voter state
   const [editTarget, setEditTarget] = useState<VoterProfile | null>(null);
@@ -200,8 +228,8 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
     loadVoters();
   }, [loadVoters]);
 
-  // Handle Enrollment Submission
-  const handleAddSubmit = async (e: React.FormEvent) => {
+  // Step 1: Initiate Draft Registration
+  const handleInitiateRegistration = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
@@ -217,7 +245,7 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
 
     setIsSubmitting(true);
     try {
-      const res = await voterApi.adminRegisterVoter({
+      const res = await voterApi.initiateVoterRegistration({
         fullName: name.trim(),
         dateOfBirth,
         gender,
@@ -228,8 +256,120 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
         maskedMobile: maskedMobile.trim(),
       });
 
+      if (!res.success || !res.pendingId) {
+        setFormError(res.message || 'Failed to initiate voter registration draft.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      setPendingRegistration({
+        pendingId: res.pendingId,
+        fullName: name.trim(),
+        dateOfBirth,
+        gender,
+        constituencyId,
+        state: stateName.trim(),
+        district: district.trim(),
+        pollingStation: pollingStation.trim(),
+        maskedMobile: maskedMobile.trim(),
+        age: currentCalculatedAge,
+        ...(res.voterDraft || {}),
+      });
+      setRegistrationStep(2);
+      setFingerprintStatus('NOT_VERIFIED');
+    } catch {
+      setFormError('Network error connecting to registration service.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Step 2: Fingerprint Verification
+  const handleFingerprintCheck = async (passed: boolean) => {
+    if (!pendingRegistration) return;
+    setFormError(null);
+    setIsSubmitting(true);
+    const officerId = adminUser?.id || 'VRO-SIM-001';
+
+    try {
+      const res = await voterApi.verifyFingerprint({
+        pendingId: pendingRegistration.pendingId,
+        officerConfirmation: true,
+        result: passed ? 'VERIFIED' : 'UNSUCCESSFUL',
+        notes: passed ? 'Officer verified simulated biometric match' : 'Biometric match failed or unreadable',
+      });
+
+      if (!res.success) {
+        setFormError(res.message || 'Failed to record fingerprint verification status.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (passed) {
+        setFingerprintStatus('VERIFIED');
+        setFingerprintOfficer(res.verifiedBy || officerId);
+        setFingerprintTimestamp(res.verifiedAt || Date.now());
+      } else {
+        setFingerprintStatus('UNSUCCESSFUL');
+      }
+    } catch {
+      setFormError('Network error connecting to biometric verification service.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Step 3: Photo Verification
+  const handlePhotoVerification = async (action: 'APPROVE' | 'REJECT' | 'RETAKE') => {
+    if (!pendingRegistration) return;
+    setFormError(null);
+    setIsSubmitting(true);
+    const officerId = adminUser?.id || 'VRO-SIM-001';
+
+    try {
+      const decision = action === 'APPROVE' ? 'APPROVED' : 'REJECTED';
+      const res = await voterApi.verifyPhoto({
+        pendingId: pendingRegistration.pendingId,
+        decision,
+        notes: `Officer action: ${action}`,
+      });
+
+      if (!res.success) {
+        setFormError(res.message || 'Failed to record photo verification status.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (action === 'APPROVE') {
+        setPhotoStatus('APPROVED');
+        setPhotoOfficer(res.verifiedBy || officerId);
+        setPhotoTimestamp(res.verifiedAt || Date.now());
+      } else if (action === 'REJECT') {
+        setPhotoStatus('REJECTED');
+      } else {
+        setPhotoStatus('RETAKE_REQUESTED');
+      }
+    } catch {
+      setFormError('Network error communicating with photo verification service.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Final Step: Finalize Registration and Issue Collision-Resistant Simulation Voter ID
+  const handleFinalizeRegistration = async () => {
+    if (!pendingRegistration) return;
+    setFormError(null);
+    setIsSubmitting(true);
+    const officerId = adminUser?.id || 'VRO-SIM-001';
+
+    try {
+      const res = await voterApi.finalizeVoterRegistration({
+        pendingId: pendingRegistration.pendingId,
+      });
+
       if (!res.success || !res.voter) {
-        setFormError(res.message || 'Failed to enroll elector on backend.');
+        setFormError(res.message || 'Failed to finalize voter registration on backend.');
         setIsSubmitting(false);
         return;
       }
@@ -254,17 +394,19 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
         status: 'ELIGIBLE',
       });
 
-      // Reset form
+      // Reset form states
       setName('');
       setDateOfBirth('1998-05-15');
+      setPendingRegistration(null);
+      setRegistrationStep(1);
     } catch {
-      setFormError('Network error connecting to voter registration endpoint.');
+      setFormError('Network error connecting to final registration endpoint.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Handle Opening Edit Modal
+    // Handle Opening Edit Modal
   const openEditModal = async (profile: VoterProfile) => {
     setEditTarget(profile);
     setEditName(profile.fullName);
@@ -404,8 +546,7 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
           {canCreate ? (
             <button
               onClick={() => {
-                setShowAddModal(true);
-                setFormError(null);
+                handleOpenAddModal();
               }}
               className="px-4 py-2.5 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
             >
@@ -499,7 +640,7 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
             </p>
             {canCreate && (
               <button
-                onClick={() => setShowAddModal(true)}
+                onClick={handleOpenAddModal}
                 className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-lg text-xs inline-flex items-center gap-1.5 transition-colors cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
@@ -662,15 +803,20 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
         )}
       </div>
 
-      {/* Add Voter Modal */}
+      {/* Add Voter Multi-Step Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl border border-slate-200 p-6 max-w-lg w-full shadow-xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-xl border border-slate-200 p-6 max-w-xl w-full shadow-2xl max-h-[92vh] overflow-y-auto">
+            {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
               <div>
-                <h2 className="text-lg font-bold text-slate-900">Enroll Synthetic Elector</h2>
+                <h2 className="text-lg font-bold text-slate-900">
+                  {registrationStep === 1 && 'Enroll Elector — Step 1: Personal Details'}
+                  {registrationStep === 2 && 'Enroll Elector — Step 2: Compulsory Fingerprint Check'}
+                  {registrationStep === 3 && 'Enroll Elector — Step 3: Photo Verification'}
+                </h2>
                 <p className="text-xs text-slate-500">
-                  Simulation voter ID will be assigned and persisted exclusively by the server.
+                  Compulsory 3-stage validation required prior to simulation voter ID issuance.
                 </p>
               </div>
               <span className="text-[10px] font-mono font-bold bg-orange-100 text-orange-800 px-2 py-0.5 rounded">
@@ -678,177 +824,476 @@ export const AdminVotersScreen: React.FC<AdminVotersScreenProps> = ({
               </span>
             </div>
 
-            <form onSubmit={handleAddSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
-                  Elector Full Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Anandita Sengupta"
-                  disabled={isSubmitting}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500 disabled:opacity-50"
-                  required
-                />
-              </div>
+            {/* Stepper Progress Bar */}
+            <div className="mb-5 bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+              <div className="flex items-center justify-between text-xs font-semibold">
+                <div className={`flex items-center gap-1.5 ${registrationStep === 1 ? 'text-orange-600 font-bold' : registrationStep > 1 ? 'text-emerald-700' : 'text-slate-400'}`}>
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${registrationStep === 1 ? 'bg-orange-600 text-white' : registrationStep > 1 ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-500'}`}>
+                    {registrationStep > 1 ? '✓' : '1'}
+                  </span>
+                  <span>1. Details</span>
+                </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <span className="text-slate-300">→</span>
+
+                <div className={`flex items-center gap-1.5 ${registrationStep === 2 ? 'text-orange-600 font-bold' : registrationStep > 2 ? 'text-emerald-700' : 'text-slate-400'}`}>
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${registrationStep === 2 ? 'bg-orange-600 text-white' : registrationStep > 2 ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-500'}`}>
+                    {registrationStep > 2 ? '✓' : '2'}
+                  </span>
+                  <span>2. Fingerprint Check</span>
+                </div>
+
+                <span className="text-slate-300">→</span>
+
+                <div className={`flex items-center gap-1.5 ${registrationStep === 3 ? 'text-orange-600 font-bold' : 'text-slate-400'}`}>
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${registrationStep === 3 ? 'bg-orange-600 text-white' : 'bg-slate-200 text-slate-500'}`}>
+                    3
+                  </span>
+                  <span>3. Photo Check</span>
+                </div>
+              </div>
+            </div>
+
+            {/* STAGE 1: Personal Details Form */}
+            {registrationStep === 1 && (
+              <form onSubmit={handleInitiateRegistration} className="space-y-4">
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
-                    Date of Birth <span className="text-red-500">*</span>
+                    Elector Full Name <span className="text-red-500">*</span>
                   </label>
                   <input
-                    type="date"
-                    value={dateOfBirth}
-                    onChange={(e) => setDateOfBirth(e.target.value)}
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="e.g. Anandita Sengupta"
                     disabled={isSubmitting}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500 disabled:opacity-50"
                     required
                   />
-                  <div className="mt-1 flex items-center justify-between text-[11px]">
-                    <span className="text-slate-500">Calculated age:</span>
-                    <span
-                      className={`font-bold ${
-                        currentCalculatedAge >= 18 ? 'text-emerald-600' : 'text-red-600'
-                      }`}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
+                      Date of Birth <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={dateOfBirth}
+                      onChange={(e) => setDateOfBirth(e.target.value)}
+                      disabled={isSubmitting}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500 disabled:opacity-50"
+                      required
+                    />
+                    <div className="mt-1 flex items-center justify-between text-[11px]">
+                      <span className="text-slate-500">Calculated age:</span>
+                      <span
+                        className={`font-bold ${currentCalculatedAge >= 18 ? 'text-emerald-600' : 'text-red-600'}`}
+                      >
+                        {currentCalculatedAge} yrs {currentCalculatedAge >= 18 ? '(Eligible)' : '(Ineligible < 18)'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
+                      Gender <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={gender}
+                      onChange={(e) => setGender(e.target.value as any)}
+                      disabled={isSubmitting}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500 disabled:opacity-50"
                     >
-                      {currentCalculatedAge} yrs {currentCalculatedAge >= 18 ? '(Eligible)' : '(Ineligible < 18)'}
-                    </span>
+                      <option value="M">Male (M)</option>
+                      <option value="F">Female (F)</option>
+                      <option value="O">Other (O)</option>
+                    </select>
                   </div>
                 </div>
 
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
-                    Gender <span className="text-red-500">*</span>
+                    Assigned Constituency <span className="text-red-500">*</span>
                   </label>
                   <select
-                    value={gender}
-                    onChange={(e) => setGender(e.target.value as any)}
+                    value={constituencyId}
+                    onChange={(e) => setConstituencyId(e.target.value)}
                     disabled={isSubmitting}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500 disabled:opacity-50"
                   >
-                    <option value="M">Male (M)</option>
-                    <option value="F">Female (F)</option>
-                    <option value="O">Other (O)</option>
+                    {constituencies.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.code}) - {c.state}
+                      </option>
+                    ))}
                   </select>
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
-                  Assigned Constituency <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={constituencyId}
-                  onChange={(e) => setConstituencyId(e.target.value)}
-                  disabled={isSubmitting}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500 disabled:opacity-50"
-                >
-                  {constituencies.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} ({c.code}) - {c.state}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
+                      State
+                    </label>
+                    <input
+                      type="text"
+                      value={stateName}
+                      onChange={(e) => setStateName(e.target.value)}
+                      disabled={isSubmitting}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500 disabled:opacity-50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
+                      District
+                    </label>
+                    <input
+                      type="text"
+                      value={district}
+                      onChange={(e) => setDistrict(e.target.value)}
+                      disabled={isSubmitting}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500 disabled:opacity-50"
+                    />
+                  </div>
+                </div>
 
-              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
-                    State
+                    Designated Polling Station
                   </label>
                   <input
                     type="text"
-                    value={stateName}
-                    onChange={(e) => setStateName(e.target.value)}
+                    value={pollingStation}
+                    onChange={(e) => setPollingStation(e.target.value)}
                     disabled={isSubmitting}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500 disabled:opacity-50"
                   />
                 </div>
+
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
-                    District
+                    Masked Mobile (OTP Delivery Simulation)
                   </label>
                   <input
                     type="text"
-                    value={district}
-                    onChange={(e) => setDistrict(e.target.value)}
+                    value={maskedMobile}
+                    onChange={(e) => setMaskedMobile(e.target.value)}
                     disabled={isSubmitting}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500 disabled:opacity-50"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500 font-mono disabled:opacity-50"
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
-                  Designated Polling Station
-                </label>
-                <input
-                  type="text"
-                  value={pollingStation}
-                  onChange={(e) => setPollingStation(e.target.value)}
-                  disabled={isSubmitting}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500 disabled:opacity-50"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
-                  Masked Mobile (OTP Delivery Simulation)
-                </label>
-                <input
-                  type="text"
-                  value={maskedMobile}
-                  onChange={(e) => setMaskedMobile(e.target.value)}
-                  disabled={isSubmitting}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500 font-mono disabled:opacity-50"
-                />
-              </div>
-
-              <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-lg text-xs text-blue-900 flex items-start gap-2">
-                <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-                <p>
-                  <span className="font-semibold">Cryptographic ID Generation:</span> Upon confirmation, the backend will generate a unique simulation token (format: <span className="font-mono font-bold">BBV-SIM-...</span>). Biometrics will be initialized as <span className="font-semibold">NOT_STARTED</span>.
-                </p>
-              </div>
-
-              {formError && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                  <span>{formError}</span>
+                <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-lg text-xs text-blue-900 flex items-start gap-2">
+                  <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                  <p>
+                    <span className="font-semibold">Review Requirement:</span> Click continue to initiate the draft record and proceed to the mandatory fingerprint verification check. No voter ID is issued at this stage.
+                  </p>
                 </div>
-              )}
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  disabled={isSubmitting}
-                  className="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-900 cursor-pointer disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting || currentCalculatedAge < 18}
-                  className="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-lg text-xs cursor-pointer flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-xs"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Generating ID & Persisting...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Confirm & Enroll Elector</span>
-                    </>
+                {formError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                    <span>{formError}</span>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddModal(false)}
+                    disabled={isSubmitting}
+                    className="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-900 cursor-pointer disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || currentCalculatedAge < 18}
+                    className="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-lg text-xs cursor-pointer flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-xs"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Validating Details...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Save & Continue to Fingerprint Check</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* STAGE 2: Dedicated Compulsory Fingerprint Check */}
+            {registrationStep === 2 && pendingRegistration && (
+              <div className="space-y-4">
+                {/* Draft Summary Card */}
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900">{pendingRegistration.fullName}</span>
+                    <span className="font-mono text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded">
+                      Draft: {pendingRegistration.pendingId}
+                    </span>
+                  </div>
+                  <div className="text-slate-500 text-[11px]">
+                    Constituency: {pendingRegistration.constituencyId} • Age: {pendingRegistration.age} yrs • Gender: {pendingRegistration.gender}
+                  </div>
+                  <div className="text-amber-800 font-medium text-[11px] pt-1 border-t border-slate-200/60">
+                    Draft Status: Identity recorded. No Voter ID issued yet.
+                  </div>
+                </div>
+
+                {/* Biometric Safety Notice */}
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-900 flex items-start gap-2">
+                  <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold">Biometric Safety & Prototype Disclosure:</span>
+                    <p className="mt-0.5 leading-relaxed">
+                      Academic simulation only. Raw biometric templates, physical fingerprint scans, and min-hashes are never collected or stored on-chain. This step confirms officer-supervised physical verification.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Fingerprint Status Panel */}
+                <div className="p-5 border-2 rounded-xl text-center space-y-3 bg-slate-50/70 border-slate-200">
+                  <div className="w-16 h-16 rounded-full mx-auto flex items-center justify-center bg-white shadow-xs border border-slate-200">
+                    <Fingerprint className={`w-10 h-10 ${
+                      fingerprintStatus === 'VERIFIED'
+                        ? 'text-emerald-600'
+                        : fingerprintStatus === 'UNSUCCESSFUL'
+                        ? 'text-red-500'
+                        : fingerprintStatus === 'IN_PROGRESS'
+                        ? 'text-blue-500 animate-pulse'
+                        : 'text-slate-400'
+                    }`} />
+                  </div>
+
+                  <div>
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500 block">
+                      Fingerprint Verification Status
+                    </span>
+                    <span className={`text-sm font-bold block mt-0.5 ${
+                      fingerprintStatus === 'VERIFIED'
+                        ? 'text-emerald-700'
+                        : fingerprintStatus === 'UNSUCCESSFUL'
+                        ? 'text-red-700'
+                        : 'text-slate-700'
+                    }`}>
+                      {fingerprintStatus === 'NOT_VERIFIED' && 'Awaiting Officer Verification'}
+                      {fingerprintStatus === 'IN_PROGRESS' && 'Biometric Scan in Progress...'}
+                      {fingerprintStatus === 'VERIFIED' && 'Fingerprint Successfully Verified ✓'}
+                      {fingerprintStatus === 'UNSUCCESSFUL' && 'Verification Check Failed / Mismatch'}
+                    </span>
+                    {fingerprintStatus === 'VERIFIED' && fingerprintOfficer && (
+                      <p className="text-[11px] text-emerald-800 font-mono mt-1">
+                        Verified by Officer: {fingerprintOfficer} at {new Date(fingerprintTimestamp || Date.now()).toLocaleTimeString()}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Officer Actions for Fingerprint */}
+                  <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-2">
+                    <button
+                      type="button"
+                      disabled={isSubmitting || fingerprintStatus === 'VERIFIED'}
+                      onClick={() => handleFingerprintCheck(true)}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Confirm Officer Fingerprint Match</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={() => handleFingerprintCheck(false)}
+                      className="px-3 py-2 bg-white border border-red-200 hover:bg-red-50 text-red-700 font-medium rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      <XCircle className="w-3.5 h-3.5" />
+                      <span>Simulate Scanner Mismatch / Fail</span>
+                    </button>
+                  </div>
+                </div>
+
+                {formError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                    <span>{formError}</span>
+                  </div>
+                )}
+
+                {/* Footer Navigation */}
+                <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setRegistrationStep(1)}
+                    disabled={isSubmitting}
+                    className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 cursor-pointer disabled:opacity-50"
+                  >
+                    ← Edit Personal Details
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isSubmitting || fingerprintStatus !== 'VERIFIED'}
+                    onClick={() => {
+                      setFormError(null);
+                      setRegistrationStep(3);
+                    }}
+                    className="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-semibold rounded-lg text-xs cursor-pointer flex items-center gap-1.5 transition-colors disabled:cursor-not-allowed"
+                  >
+                    <span>Continue to Photo Verification</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* STAGE 3: Photo Verification */}
+            {registrationStep === 3 && pendingRegistration && (
+              <div className="space-y-4">
+                {/* Draft Summary Card */}
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900">{pendingRegistration.fullName}</span>
+                    <span className="font-mono text-[10px] text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded font-semibold">
+                      Fingerprint Verified ✓
+                    </span>
+                  </div>
+                  <div className="text-slate-500 text-[11px]">
+                    Constituency: {pendingRegistration.constituencyId} • Polling Station: {pendingRegistration.pollingStation}
+                  </div>
+                </div>
+
+                {/* Photo Inspection Panel */}
+                <div className="p-5 border-2 rounded-xl text-center space-y-3 bg-slate-50/70 border-slate-200">
+                  <div className="w-32 h-36 mx-auto rounded-lg bg-slate-200 border-2 border-dashed border-slate-300 flex flex-col items-center justify-center relative overflow-hidden">
+                    <Camera className="w-8 h-8 text-slate-400 mb-1" />
+                    <span className="text-[10px] text-slate-500 font-semibold uppercase">Elector Portrait</span>
+                    <span className="text-[9px] text-slate-400">{pendingRegistration.fullName.split(' ')[0]}</span>
+                    {photoStatus === 'APPROVED' && (
+                      <div className="absolute inset-0 bg-emerald-500/10 border-2 border-emerald-500 flex items-center justify-center">
+                        <span className="bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow">
+                          APPROVED ✓
+                        </span>
+                      </div>
+                    )}
+                    {photoStatus === 'REJECTED' && (
+                      <div className="absolute inset-0 bg-red-500/10 border-2 border-red-500 flex items-center justify-center">
+                        <span className="bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow">
+                          REJECTED ✗
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500 block">
+                      Photo Verification Status
+                    </span>
+                    <span className={`text-sm font-bold block mt-0.5 ${
+                      photoStatus === 'APPROVED'
+                        ? 'text-emerald-700'
+                        : photoStatus === 'REJECTED'
+                        ? 'text-red-700'
+                        : photoStatus === 'RETAKE_REQUESTED'
+                        ? 'text-amber-700'
+                        : 'text-slate-700'
+                    }`}>
+                      {photoStatus === 'AWAITING_INSPECTION' && 'Awaiting Officer Inspection'}
+                      {photoStatus === 'APPROVED' && 'Photo Verified & Approved ✓'}
+                      {photoStatus === 'REJECTED' && 'Photo Rejected (Compliance Issue)'}
+                      {photoStatus === 'RETAKE_REQUESTED' && 'Retake Requested (New Portrait Required)'}
+                    </span>
+                    {photoStatus === 'APPROVED' && photoOfficer && (
+                      <p className="text-[11px] text-emerald-800 font-mono mt-1">
+                        Approved by Officer: {photoOfficer} at {new Date(photoTimestamp || Date.now()).toLocaleTimeString()}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Officer Actions for Photo */}
+                  <div className="pt-2 flex flex-wrap items-center justify-center gap-2">
+                    <button
+                      type="button"
+                      disabled={isSubmitting || photoStatus === 'APPROVED'}
+                      onClick={() => handlePhotoVerification('APPROVE')}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Approve Photo</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={() => handlePhotoVerification('REJECT')}
+                      className="px-3 py-2 bg-white border border-red-200 hover:bg-red-50 text-red-700 font-medium rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      <XCircle className="w-3.5 h-3.5" />
+                      <span>Reject Photo</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={() => handlePhotoVerification('RETAKE')}
+                      className="px-3 py-2 bg-white border border-amber-200 hover:bg-amber-50 text-amber-800 font-medium rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Retake Photo</span>
+                    </button>
+                  </div>
+
+                  {photoStatus === 'REJECTED' && (
+                    <p className="text-[11px] text-red-600 mt-1 leading-snug">
+                      Photo does not meet standards. Click &quot;Retake Photo&quot; to correct without restarting registration.
+                    </p>
                   )}
-                </button>
+                </div>
+
+                {formError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                    <span>{formError}</span>
+                  </div>
+                )}
+
+                {/* Footer Navigation */}
+                <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setRegistrationStep(2)}
+                    disabled={isSubmitting}
+                    className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 cursor-pointer disabled:opacity-50"
+                  >
+                    ← Back to Fingerprint Check
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isSubmitting || photoStatus !== 'APPROVED'}
+                    onClick={handleFinalizeRegistration}
+                    className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold rounded-lg text-xs cursor-pointer flex items-center gap-1.5 transition-colors disabled:cursor-not-allowed shadow-xs"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Finalizing & Generating Voter ID...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Complete Registration & Issue Voter ID</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
-            </form>
+            )}
           </div>
         </div>
       )}

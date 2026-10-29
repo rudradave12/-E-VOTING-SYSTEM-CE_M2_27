@@ -22,6 +22,7 @@ import {
 } from '../../../frontend/src/types/permissions';
 import { getDataRepositories } from '../repositories';
 import { serverStore } from '../store';
+import { getStaffCredential, verifyStaffPasswordHash } from './credentials';
 
 export interface OfficerSession {
   token: string;
@@ -282,6 +283,16 @@ export async function verifyOfficerCredentials(
 
   if (targetAccount.status !== 'ACTIVE') {
     return { success: false, message: `Access denied: Account '${targetAccount.id}' is ${targetAccount.status}.` };
+  }
+
+  // 1. Check if account has an updated persistent password hash in credential store
+  const storedCred = await getStaffCredential(targetAccount.id);
+  if (storedCred && storedCred.passwordHash) {
+    const isHashValid = await verifyStaffPasswordHash(trimmedPassword, storedCred.passwordHash);
+    if (!isHashValid) {
+      return { success: false, message: 'Invalid administrative credentials.' };
+    }
+    return { success: true, account: targetAccount };
   }
 
   if (isProd && (!expectedPassword || expectedPassword.length < 8)) {
